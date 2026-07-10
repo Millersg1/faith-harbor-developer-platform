@@ -1,4 +1,6 @@
 ﻿# Faith Harbor Developer Platform
+![Version](https://img.shields.io/badge/version-v3.2.0-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE) ![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933) ![Status](https://img.shields.io/badge/status-active-success) ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![AI](https://img.shields.io/badge/AI-Claude%20%7C%20ChatGPT%20%7C%20Codex%20%7C%20Hermes%20%7C%20Perplexity-purple)
 
 > Build once. Deploy everywhere.
 
