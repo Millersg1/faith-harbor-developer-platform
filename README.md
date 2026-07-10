@@ -1,21 +1,49 @@
 ﻿# Faith Harbor Developer Platform
 
-Generated with Faith Harbor CLI v3.2.0.
+> Build once. Deploy everywhere.
 
-## Project
+The Faith Harbor Developer Platform is an AI-powered toolkit for building websites, SaaS applications, WordPress solutions, publishing resources, ministry platforms, and automation workflows.
 
-- Type: Node + Express + PostgreSQL
-- Brand: General Faith Harbor
-- Generated: 2026-07-10
+It combines:
 
-## Next Steps
+- 🤖 AI-assisted development
+- 🚀 Interactive project generation
+- 🏗️ Starter applications
+- 🧠 Shared AI skills
+- 📦 Reusable components
+- 🌐 WordPress & Divi tooling
+- 🔒 Security standards
+- 📖 Publishing workflows
+- ⛪ Ministry resources
+- ⚡ Automation & deployment
 
-1. Replace all placeholder content.
-2. Review dependencies and configuration.
-3. Load the recommended Faith Harbor skills.
-4. Run accessibility, security, and responsive checks.
-5. Update this README with project-specific setup instructions.
+---
 
-## Integrity
+## Vision
 
-Do not add unsupported claims, fabricated testimonials, secrets, or private customer information.
+Create projects faster while maintaining consistent quality, security, accessibility, and Faith Harbor standards across every application.
+
+---
+
+## Current Features
+
+- Interactive Faith Harbor CLI (`fh`)
+- Project generators
+- Starter templates
+- Git integration
+- Skill management
+- Repository validation
+- Release automation
+
+---
+
+## Roadmap
+
+- GitHub integration
+- Cloudflare automation
+- cPanel & WHM integration
+- WordPress installation
+- Divi project creation
+- Docker support
+- AI orchestration (Claude, ChatGPT, Codex, Hermes, Gemini, Perplexity)
+- One-command deployments
