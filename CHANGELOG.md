@@ -1,18 +1,23 @@
 # Changelog
 
-## 4.0.0 — Foundation
+## 4.1.0 — Workflow Foundation
 
 ### Added
 
-- Faith Harbor OS product identity
-- Runnable TypeScript and Express foundation
-- Root, health, department, and AI endpoints
-- OpenClaw orchestration registration
-- Configuration validation
-- Automated API tests
-- GitHub Actions validation
+- Workflow domain model
+- Workflow state machine
+- Workflow registry
+- Approval gates
+- Audit event history
+- Workflow REST API
+- Workflow engine tests
+- Workflow API tests
 
 ### Changed
 
-- Faith Harbor Developer Platform evolved into Faith Harbor OS
-- Database configuration is optional during the foundation stage
+- Root API now identifies the workflow foundation stage
+- Version advanced to 4.1.0
+
+## 4.0.0 — Foundation
+
+- Initial Faith Harbor OS backend foundation

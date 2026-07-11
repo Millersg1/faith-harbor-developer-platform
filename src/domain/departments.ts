@@ -1,4 +1,4 @@
-export const departments = [
+﻿export const departments = [
   "Client Services",
   "Engineering",
   "Publishing",
@@ -12,3 +12,5 @@ export const departments = [
   "Analytics",
   "Administration",
 ] as const;
+
+export type DepartmentName = (typeof departments)[number];

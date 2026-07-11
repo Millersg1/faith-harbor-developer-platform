@@ -1,6 +1,6 @@
 {
   "name": "faith-harbor-os",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "private": true,
   "description": "The governed operating platform for Faith Harbor LLC.",
   "main": "dist/server.js",
@@ -10,6 +10,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:watch": "vitest",
     "validate": "npm run typecheck && npm test && npm run build"
   },
   "engines": {

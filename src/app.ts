@@ -5,9 +5,12 @@ import helmet from "helmet";
 import { config } from "./config";
 import { aiProviders, orchestrationPlatforms } from "./domain/ai";
 import { departments } from "./domain/departments";
+import { WorkflowEngine } from "./workflow";
+import { createWorkflowRouter } from "./workflow/WorkflowRouter";
 
 export function createApp() {
   const app = express();
+  const workflowEngine = new WorkflowEngine();
 
   app.disable("x-powered-by");
   app.use(helmet());
@@ -19,11 +22,12 @@ export function createApp() {
       name: config.APP_NAME,
       version: config.APP_VERSION,
       mission: "Technology is our tool. People are our purpose. Christ is our foundation.",
-      status: "foundation",
+      status: "workflow-foundation",
       links: {
         health: "/health",
         departments: "/api/v1/departments",
         ai: "/api/v1/ai",
+        workflows: "/api/v1/workflows",
       },
     });
   });
@@ -50,6 +54,8 @@ export function createApp() {
       finalAuthority: "Human leadership",
     });
   });
+
+  app.use("/api/v1/workflows", createWorkflowRouter(workflowEngine));
 
   app.use((_req, res) => {
     res.status(404).json({
