@@ -3,14 +3,20 @@ import express from "express";
 import helmet from "helmet";
 
 import { config } from "./config";
+import { DepartmentService } from "./departments/DepartmentService";
+import { defaultDepartments } from "./departments/defaultDepartments";
 import { aiProviders, orchestrationPlatforms } from "./domain/ai";
-import { departments } from "./domain/departments";
 import { WorkflowEngine } from "./workflow";
 import { createWorkflowRouter } from "./workflow/WorkflowRouter";
 
 export function createApp() {
   const app = express();
   const workflowEngine = new WorkflowEngine();
+  const departmentService = new DepartmentService();
+
+  for (const department of defaultDepartments) {
+    departmentService.createDepartment(department);
+  }
 
   app.disable("x-powered-by");
   app.use(helmet());
@@ -21,7 +27,8 @@ export function createApp() {
     res.json({
       name: config.APP_NAME,
       version: config.APP_VERSION,
-      mission: "Technology is our tool. People are our purpose. Christ is our foundation.",
+      mission:
+        "Technology is our tool. People are our purpose. Christ is our foundation.",
       status: "workflow-foundation",
       links: {
         health: "/health",
@@ -44,7 +51,12 @@ export function createApp() {
   });
 
   app.get("/api/v1/departments", (_req, res) => {
-    res.json({ count: departments.length, departments });
+    const departments = departmentService.listDepartments();
+
+    res.json({
+      count: departments.length,
+      departments,
+    });
   });
 
   app.get("/api/v1/ai", (_req, res) => {
@@ -74,6 +86,7 @@ export function createApp() {
       _next: express.NextFunction,
     ) => {
       console.error(error);
+
       res.status(500).json({
         error: {
           code: "INTERNAL_ERROR",
