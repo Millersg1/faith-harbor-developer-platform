@@ -1,51 +1,46 @@
-﻿# Faith Harbor Developer Platform
-![Version](https://img.shields.io/badge/version-v3.2.0-blue) ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE) ![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933) ![Status](https://img.shields.io/badge/status-active-success) ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
-![AI](https://img.shields.io/badge/AI-Claude%20%7C%20ChatGPT%20%7C%20Codex%20%7C%20Hermes%20%7C%20Perplexity-purple)
+# Faith Harbor OS
 
-> Build once. Deploy everywhere.
+![Version](https://img.shields.io/badge/version-v4.0.0-blue)
+![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933)
+![TypeScript](https://img.shields.io/badge/TypeScript-5%2B-3178C6)
+![Status](https://img.shields.io/badge/status-foundation-success)
 
-The Faith Harbor Developer Platform is an AI-powered toolkit for building websites, SaaS applications, WordPress solutions, publishing resources, ministry platforms, and automation workflows.
+> Technology is our tool. People are our purpose. Christ is our foundation.
 
-It combines:
+Faith Harbor OS is the operating platform for Faith Harbor LLC. It coordinates departments, workflows, AI providers, OpenClaw orchestration, standards, and future business integrations through one governed system.
 
-- 🤖 AI-assisted development
-- 🚀 Interactive project generation
-- 🏗️ Starter applications
-- 🧠 Shared AI skills
-- 📦 Reusable components
-- 🌐 WordPress & Divi tooling
-- 🔒 Security standards
-- 📖 Publishing workflows
-- ⛪ Ministry resources
-- ⚡ Automation & deployment
+## Foundation Release
 
----
+Version 4.0 establishes:
 
-## Vision
+- Department registry
+- Health and system information APIs
+- Multi-provider AI architecture
+- OpenClaw orchestration registration
+- Runtime configuration validation
+- Error handling and security middleware
+- Automated tests
+- GitHub Actions validation
 
-Create projects faster while maintaining consistent quality, security, accessibility, and Faith Harbor standards across every application.
+## Quick Start
 
----
+```powershell
+Copy-Item .env.example .env
+npm install
+npm run dev
+```
 
-## Current Features
+Open:
 
-- Interactive Faith Harbor CLI (`fh`)
-- Project generators
-- Starter templates
-- Git integration
-- Skill management
-- Repository validation
-- Release automation
+```text
+http://localhost:3000/
+http://localhost:3000/health
+http://localhost:3000/api/v1/departments
+http://localhost:3000/api/v1/ai
+```
 
----
+## Repository Roles
 
-## Roadmap
-
-- GitHub integration
-- Cloudflare automation
-- cPanel & WHM integration
-- WordPress installation
-- Divi project creation
-- Docker support
-- AI orchestration (Claude, ChatGPT, Codex, Hermes, Gemini, Perplexity)
-- One-command deployments
+- `faith-harbor-ai-standards` teaches and governs.
+- `faith-harbor-developer-platform` operates as Faith Harbor OS.
+- Product repositories deliver individual services and applications.

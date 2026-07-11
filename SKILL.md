@@ -1,9 +1,9 @@
-﻿---
-name: project-faith-harbor-developer-platform
-description: Apply Faith Harbor standards to the Faith Harbor Developer Platform project.
+---
+name: project-faith-harbor-os
+description: Build and operate Faith Harbor OS according to Faith Harbor governance and standards.
 ---
 
-# Faith Harbor Developer Platform Project Standards
+# Faith Harbor OS Project Standards
 
 Use these Faith Harbor skills:
 
@@ -16,7 +16,9 @@ Use these Faith Harbor skills:
 
 - Inspect the project before editing.
 - Preserve working functionality.
-- Follow the selected brand and technical standards.
+- Follow the Faith Harbor OS Constitution and approved architecture.
+- Organize capabilities by owning department.
+- Treat OpenClaw as orchestration, not merely an AI provider.
+- Require human approval for high-impact actions.
 - Never invent claims, credentials, testimonials, statistics, or test results.
 - Keep secrets outside source control.
-- Apply the relevant review checklist before completion.

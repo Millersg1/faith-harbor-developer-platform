@@ -4,11 +4,12 @@ import { config } from "./config";
 const app = createApp();
 
 const server = app.listen(config.PORT, () => {
-  console.log(`Server listening on port ${config.PORT}`);
+  console.log(`${config.APP_NAME} ${config.APP_VERSION} listening on port ${config.PORT}`);
 });
 
 function shutdown(signal: string) {
   console.log(`Received ${signal}. Shutting down.`);
+
   server.close((error) => {
     if (error) {
       console.error(error);
