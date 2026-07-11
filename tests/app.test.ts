@@ -19,10 +19,17 @@ describe("Faith Harbor OS API", () => {
   });
 
   it("returns approved departments", async () => {
-    const response = await request(app).get("/api/v1/departments");
-    expect(response.body.departments).toContain("Engineering");
-    expect(response.body.departments).toContain("Ministry");
-  });
+  const response = await request(app).get("/api/v1/departments");
+
+  const departmentNames = response.body.departments.map(
+    (department: { name: string }) => department.name,
+  );
+
+  expect(response.status).toBe(200);
+  expect(response.body.count).toBe(2);
+  expect(departmentNames).toContain("Engineering");
+  expect(departmentNames).toContain("Ministry");
+});
 
   it("registers OpenClaw as orchestration", async () => {
     const response = await request(app).get("/api/v1/ai");
