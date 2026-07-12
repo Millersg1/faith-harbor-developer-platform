@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { ProviderManager } from "./ProviderManager";
-import { ProviderRegistry } from "./ProviderRegistry";
 import type {
   AIProvider,
   AIRequest,
@@ -9,11 +7,22 @@ import type {
   ProviderHealth,
 } from "./AIProvider";
 import type { AICapability } from "./Capability";
+import { ProviderManager } from "./ProviderManager";
+import { ProviderRegistry } from "./ProviderRegistry";
 
 class TestProvider implements AIProvider {
   readonly id: string;
   readonly name: string;
   readonly capabilities: readonly AICapability[];
+
+  readonly metadata = {
+    vendor: "Faith Harbor Test",
+    version: "1.0.0",
+    models: ["test-model"],
+    supportsStreaming: false,
+    supportsVision: false,
+    supportsTools: false,
+  } as const;
 
   constructor(
     id: string,
