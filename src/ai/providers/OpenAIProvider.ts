@@ -1,3 +1,5 @@
+import type OpenAI from "openai";
+
 import type {
   AIProvider,
   AIRequest,
@@ -11,7 +13,7 @@ import type { AICapability } from "../Capability";
  * Faith Harbor OS adapter for OpenAI.
  *
  * This provider translates between the Faith Harbor AI framework
- * and an injected OpenAI-compatible client.
+ * and the OpenAI Responses API.
  */
 export class OpenAIProvider implements AIProvider {
   readonly id = "openai";
@@ -27,30 +29,36 @@ export class OpenAIProvider implements AIProvider {
     vendor: "OpenAI",
     version: "1.0.0",
     models: [
-      "gpt-5",
+      "gpt-5.5",
+      "gpt-5.4",
       "gpt-5-mini",
-      "gpt-4.1",
     ],
     supportsStreaming: true,
     supportsVision: true,
     supportsTools: true,
     website: "https://openai.com",
-    documentation: "https://platform.openai.com/docs",
+    documentation: "https://developers.openai.com",
   };
 
   constructor(
-    private readonly client: unknown,
+    private readonly client: OpenAI,
+    private readonly model = "gpt-5.5",
   ) {}
 
   async generate(
     request: AIRequest,
   ): Promise<AIResponse> {
-    void this.client;
-    void request;
+    const response = await this.client.responses.create({
+      model: this.model,
+      input: request.prompt,
+    });
 
-    throw new Error(
-      "OpenAIProvider.generate() is not implemented yet.",
-    );
+    return {
+      provider: this.id,
+      capability: request.capability,
+      content: response.output_text,
+      model: this.model,
+    };
   }
 
   async health(): Promise<ProviderHealth> {
