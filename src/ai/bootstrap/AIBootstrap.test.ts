@@ -10,6 +10,8 @@ import {
 
 import { AnthropicClientFactory } from "../config/AnthropicClientFactory";
 import { OpenAIClientFactory } from "../config/OpenAIClientFactory";
+import { AnthropicProviderInstaller } from "../installers/AnthropicProviderInstaller";
+import { OpenAIProviderInstaller } from "../installers/OpenAIProviderInstaller";
 import { AIBootstrap } from "./AIBootstrap";
 
 describe("AIBootstrap", () => {
@@ -17,7 +19,7 @@ describe("AIBootstrap", () => {
     vi.restoreAllMocks();
   });
 
-  it("creates a service with OpenAI", () => {
+  it("creates a service with OpenAI", async () => {
     const client = new OpenAI({
       apiKey: "test-api-key",
     });
@@ -27,11 +29,11 @@ describe("AIBootstrap", () => {
       "create",
     ).mockReturnValue(client);
 
-    const service = AIBootstrap.create({
-      openai: {
+    const service = await AIBootstrap.create([
+      new OpenAIProviderInstaller({
         apiKey: "test-api-key",
-      },
-    });
+      }),
+    ]);
 
     expect(OpenAIClientFactory.create).toHaveBeenCalledWith({
       apiKey: "test-api-key",
@@ -41,7 +43,7 @@ describe("AIBootstrap", () => {
     expect(service.getProviders()).toHaveLength(1);
   });
 
-  it("creates a service with Anthropic", () => {
+  it("creates a service with Anthropic", async () => {
     const client = new Anthropic({
       apiKey: "test-api-key",
     });
@@ -51,11 +53,11 @@ describe("AIBootstrap", () => {
       "create",
     ).mockReturnValue(client);
 
-    const service = AIBootstrap.create({
-      anthropic: {
+    const service = await AIBootstrap.create([
+      new AnthropicProviderInstaller({
         apiKey: "test-api-key",
-      },
-    });
+      }),
+    ]);
 
     expect(AnthropicClientFactory.create).toHaveBeenCalledWith({
       apiKey: "test-api-key",
@@ -65,7 +67,7 @@ describe("AIBootstrap", () => {
     expect(service.getProviders()).toHaveLength(1);
   });
 
-  it("creates a service with multiple providers", () => {
+  it("creates a service with multiple providers", async () => {
     const openAIClient = new OpenAI({
       apiKey: "openai-test-key",
     });
@@ -84,14 +86,14 @@ describe("AIBootstrap", () => {
       "create",
     ).mockReturnValue(anthropicClient);
 
-    const service = AIBootstrap.create({
-      openai: {
+    const service = await AIBootstrap.create([
+      new OpenAIProviderInstaller({
         apiKey: "openai-test-key",
-      },
-      anthropic: {
+      }),
+      new AnthropicProviderInstaller({
         apiKey: "anthropic-test-key",
-      },
-    });
+      }),
+    ]);
 
     expect(service.hasProvider("openai")).toBe(true);
     expect(service.hasProvider("anthropic")).toBe(true);
@@ -115,11 +117,11 @@ describe("AIBootstrap", () => {
       "create",
     ).mockReturnValue(client);
 
-    const service = AIBootstrap.create({
-      openai: {
+    const service = await AIBootstrap.create([
+      new OpenAIProviderInstaller({
         apiKey: "test-api-key",
-      },
-    });
+      }),
+    ]);
 
     const response = await service.generate({
       capability: "writing",
@@ -134,11 +136,11 @@ describe("AIBootstrap", () => {
     });
   });
 
-  it("rejects an empty provider configuration", () => {
-    expect(() =>
-      AIBootstrap.create({}),
-    ).toThrow(
-      "At least one AI provider configuration is required.",
+  it("rejects an empty installer list", async () => {
+    await expect(
+      AIBootstrap.create([]),
+    ).rejects.toThrow(
+      "At least one AI provider installer is required.",
     );
   });
 });

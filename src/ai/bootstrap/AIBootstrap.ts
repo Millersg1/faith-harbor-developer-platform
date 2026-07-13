@@ -1,43 +1,27 @@
 import { AIService } from "../AIService";
-import { AnthropicClientFactory } from "../config/AnthropicClientFactory";
-import { OpenAIClientFactory } from "../config/OpenAIClientFactory";
+import type { AIProviderInstaller } from "../installers/AIProviderInstaller";
 import { ProviderManager } from "../ProviderManager";
 import { ProviderRegistry } from "../ProviderRegistry";
-import { AnthropicProvider } from "../providers/AnthropicProvider";
-import { OpenAIProvider } from "../providers/OpenAIProvider";
-import type { AIBootstrapConfiguration } from "./AIBootstrapConfiguration";
 
 /**
  * Bootstraps the Faith Harbor AI framework.
  */
 export class AIBootstrap {
   /**
-   * Creates a configured AIService and registers all enabled providers.
+   * Creates a configured AIService and runs all provider installers.
    */
-  static create(
-    configuration: AIBootstrapConfiguration,
-  ): AIService {
+  static async create(
+    installers: readonly AIProviderInstaller[],
+  ): Promise<AIService> {
     const registry = new ProviderRegistry();
 
-    if (configuration.openai) {
-      const client = OpenAIClientFactory.create(
-        configuration.openai,
-      );
-
-      registry.register(new OpenAIProvider(client));
-    }
-
-    if (configuration.anthropic) {
-      const client = AnthropicClientFactory.create(
-        configuration.anthropic,
-      );
-
-      registry.register(new AnthropicProvider(client));
+    for (const installer of installers) {
+      await installer.install(registry);
     }
 
     if (registry.size === 0) {
       throw new Error(
-        "At least one AI provider configuration is required.",
+        "At least one AI provider installer is required.",
       );
     }
 
