@@ -27,40 +27,43 @@ export class OllamaProvider implements AIProvider {
     vendor: "Ollama",
     version: "1.0.0",
     models: [
-      "llama3.2",
-      "mistral",
-      "phi3",
+      "gpt-oss:20b",
+      "mistral:latest",
+      "llama3.2:latest",
     ],
     supportsStreaming: true,
-    supportsVision: true,
+    supportsVision: false,
     supportsTools: false,
     website: "https://ollama.com",
-    documentation: "https://ollama.com/docs",
+    documentation: "https://docs.ollama.com",
   };
 
   constructor(
     private readonly client: OllamaClient,
-    private readonly model = "llama3.2",
+    private readonly model = "llama3.2:latest",
   ) {}
 
   async generate(
     request: AIRequest,
   ): Promise<AIResponse> {
-    // HTTP integration will be implemented later.
-    // For now we verify the provider architecture.
+    const content = await this.client.generate(
+      this.model,
+      request.prompt,
+    );
 
     return {
       provider: this.id,
       capability: request.capability,
-      content:
-        "Ollama provider not yet connected.",
+      content,
       model: this.model,
     };
   }
 
   async health(): Promise<ProviderHealth> {
+    const healthy = await this.client.health();
+
     return {
-      status: "healthy",
+      status: healthy ? "healthy" : "offline",
       checkedAt: new Date().toISOString(),
     };
   }
