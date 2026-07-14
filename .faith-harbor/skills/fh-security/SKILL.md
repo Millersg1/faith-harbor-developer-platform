@@ -1,11 +1,15 @@
 ---
 name: fh-security
-description: Review Faith Harbor systems for input validation, authorization, secrets management, secure sessions, dependency risk, logging, backups, and recovery readiness.
+description: >-
+  Review Faith Harbor systems for input validation, authorization, secrets
+  management, secure sessions, dependency risk, logging, backups, and recovery
+  readiness.
 ---
 
 # Faith Harbor Security
 
-Use for security reviews, hardening, authentication, authorization, secrets, APIs, WordPress, SaaS, and deployment.
+Use for security reviews, hardening, authentication, authorization, secrets,
+APIs, WordPress, SaaS, and deployment.
 
 ## Review Areas
 

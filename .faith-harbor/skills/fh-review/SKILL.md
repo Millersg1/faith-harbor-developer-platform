@@ -1,11 +1,15 @@
 ---
 name: fh-review
-description: Perform final Faith Harbor quality assurance across brand, content, accessibility, responsive design, engineering, security, SEO, publishing, ministry, and release readiness.
+description: >-
+  Perform final Faith Harbor quality assurance across brand, content,
+  accessibility, responsive design, engineering, security, SEO, publishing,
+  ministry, and release readiness.
 ---
 
 # Faith Harbor Review
 
-Use before launch, publication, deployment, client delivery, or declaring work complete.
+Use before launch, publication, deployment, client delivery, or declaring work
+complete.
 
 ## Review Sequence
 

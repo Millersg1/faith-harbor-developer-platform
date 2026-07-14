@@ -1,11 +1,15 @@
 ---
 name: fh-saas
-description: Design and build secure, reliable SaaS products using Faith Harbor Node, API, PostgreSQL, authentication, RBAC, multi-tenancy, billing, webhook, job, observability, and recovery standards.
+description: >-
+  Design and build secure, reliable SaaS products using Faith Harbor Node, API,
+  PostgreSQL, authentication, RBAC, multi-tenancy, billing, webhook, job,
+  observability, and recovery standards.
 ---
 
 # Faith Harbor SaaS
 
-Use for SaaS applications, APIs, Node.js, Express, PostgreSQL, billing, background jobs, and multi-tenant systems.
+Use for SaaS applications, APIs, Node.js, Express, PostgreSQL, billing,
+background jobs, and multi-tenant systems.
 
 ## Rules
 
