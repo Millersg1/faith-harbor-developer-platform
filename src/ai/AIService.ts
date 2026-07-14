@@ -3,6 +3,7 @@ import type {
   AIRequest,
   AIResponse,
 } from "./AIProvider";
+import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
 import { ProviderManager } from "./ProviderManager";
 import { ProviderRegistry } from "./ProviderRegistry";
 
@@ -47,7 +48,14 @@ export class AIService {
   }
 
   /**
-   * Executes an AI request using the provider selected by the manager.
+   * Creates an execution plan without running the request.
+   */
+  plan(request: AIRequest): AIExecutionPlan {
+    return this.manager.plan(request);
+  }
+
+  /**
+   * Executes an AI request using the generated execution plan.
    */
   async generate(request: AIRequest): Promise<AIResponse> {
     return this.manager.generate(request);
