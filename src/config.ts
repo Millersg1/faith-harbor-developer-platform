@@ -47,6 +47,12 @@ const schema = z.object({
     .trim()
     .optional()
     .transform((value) => value || undefined),
+
+  BLACKBOX_API_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
 });
 
 export const config = schema.parse(process.env);

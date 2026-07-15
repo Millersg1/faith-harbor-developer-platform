@@ -3,27 +3,30 @@ import { OpenAIClientFactory } from "../config/OpenAIClientFactory";
 import type { OpenAIConfiguration } from "../config/OpenAIConfiguration";
 import { ProviderManager } from "../ProviderManager";
 import { ProviderRegistry } from "../ProviderRegistry";
+import { BlackboxProvider } from "../providers/BlackboxProvider";
 import { OpenAIProvider } from "../providers/OpenAIProvider";
 
-/**
- * Bootstraps the Faith Harbor AI framework.
- */
 export class AIBootstrap {
-  /**
-   * Creates a fully configured AIService.
-   */
   static create(
     configuration: OpenAIConfiguration,
+    blackboxApiKey?: string,
   ): AIService {
     const registry = new ProviderRegistry();
 
     const client =
       OpenAIClientFactory.create(configuration);
 
-    const provider =
+    const openAIProvider =
       new OpenAIProvider(client);
 
-    registry.register(provider);
+    registry.register(openAIProvider);
+
+    if (blackboxApiKey) {
+      const blackboxProvider =
+        new BlackboxProvider(blackboxApiKey);
+
+      registry.register(blackboxProvider);
+    }
 
     const manager =
       new ProviderManager(registry);
