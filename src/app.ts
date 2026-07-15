@@ -4,6 +4,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 
+import { AIBootstrap } from "./ai/bootstrap/AIBootstrap";
 import { createAIRouter } from "./ai/routes/AIRouter";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
@@ -16,6 +17,14 @@ export function createApp() {
   const workflowEngine = new WorkflowEngine();
   const departmentService = new DepartmentService();
 
+  const aiService = config.OPENAI_API_KEY
+    ? AIBootstrap.create({
+        apiKey: config.OPENAI_API_KEY,
+        organization: config.OPENAI_ORGANIZATION,
+        project: config.OPENAI_PROJECT,
+      })
+    : undefined;
+
   for (const department of defaultDepartments) {
     departmentService.createDepartment(department);
   }
@@ -24,6 +33,15 @@ export function createApp() {
   app.use(helmet());
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
+
+  app.use((_req, res, next) => {
+    res.setHeader(
+      "X-Robots-Tag",
+      "noindex, nofollow",
+    );
+
+    next();
+  });
 
   app.use(
     "/console",
@@ -54,6 +72,7 @@ export function createApp() {
       version: config.APP_VERSION,
       environment: config.NODE_ENV,
       databaseConfigured: Boolean(config.DATABASE_URL),
+      aiConfigured: Boolean(aiService),
       timestamp: new Date().toISOString(),
     });
   });
@@ -67,7 +86,10 @@ export function createApp() {
     });
   });
 
-  app.use("/api/v1/ai", createAIRouter());
+  app.use(
+    "/api/v1/ai",
+    createAIRouter(aiService),
+  );
 
   app.use(
     "/api/v1/workflows",
