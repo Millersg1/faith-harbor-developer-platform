@@ -1,6 +1,8 @@
 ---
 name: project-faith-harbor-os
-description: Build and operate Faith Harbor OS according to Faith Harbor governance and standards.
+description: >-
+  Build and operate Faith Harbor OS according to Faith Harbor governance and
+  standards.
 ---
 
 # Faith Harbor OS Project Standards

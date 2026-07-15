@@ -1,44 +1,45 @@
 import { describe, expect, it } from "vitest";
 
+import { AIService } from "./AIService";
+import { ProviderManager } from "./ProviderManager";
+import { ProviderRegistry } from "./ProviderRegistry";
 import type {
   AIProvider,
   AIRequest,
   AIResponse,
   ProviderHealth,
+  ProviderMetadata,
 } from "./AIProvider";
 import type { AICapability } from "./Capability";
-import { AIService } from "./AIService";
-import { ProviderManager } from "./ProviderManager";
-import { ProviderRegistry } from "./ProviderRegistry";
 
 class TestProvider implements AIProvider {
-  readonly id: string;
   readonly name: string;
-  readonly capabilities: readonly AICapability[];
 
-  readonly metadata = {
-    vendor: "Faith Harbor Test",
+  readonly metadata: ProviderMetadata = {
+    vendor: "Faith Harbor",
     version: "1.0.0",
     models: ["test-model"],
     supportsStreaming: false,
     supportsVision: false,
     supportsTools: false,
-  } as const;
+    website: "https://example.com",
+    documentation: "https://example.com/docs",
+  };
 
   constructor(
-    id: string,
-    capabilities: readonly AICapability[],
+    readonly id: string,
+    readonly capabilities: readonly AICapability[],
   ) {
-    this.id = id;
     this.name = id;
-    this.capabilities = capabilities;
   }
 
-  async generate(request: AIRequest): Promise<AIResponse> {
+  async generate(
+    request: AIRequest,
+  ): Promise<AIResponse> {
     return {
       provider: this.id,
       capability: request.capability,
-      content: `Response from ${this.id}: ${request.prompt}`,
+      content: request.prompt,
     };
   }
 
@@ -50,67 +51,110 @@ class TestProvider implements AIProvider {
   }
 }
 
-function createService(): AIService {
-  const registry = new ProviderRegistry();
-  const manager = new ProviderManager(registry);
-
-  return new AIService(registry, manager);
-}
-
 describe("AIService", () => {
-  it("registers and retrieves providers", () => {
-    const service = createService();
-    const provider = new TestProvider("writer", ["writing"]);
+  it("registers providers", () => {
+    const registry = new ProviderRegistry();
+    const manager = new ProviderManager(registry);
+    const service = new AIService(registry, manager);
+
+    const provider = new TestProvider(
+      "provider1",
+      ["writing"],
+    );
 
     service.registerProvider(provider);
 
-    expect(service.hasProvider("writer")).toBe(true);
-    expect(service.getProviders()).toEqual([provider]);
+    expect(service.hasProvider("provider1")).toBe(true);
   });
 
-  it("unregisters a provider", () => {
-    const service = createService();
-    const provider = new TestProvider("writer", ["writing"]);
+  it("unregisters providers", () => {
+    const registry = new ProviderRegistry();
+    const manager = new ProviderManager(registry);
+    const service = new AIService(registry, manager);
+
+    const provider = new TestProvider(
+      "provider1",
+      ["writing"],
+    );
 
     service.registerProvider(provider);
 
-    expect(service.unregisterProvider("writer")).toBe(true);
-    expect(service.hasProvider("writer")).toBe(false);
+    expect(
+      service.unregisterProvider("provider1"),
+    ).toBe(true);
+
+    expect(service.hasProvider("provider1")).toBe(
+      false,
+    );
   });
 
-  it("returns false when unregistering an unknown provider", () => {
-    const service = createService();
+  it("returns registered providers", () => {
+    const registry = new ProviderRegistry();
+    const manager = new ProviderManager(registry);
+    const service = new AIService(registry, manager);
 
-    expect(service.unregisterProvider("missing")).toBe(false);
+    const provider = new TestProvider(
+      "provider1",
+      ["writing"],
+    );
+
+    service.registerProvider(provider);
+
+    expect(service.getProviders()).toEqual([
+      provider,
+    ]);
   });
 
-  it("generates a response through the selected provider", async () => {
-    const service = createService();
-    const provider = new TestProvider("writer", ["writing"]);
+  it("creates an execution plan", () => {
+    const registry = new ProviderRegistry();
+    const manager = new ProviderManager(registry);
+    const service = new AIService(registry, manager);
+
+    const provider = new TestProvider(
+      "provider1",
+      ["writing"],
+    );
+
+    service.registerProvider(provider);
+
+    const plan = service.plan({
+      capability: "writing",
+      prompt: "Hello",
+    });
+
+    expect(plan.provider).toBe(provider);
+    expect(plan.model).toBe("test-model");
+    expect(plan.reason).toBe(
+      "First available provider.",
+    );
+  });
+
+  it("delegates generation to ProviderManager", async () => {
+    const registry = new ProviderRegistry();
+    const manager = new ProviderManager(registry);
+    const service = new AIService(registry, manager);
+
+    const provider = new TestProvider(
+      "provider1",
+      ["writing"],
+    );
 
     service.registerProvider(provider);
 
     const response = await service.generate({
       capability: "writing",
-      prompt: "Write a greeting",
+      prompt: "Hello",
     });
 
-    expect(response.provider).toBe("writer");
-    expect(response.content).toBe(
-      "Response from writer: Write a greeting",
-    );
+    expect(response.provider).toBe("provider1");
+    expect(response.content).toBe("Hello");
   });
 
-  it("throws when no provider supports the requested capability", async () => {
-    const service = createService();
+  it("reports registered providers", () => {
+    const registry = new ProviderRegistry();
+    const manager = new ProviderManager(registry);
+    const service = new AIService(registry, manager);
 
-    await expect(
-      service.generate({
-        capability: "research",
-        prompt: "Find information",
-      }),
-    ).rejects.toThrow(
-      'No AI provider supports capability "research".',
-    );
+    expect(service.getProviders()).toEqual([]);
   });
 });

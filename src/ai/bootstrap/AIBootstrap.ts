@@ -1,39 +1,29 @@
 import { AIService } from "../AIService";
-import { OpenAIClientFactory } from "../config/OpenAIClientFactory";
-import type { OpenAIConfiguration } from "../config/OpenAIConfiguration";
+import type { AIProviderInstaller } from "../installers/AIProviderInstaller";
 import { ProviderManager } from "../ProviderManager";
 import { ProviderRegistry } from "../ProviderRegistry";
-import { BlackboxProvider } from "../providers/BlackboxProvider";
-import { OpenAIProvider } from "../providers/OpenAIProvider";
 
 export class AIBootstrap {
-  static create(
-    configuration: OpenAIConfiguration,
-    blackboxApiKey?: string,
-  ): AIService {
+  /**
+   * Creates a configured AIService and runs all provider installers.
+   */
+  static async create(
+    installers: readonly AIProviderInstaller[],
+  ): Promise<AIService> {
     const registry = new ProviderRegistry();
 
-    const client =
-      OpenAIClientFactory.create(configuration);
-
-    const openAIProvider =
-      new OpenAIProvider(client);
-
-    registry.register(openAIProvider);
-
-    if (blackboxApiKey) {
-      const blackboxProvider =
-        new BlackboxProvider(blackboxApiKey);
-
-      registry.register(blackboxProvider);
+    for (const installer of installers) {
+      await installer.install(registry);
     }
 
-    const manager =
-      new ProviderManager(registry);
+    if (registry.size === 0) {
+      throw new Error(
+        "At least one AI provider installer is required.",
+      );
+    }
 
-    return new AIService(
-      registry,
-      manager,
-    );
+    const manager = new ProviderManager(registry);
+
+    return new AIService(registry, manager);
   }
 }
