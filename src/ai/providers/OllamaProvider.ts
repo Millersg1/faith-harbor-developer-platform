@@ -27,6 +27,7 @@ export class OllamaProvider implements AIProvider {
     vendor: "Ollama",
     version: "1.0.0",
     models: [
+      "hermes3:latest",
       "gpt-oss:20b",
       "mistral:latest",
       "llama3.2:latest",
@@ -40,7 +41,8 @@ export class OllamaProvider implements AIProvider {
 
   constructor(
     private readonly client: OllamaClient,
-    private readonly model = "llama3.2:latest",
+    private readonly model =
+      "hermes3:latest",
   ) {}
 
   async generate(
@@ -63,7 +65,9 @@ export class OllamaProvider implements AIProvider {
     const healthy = await this.client.health();
 
     return {
-      status: healthy ? "healthy" : "offline",
+      status: healthy
+        ? "healthy"
+        : "offline",
       checkedAt: new Date().toISOString(),
     };
   }

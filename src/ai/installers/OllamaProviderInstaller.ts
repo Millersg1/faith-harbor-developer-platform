@@ -22,7 +22,11 @@ export class OllamaProviderInstaller
     );
 
     registry.register(
-      new OllamaProvider(client),
+      new OllamaProvider(
+        client,
+        this.configuration.model ??
+          "hermes3:latest",
+      ),
     );
   }
 }

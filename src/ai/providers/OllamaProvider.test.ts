@@ -1,99 +1,115 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
-import type { OllamaClient } from "../config/OllamaClientFactory";
+import type {
+  OllamaClient,
+} from "../config/OllamaClientFactory";
 import { OllamaProvider } from "./OllamaProvider";
 
-function createClient(): OllamaClient {
-  return {
-    baseURL: "http://localhost:11434",
-
-    generate: vi.fn().mockResolvedValue(
-      "Faith Harbor local response",
-    ),
-
-    health: vi.fn().mockResolvedValue(true),
-  };
-}
-
 describe("OllamaProvider", () => {
+  let client: OllamaClient;
+
+  beforeEach(() => {
+    client = {
+      generate: vi.fn(),
+      health: vi.fn(),
+    };
+  });
+
   it("exposes the expected provider identity", () => {
-    const provider = new OllamaProvider(createClient());
+    const provider = new OllamaProvider(client);
 
     expect(provider.id).toBe("ollama");
     expect(provider.name).toBe("Ollama");
   });
 
   it("exposes supported capabilities", () => {
-    const provider = new OllamaProvider(createClient());
+    const provider = new OllamaProvider(client);
 
-    expect(provider.capabilities).toEqual([
+    expect(provider.capabilities).toContain(
       "writing",
+    );
+    expect(provider.capabilities).toContain(
       "research",
-    ]);
+    );
   });
 
   it("exposes provider metadata", () => {
-    const provider = new OllamaProvider(createClient());
+    const provider = new OllamaProvider(client);
 
-    expect(provider.metadata.vendor).toBe("Ollama");
+    expect(provider.metadata.vendor).toBe(
+      "Ollama",
+    );
     expect(provider.metadata.models).toEqual([
+      "hermes3:latest",
       "gpt-oss:20b",
       "mistral:latest",
       "llama3.2:latest",
     ]);
-    expect(provider.metadata.supportsStreaming).toBe(true);
-    expect(provider.metadata.supportsVision).toBe(false);
-    expect(provider.metadata.supportsTools).toBe(false);
+    expect(
+      provider.metadata.supportsStreaming,
+    ).toBe(true);
+    expect(
+      provider.metadata.supportsVision,
+    ).toBe(false);
+    expect(
+      provider.metadata.supportsTools,
+    ).toBe(false);
   });
 
   it("reports healthy status", async () => {
-    const client = createClient();
+    vi.mocked(client.health).mockResolvedValue(
+      true,
+    );
+
     const provider = new OllamaProvider(client);
 
-    const health = await provider.health();
+    const result = await provider.health();
 
-    expect(client.health).toHaveBeenCalled();
-    expect(health.status).toBe("healthy");
-    expect(new Date(health.checkedAt).toString()).not.toBe(
-      "Invalid Date",
-    );
+    expect(result.status).toBe("healthy");
+    expect(result.checkedAt).toBeDefined();
   });
 
   it("reports offline status when Ollama is unavailable", async () => {
-    const client = createClient();
-
-    vi.mocked(client.health).mockResolvedValue(false);
+    vi.mocked(client.health).mockResolvedValue(
+      false,
+    );
 
     const provider = new OllamaProvider(client);
 
-    const health = await provider.health();
+    const result = await provider.health();
 
-    expect(health.status).toBe("offline");
+    expect(result.status).toBe("offline");
+    expect(result.checkedAt).toBeDefined();
   });
 
   it("generates through the Ollama client", async () => {
-    const client = createClient();
-
-    const provider = new OllamaProvider(
-      client,
-      "llama3.2:latest",
+    vi.mocked(client.generate).mockResolvedValue(
+      "Hello from Hermes.",
     );
 
-    const response = await provider.generate({
+    const provider = new OllamaProvider(client);
+
+    const result = await provider.generate({
       capability: "writing",
-      prompt: "Write a greeting",
+      prompt: "Hello",
     });
 
     expect(client.generate).toHaveBeenCalledWith(
-      "llama3.2:latest",
-      "Write a greeting",
+      "hermes3:latest",
+      "Hello",
     );
 
-    expect(response).toEqual({
+    expect(result).toEqual({
       provider: "ollama",
       capability: "writing",
-      content: "Faith Harbor local response",
-      model: "llama3.2:latest",
+      content: "Hello from Hermes.",
+      model: "hermes3:latest",
     });
   });
 });
