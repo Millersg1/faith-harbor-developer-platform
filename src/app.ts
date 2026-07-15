@@ -1,11 +1,13 @@
+import { join } from "node:path";
+
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 
+import { createAIRouter } from "./ai/routes/AIRouter";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
-import { aiProviders, orchestrationPlatforms } from "./domain/ai";
 import { WorkflowEngine } from "./workflow";
 import { createWorkflowRouter } from "./workflow/WorkflowRouter";
 
@@ -23,6 +25,11 @@ export function createApp() {
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
 
+  app.use(
+    "/console",
+    express.static(join(process.cwd(), "public")),
+  );
+
   app.get("/", (_req, res) => {
     res.json({
       name: config.APP_NAME,
@@ -31,6 +38,7 @@ export function createApp() {
         "Technology is our tool. People are our purpose. Christ is our foundation.",
       status: "workflow-foundation",
       links: {
+        console: "/console/",
         health: "/health",
         departments: "/api/v1/departments",
         ai: "/api/v1/ai",
@@ -59,15 +67,12 @@ export function createApp() {
     });
   });
 
-  app.get("/api/v1/ai", (_req, res) => {
-    res.json({
-      providers: aiProviders,
-      orchestration: orchestrationPlatforms,
-      finalAuthority: "Human leadership",
-    });
-  });
+  app.use("/api/v1/ai", createAIRouter());
 
-  app.use("/api/v1/workflows", createWorkflowRouter(workflowEngine));
+  app.use(
+    "/api/v1/workflows",
+    createWorkflowRouter(workflowEngine),
+  );
 
   app.use((_req, res) => {
     res.status(404).json({

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Faith Harbor OS AI Console</title>
+
+    <link rel="stylesheet" href="css/app.css">
+</head>
+
+<body>
+    <main class="container">
+        <header>
+            <h1>Faith Harbor OS</h1>
+
+            <p>
+                Technology is our tool. People are our purpose.
+                Christ is our foundation.
+            </p>
+        </header>
+
+        <section class="card">
+            <h2>AI Console</h2>
+
+            <label for="provider">Provider</label>
+
+            <select id="provider">
+                <option value="ollama">Ollama</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openrouter">OpenRouter</option>
+            </select>
+
+            <label for="prompt">Prompt</label>
+
+            <textarea
+                id="prompt"
+                rows="8"
+                placeholder="Ask Faith Harbor OS something..."
+            ></textarea>
+
+            <button id="generate" type="button">
+                Generate
+            </button>
+        </section>
+
+        <section class="card">
+            <h2>Response</h2>
+
+            <pre id="response">Waiting for your first prompt...</pre>
+        </section>
+    </main>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
