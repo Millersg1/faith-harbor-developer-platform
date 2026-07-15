@@ -8,6 +8,7 @@ import type { AIService } from "./ai/AIService";
 import { AIBootstrap } from "./ai/bootstrap/AIBootstrap";
 import type { AIProviderInstaller } from "./ai/installers/AIProviderInstaller";
 import { BlackboxProviderInstaller } from "./ai/installers/BlackboxProviderInstaller";
+import { OllamaProviderInstaller } from "./ai/installers/OllamaProviderInstaller";
 import { OpenAIProviderInstaller } from "./ai/installers/OpenAIProviderInstaller";
 import { createAIRouter } from "./ai/routes/AIRouter";
 import { config } from "./config";
@@ -17,7 +18,11 @@ import { WorkflowEngine } from "./workflow";
 import { createWorkflowRouter } from "./workflow/WorkflowRouter";
 
 function createProviderInstallers(): AIProviderInstaller[] {
-  const installers: AIProviderInstaller[] = [];
+  const installers: AIProviderInstaller[] = [
+    new OllamaProviderInstaller({
+      model: "hermes3:latest",
+    }),
+  ];
 
   if (config.OPENAI_API_KEY) {
     installers.push(
@@ -161,15 +166,13 @@ export function createApp(
 
 /**
  * Creates the production application and installs all
- * providers that have environment credentials.
+ * configured AI providers.
  */
 export async function createConfiguredApp() {
   const installers = createProviderInstallers();
 
   const aiService =
-    installers.length > 0
-      ? await AIBootstrap.create(installers)
-      : undefined;
+    await AIBootstrap.create(installers);
 
   return createApp(aiService);
 }

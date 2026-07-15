@@ -16,6 +16,7 @@ describe("OllamaProvider", () => {
 
   beforeEach(() => {
     client = {
+      baseURL: "http://localhost:11434",
       generate: vi.fn(),
       health: vi.fn(),
     };
