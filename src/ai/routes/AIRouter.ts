@@ -37,6 +37,66 @@ export function createAIRouter(
     });
   });
 
+  router.get("/metrics", (_req, res) => {
+    if (!aiService) {
+      res.status(503).json({
+        error: {
+          code: "AI_NOT_CONFIGURED",
+          message:
+            "No AI provider is currently configured.",
+        },
+      });
+
+      return;
+    }
+
+    const scorecards =
+      aiService.getProviderScorecards();
+
+    res.json({
+      count: scorecards.length,
+      scorecards,
+    });
+  });
+
+  router.get(
+    "/metrics/:providerId",
+    (req, res) => {
+      if (!aiService) {
+        res.status(503).json({
+          error: {
+            code: "AI_NOT_CONFIGURED",
+            message:
+              "No AI provider is currently configured.",
+          },
+        });
+
+        return;
+      }
+
+      const scorecard =
+        aiService.getProviderScorecard(
+          req.params.providerId,
+        );
+
+      if (!scorecard) {
+        res.status(404).json({
+          error: {
+            code: "PROVIDER_METRICS_NOT_FOUND",
+            message:
+              `No metrics were found for provider "${req.params.providerId}".`,
+          },
+        });
+
+        return;
+      }
+
+      res.json({
+        scorecard,
+      });
+    },
+  );
+
   router.post("/chat", async (req, res, next) => {
     try {
       if (!aiService) {

@@ -6,6 +6,7 @@ import type {
 import { AIRequestDirector } from "./director/AIRequestDirector";
 import { ProviderSelectionPolicy } from "./director/ProviderSelectionPolicy";
 import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
+import { ProviderMetricsRegistry } from "./metrics/ProviderMetricsRegistry";
 import { ProviderRegistry } from "./ProviderRegistry";
 
 /**
@@ -17,6 +18,8 @@ export class ProviderManager {
   constructor(
     registry: ProviderRegistry,
     policy = ProviderSelectionPolicy.FIRST_AVAILABLE,
+    private readonly metrics =
+      new ProviderMetricsRegistry(),
   ) {
     this.director = new AIRequestDirector(
       registry,
@@ -41,11 +44,55 @@ export class ProviderManager {
   }
 
   /**
-   * Executes a request using the generated execution plan.
+   * Returns the metrics registry used by this manager.
    */
-  async generate(request: AIRequest): Promise<AIResponse> {
-    const plan = this.plan(request);
+  getMetricsRegistry(): ProviderMetricsRegistry {
+    return this.metrics;
+  }
 
-    return plan.provider.generate(request);
+  /**
+   * Executes a request and records operational metrics.
+   */
+  async generate(
+    request: AIRequest,
+  ): Promise<AIResponse> {
+    const plan = this.plan(request);
+    const provider = plan.provider;
+    const startedAt = Date.now();
+
+    if (!this.metrics.has(provider.id)) {
+      this.metrics.register(
+        provider.id,
+        provider.name,
+      );
+    }
+
+    try {
+      const response =
+        await provider.generate(request);
+
+      this.metrics.recordExecution(
+        provider.id,
+        {
+          success: true,
+          responseTime:
+            Date.now() - startedAt,
+          tokensUsed: response.tokensUsed,
+        },
+      );
+
+      return response;
+    } catch (error) {
+      this.metrics.recordExecution(
+        provider.id,
+        {
+          success: false,
+          responseTime:
+            Date.now() - startedAt,
+        },
+      );
+
+      throw error;
+    }
   }
 }

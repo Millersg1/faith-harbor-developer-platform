@@ -1,5 +1,6 @@
 import { AIService } from "../AIService";
 import type { AIProviderInstaller } from "../installers/AIProviderInstaller";
+import { ProviderMetricsRegistry } from "../metrics/ProviderMetricsRegistry";
 import { ProviderManager } from "../ProviderManager";
 import { ProviderRegistry } from "../ProviderRegistry";
 
@@ -22,8 +23,25 @@ export class AIBootstrap {
       );
     }
 
-    const manager = new ProviderManager(registry);
+    const metrics =
+      new ProviderMetricsRegistry();
 
-    return new AIService(registry, manager);
+    for (const provider of registry.getAll()) {
+      metrics.register(
+        provider.id,
+        provider.name,
+      );
+    }
+
+    const manager = new ProviderManager(
+      registry,
+      undefined,
+      metrics,
+    );
+
+    return new AIService(
+      registry,
+      manager,
+    );
   }
 }

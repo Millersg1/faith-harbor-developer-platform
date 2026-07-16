@@ -4,6 +4,7 @@ import type {
   AIResponse,
 } from "./AIProvider";
 import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
+import type { AIProviderScorecard } from "./metrics/AIProviderScorecard";
 import { ProviderManager } from "./ProviderManager";
 import { ProviderRegistry } from "./ProviderRegistry";
 
@@ -24,13 +25,29 @@ export class AIService {
    */
   registerProvider(provider: AIProvider): void {
     this.registry.register(provider);
+
+    this.manager
+      .getMetricsRegistry()
+      .register(
+        provider.id,
+        provider.name,
+      );
   }
 
   /**
    * Removes an AI provider from the system.
    */
   unregisterProvider(providerId: string): boolean {
-    return this.registry.unregister(providerId);
+    const removed =
+      this.registry.unregister(providerId);
+
+    if (removed) {
+      this.manager
+        .getMetricsRegistry()
+        .unregister(providerId);
+    }
+
+    return removed;
   }
 
   /**
@@ -48,6 +65,27 @@ export class AIService {
   }
 
   /**
+   * Returns all AI provider operational scorecards.
+   */
+  getProviderScorecards():
+    readonly AIProviderScorecard[] {
+    return this.manager
+      .getMetricsRegistry()
+      .getAll();
+  }
+
+  /**
+   * Returns one provider operational scorecard.
+   */
+  getProviderScorecard(
+    providerId: string,
+  ): AIProviderScorecard | undefined {
+    return this.manager
+      .getMetricsRegistry()
+      .get(providerId);
+  }
+
+  /**
    * Creates an execution plan without running the request.
    */
   plan(request: AIRequest): AIExecutionPlan {
@@ -57,7 +95,9 @@ export class AIService {
   /**
    * Executes an AI request using the generated execution plan.
    */
-  async generate(request: AIRequest): Promise<AIResponse> {
+  async generate(
+    request: AIRequest,
+  ): Promise<AIResponse> {
     return this.manager.generate(request);
   }
 }
