@@ -4,7 +4,7 @@ import type {
   AIResponse,
 } from "./AIProvider";
 import { DefaultProviderAdvisor } from "./advisor/DefaultProviderAdvisor";
-import type { AIDecisionLog } from "./director/AIDecisionLog";
+import { AIDecisionLog } from "./director/AIDecisionLog";
 import { AIRequestDirector } from "./director/AIRequestDirector";
 import { ProviderSelectionPolicy } from "./director/ProviderSelectionPolicy";
 import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
@@ -22,6 +22,7 @@ export class ProviderManager {
     policy = ProviderSelectionPolicy.FIRST_AVAILABLE,
     private readonly metrics =
       new ProviderMetricsRegistry(),
+    decisionLog = new AIDecisionLog(),
   ) {
     const advisor =
       new DefaultProviderAdvisor(
@@ -33,6 +34,7 @@ export class ProviderManager {
       registry,
       policy,
       advisor,
+      decisionLog,
     );
   }
 

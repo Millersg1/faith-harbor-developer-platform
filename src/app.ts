@@ -6,6 +6,7 @@ import helmet from "helmet";
 
 import type { AIService } from "./ai/AIService";
 import { AIBootstrap } from "./ai/bootstrap/AIBootstrap";
+import type { DecisionLogDatabase } from "./ai/director/AIDecisionLog";
 import type { AIProviderInstaller } from "./ai/installers/AIProviderInstaller";
 import { BlackboxProviderInstaller } from "./ai/installers/BlackboxProviderInstaller";
 import { OllamaProviderInstaller } from "./ai/installers/OllamaProviderInstaller";
@@ -14,6 +15,7 @@ import { createAIRouter } from "./ai/routes/AIRouter";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
+import { SQLiteDatabase } from "./persistence/SQLiteDatabase";
 import { WorkflowEngine } from "./workflow";
 import { createWorkflowRouter } from "./workflow/WorkflowRouter";
 
@@ -49,7 +51,7 @@ function createProviderInstallers(): AIProviderInstaller[] {
  * Creates an Express application.
  *
  * Tests can call this synchronously without configuring
- * external AI providers.
+ * external AI providers or opening a database.
  */
 export function createApp(
   aiService?: AIService,
@@ -104,9 +106,9 @@ export function createApp(
       service: config.APP_NAME,
       version: config.APP_VERSION,
       environment: config.NODE_ENV,
-      databaseConfigured: Boolean(
-        config.DATABASE_URL,
-      ),
+      databaseConfigured:
+        Boolean(app.locals.database) ||
+        Boolean(config.DATABASE_URL),
       aiConfigured: Boolean(aiService),
       timestamp: new Date().toISOString(),
     });
@@ -165,14 +167,28 @@ export function createApp(
 }
 
 /**
- * Creates the production application and installs all
- * configured AI providers.
+ * Creates the production application, initializes SQLite,
+ * and installs all configured AI providers.
  */
 export async function createConfiguredApp() {
+  const database = new SQLiteDatabase();
   const installers = createProviderInstallers();
 
-  const aiService =
-    await AIBootstrap.create(installers);
+  try {
+    const aiService =
+      await AIBootstrap.create(
+        installers,
+        database.connection as unknown as
+          DecisionLogDatabase,
+      );
 
-  return createApp(aiService);
+    const app = createApp(aiService);
+
+    app.locals.database = database;
+
+    return app;
+  } catch (error) {
+    database.close();
+    throw error;
+  }
 }

@@ -1,4 +1,9 @@
 import { AIService } from "../AIService";
+import {
+  AIDecisionLog,
+  type DecisionLogDatabase,
+} from "../director/AIDecisionLog";
+import { ProviderSelectionPolicy } from "../director/ProviderSelectionPolicy";
 import type { AIProviderInstaller } from "../installers/AIProviderInstaller";
 import { ProviderMetricsRegistry } from "../metrics/ProviderMetricsRegistry";
 import { ProviderManager } from "../ProviderManager";
@@ -7,9 +12,13 @@ import { ProviderRegistry } from "../ProviderRegistry";
 export class AIBootstrap {
   /**
    * Creates a configured AIService and runs all provider installers.
+   *
+   * When a database connection is supplied, Director decisions
+   * are loaded from and persisted to that database.
    */
   static async create(
     installers: readonly AIProviderInstaller[],
+    database?: DecisionLogDatabase,
   ): Promise<AIService> {
     const registry = new ProviderRegistry();
 
@@ -33,10 +42,14 @@ export class AIBootstrap {
       );
     }
 
+    const decisionLog =
+      new AIDecisionLog(database);
+
     const manager = new ProviderManager(
       registry,
-      undefined,
+      ProviderSelectionPolicy.METRICS_DRIVEN,
       metrics,
+      decisionLog,
     );
 
     return new AIService(

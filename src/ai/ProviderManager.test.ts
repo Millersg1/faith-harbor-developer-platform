@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { ProviderManager } from "./ProviderManager";
-import { ProviderRegistry } from "./ProviderRegistry";
-import { ProviderSelectionPolicy } from "./director/ProviderSelectionPolicy";
 import type {
   AIProvider,
   AIRequest,
@@ -11,10 +8,16 @@ import type {
   ProviderMetadata,
 } from "./AIProvider";
 import type { AICapability } from "./Capability";
+import { ProviderSelectionPolicy } from "./director/ProviderSelectionPolicy";
+import { ProviderMetricsRegistry } from "./metrics/ProviderMetricsRegistry";
+import { ProviderManager } from "./ProviderManager";
+import { ProviderRegistry } from "./ProviderRegistry";
 
 class TestProvider implements AIProvider {
   readonly id: string;
+
   readonly name: string;
+
   readonly capabilities: readonly AICapability[];
 
   readonly metadata: ProviderMetadata = {
@@ -37,7 +40,9 @@ class TestProvider implements AIProvider {
     this.capabilities = capabilities;
   }
 
-  async generate(request: AIRequest): Promise<AIResponse> {
+  async generate(
+    request: AIRequest,
+  ): Promise<AIResponse> {
     return {
       provider: this.id,
       capability: request.capability,
@@ -165,6 +170,69 @@ describe("ProviderManager", () => {
     expect(plan.provider).toBe(provider);
     expect(plan.reason).toBe(
       "Highest priority provider.",
+    );
+  });
+
+  it("selects the highest-scoring provider with metrics-driven routing", () => {
+    const registry = new ProviderRegistry();
+    const metrics = new ProviderMetricsRegistry();
+
+    const slowerProvider = new TestProvider(
+      "slower",
+      ["writing"],
+    );
+
+    const strongerProvider = new TestProvider(
+      "stronger",
+      ["writing"],
+    );
+
+    registry.register(slowerProvider);
+    registry.register(strongerProvider);
+
+    metrics.register(
+      slowerProvider.id,
+      slowerProvider.name,
+    );
+
+    metrics.register(
+      strongerProvider.id,
+      strongerProvider.name,
+    );
+
+    metrics.recordExecution(
+      slowerProvider.id,
+      {
+        success: false,
+        responseTime: 3000,
+      },
+    );
+
+    metrics.recordExecution(
+      strongerProvider.id,
+      {
+        success: true,
+        responseTime: 100,
+      },
+    );
+
+    const manager = new ProviderManager(
+      registry,
+      ProviderSelectionPolicy.METRICS_DRIVEN,
+      metrics,
+    );
+
+    const plan = manager.plan({
+      capability: "writing",
+      prompt: "Choose the best provider",
+    });
+
+    expect(plan.provider).toBe(
+      strongerProvider,
+    );
+
+    expect(plan.reason).toContain(
+      'Provider "stronger" has the highest operational score',
     );
   });
 });

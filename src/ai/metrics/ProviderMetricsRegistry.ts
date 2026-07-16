@@ -1,5 +1,16 @@
 import type { AIProviderScorecard } from "./AIProviderScorecard";
+import { DefaultProviderScoringPolicy } from "./DefaultProviderScoringPolicy";
+import type { ProviderScoringPolicy } from "./ProviderScoringPolicy";
 import type { ProviderStatistics } from "./ProviderStatistics";
+
+interface DatabaseStatement {
+  all(...parameters: unknown[]): unknown[];
+  run(...parameters: unknown[]): unknown;
+}
+
+export interface ProviderMetricsDatabase {
+  prepare(sql: string): DatabaseStatement;
+}
 
 /**
  * Result data used when recording one provider execution.
@@ -14,10 +25,23 @@ export interface ProviderExecutionResult {
 
 /**
  * Stores operational metrics for registered AI providers.
+ *
+ * When a database connection is supplied, existing scorecards
+ * are loaded at startup and updates are persisted automatically.
  */
 export class ProviderMetricsRegistry {
   private readonly scorecards =
     new Map<string, AIProviderScorecard>();
+
+  constructor(
+    private readonly scoringPolicy:
+      ProviderScoringPolicy =
+      new DefaultProviderScoringPolicy(),
+    private readonly database?:
+      ProviderMetricsDatabase,
+  ) {
+    this.loadPersistedScorecards();
+  }
 
   /**
    * Creates an empty scorecard for a provider.
@@ -42,7 +66,7 @@ export class ProviderMetricsRegistry {
       estimatedCost: 0,
     };
 
-    const scorecard: AIProviderScorecard = {
+    const initialScorecard: AIProviderScorecard = {
       providerId,
       providerName,
       statistics,
@@ -50,10 +74,20 @@ export class ProviderMetricsRegistry {
       overallScore: 100,
     };
 
+    const scorecard: AIProviderScorecard = {
+      ...initialScorecard,
+      overallScore:
+        this.scoringPolicy.score(
+          initialScorecard,
+        ),
+    };
+
     this.scorecards.set(
       providerId,
       scorecard,
     );
+
+    this.persistScorecard(scorecard);
 
     return scorecard;
   }
@@ -78,9 +112,11 @@ export class ProviderMetricsRegistry {
       scorecard.statistics.requests;
 
     const requests = previousRequests + 1;
+
     const successes =
       scorecard.statistics.successes +
       (result.success ? 1 : 0);
+
     const failures =
       scorecard.statistics.failures +
       (result.success ? 0 : 1);
@@ -106,38 +142,40 @@ export class ProviderMetricsRegistry {
       (result.estimatedCost ?? 0);
 
     const reliabilityScore =
-      requests === 0
-        ? 100
-        : (successes / requests) * 100;
+      (successes / requests) * 100;
 
-    const overallScore =
-      this.calculateOverallScore(
+    const updatedWithoutScore:
+      AIProviderScorecard = {
+        ...scorecard,
+        statistics: {
+          requests,
+          successes,
+          failures,
+          averageResponseTime,
+          averageTokens,
+          estimatedCost,
+          lastUsed:
+            result.completedAt ??
+            new Date().toISOString(),
+        },
         reliabilityScore,
-        averageResponseTime,
-        estimatedCost,
-      );
+        overallScore: scorecard.overallScore,
+      };
 
     const updated: AIProviderScorecard = {
-      ...scorecard,
-      statistics: {
-        requests,
-        successes,
-        failures,
-        averageResponseTime,
-        averageTokens,
-        estimatedCost,
-        lastUsed:
-          result.completedAt ??
-          new Date().toISOString(),
-      },
-      reliabilityScore,
-      overallScore,
+      ...updatedWithoutScore,
+      overallScore:
+        this.scoringPolicy.score(
+          updatedWithoutScore,
+        ),
     };
 
     this.scorecards.set(
       providerId,
       updated,
     );
+
+    this.persistScorecard(updated);
 
     return updated;
   }
@@ -171,7 +209,19 @@ export class ProviderMetricsRegistry {
    * Removes a provider scorecard.
    */
   unregister(providerId: string): boolean {
-    return this.scorecards.delete(providerId);
+    const removed =
+      this.scorecards.delete(providerId);
+
+    if (removed) {
+      this.database
+        ?.prepare(`
+          DELETE FROM ai_provider_metrics
+          WHERE provider_id = ?
+        `)
+        .run(providerId);
+    }
+
+    return removed;
   }
 
   /**
@@ -179,6 +229,140 @@ export class ProviderMetricsRegistry {
    */
   get size(): number {
     return this.scorecards.size;
+  }
+
+  /**
+   * Loads previously persisted scorecards from SQLite.
+   */
+  private loadPersistedScorecards(): void {
+    if (!this.database) {
+      return;
+    }
+
+    const rows = this.database
+      .prepare(`
+        SELECT
+          provider_id,
+          provider_name,
+          requests,
+          successes,
+          failures,
+          average_response_time,
+          average_tokens,
+          estimated_cost,
+          last_used,
+          reliability_score,
+          overall_score
+        FROM ai_provider_metrics
+        ORDER BY provider_id ASC
+      `)
+      .all() as Array<{
+        provider_id: string;
+        provider_name: string;
+        requests: number;
+        successes: number;
+        failures: number;
+        average_response_time: number;
+        average_tokens: number;
+        estimated_cost: number;
+        last_used: string | null;
+        reliability_score: number;
+        overall_score: number;
+      }>;
+
+    for (const row of rows) {
+      const statistics: ProviderStatistics = {
+        requests: row.requests,
+        successes: row.successes,
+        failures: row.failures,
+        averageResponseTime:
+          row.average_response_time,
+        averageTokens:
+          row.average_tokens,
+        estimatedCost:
+          row.estimated_cost,
+      };
+
+      if (row.last_used) {
+        statistics.lastUsed =
+          row.last_used;
+      }
+
+      this.scorecards.set(
+        row.provider_id,
+        {
+          providerId: row.provider_id,
+          providerName: row.provider_name,
+          statistics,
+          reliabilityScore:
+            row.reliability_score,
+          overallScore:
+            row.overall_score,
+        },
+      );
+    }
+  }
+
+  /**
+   * Inserts or updates one provider scorecard in SQLite.
+   */
+  private persistScorecard(
+    scorecard: AIProviderScorecard,
+  ): void {
+    if (!this.database) {
+      return;
+    }
+
+    this.database
+      .prepare(`
+        INSERT INTO ai_provider_metrics (
+          provider_id,
+          provider_name,
+          requests,
+          successes,
+          failures,
+          average_response_time,
+          average_tokens,
+          estimated_cost,
+          last_used,
+          reliability_score,
+          overall_score,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider_id) DO UPDATE SET
+          provider_name = excluded.provider_name,
+          requests = excluded.requests,
+          successes = excluded.successes,
+          failures = excluded.failures,
+          average_response_time =
+            excluded.average_response_time,
+          average_tokens =
+            excluded.average_tokens,
+          estimated_cost =
+            excluded.estimated_cost,
+          last_used = excluded.last_used,
+          reliability_score =
+            excluded.reliability_score,
+          overall_score =
+            excluded.overall_score,
+          updated_at = excluded.updated_at
+      `)
+      .run(
+        scorecard.providerId,
+        scorecard.providerName,
+        scorecard.statistics.requests,
+        scorecard.statistics.successes,
+        scorecard.statistics.failures,
+        scorecard.statistics
+          .averageResponseTime,
+        scorecard.statistics.averageTokens,
+        scorecard.statistics.estimatedCost,
+        scorecard.statistics.lastUsed ?? null,
+        scorecard.reliabilityScore,
+        scorecard.overallScore,
+        new Date().toISOString(),
+      );
   }
 
   private calculateAverage(
@@ -191,27 +375,5 @@ export class ProviderMetricsRegistry {
       newValue;
 
     return total / (previousCount + 1);
-  }
-
-  private calculateOverallScore(
-    reliabilityScore: number,
-    averageResponseTime: number,
-    estimatedCost: number,
-  ): number {
-    const responsePenalty =
-      Math.min(averageResponseTime / 100, 20);
-
-    const costPenalty =
-      Math.min(estimatedCost * 10, 20);
-
-    return Math.max(
-      0,
-      Math.min(
-        100,
-        reliabilityScore -
-          responsePenalty -
-          costPenalty,
-      ),
-    );
   }
 }
