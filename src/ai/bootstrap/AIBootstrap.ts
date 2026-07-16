@@ -5,20 +5,31 @@ import {
 } from "../director/AIDecisionLog";
 import { ProviderSelectionPolicy } from "../director/ProviderSelectionPolicy";
 import type { AIProviderInstaller } from "../installers/AIProviderInstaller";
-import { ProviderMetricsRegistry } from "../metrics/ProviderMetricsRegistry";
+import { DefaultProviderScoringPolicy } from "../metrics/DefaultProviderScoringPolicy";
+import {
+  ProviderMetricsRegistry,
+  type ProviderMetricsDatabase,
+} from "../metrics/ProviderMetricsRegistry";
 import { ProviderManager } from "../ProviderManager";
 import { ProviderRegistry } from "../ProviderRegistry";
 
+export interface AIOperationsDatabase
+  extends DecisionLogDatabase,
+    ProviderMetricsDatabase {}
+
+/**
+ * Creates the configured AI operations environment.
+ */
 export class AIBootstrap {
   /**
-   * Creates a configured AIService and runs all provider installers.
+   * Installs providers and creates the AI service.
    *
-   * When a database connection is supplied, Director decisions
-   * are loaded from and persisted to that database.
+   * When a database connection is supplied, provider metrics
+   * and Director decisions are loaded and persisted.
    */
   static async create(
     installers: readonly AIProviderInstaller[],
-    database?: DecisionLogDatabase,
+    database?: AIOperationsDatabase,
   ): Promise<AIService> {
     const registry = new ProviderRegistry();
 
@@ -33,7 +44,10 @@ export class AIBootstrap {
     }
 
     const metrics =
-      new ProviderMetricsRegistry();
+      new ProviderMetricsRegistry(
+        new DefaultProviderScoringPolicy(),
+        database,
+      );
 
     for (const provider of registry.getAll()) {
       metrics.register(
