@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { AIService } from "../ai/AIService";
 import type { RuntimeMessage } from "../ai/runtime/RuntimeMessage";
+import { ClientService } from "../clients/ClientService";
 import type { ProposalRecord } from "./ProposalRecord";
 import { ProposalRepository } from "./ProposalRepository";
 import type { ProposalRequest } from "./ProposalRequest";
@@ -12,6 +13,7 @@ import type { ProposalRequest } from "./ProposalRequest";
 export class ProposalService {
   constructor(
     private readonly ai: AIService,
+    private readonly clients: ClientService,
     private readonly repository =
       new ProposalRepository(),
   ) {}
@@ -22,9 +24,21 @@ export class ProposalService {
   async generate(
     request: ProposalRequest,
   ): Promise<ProposalRecord> {
+    const client =
+      this.findOrCreateClient(
+        request.clientName,
+      );
+
     const session =
       this.ai.createWorkerSession(
         "proposal-writer",
+        {
+          metadata: {
+            clientId: client.id,
+            clientName:
+              client.companyName,
+          },
+        },
       );
 
     await this.ai.sendRuntimeMessage(
@@ -42,7 +56,9 @@ export class ProposalService {
 
     const proposal: ProposalRecord = {
       id: randomUUID(),
-      clientName: request.clientName,
+      clientId: client.id,
+      clientName:
+        client.companyName,
       service:
         this.getServiceName(request),
       requestedOutcome:
@@ -54,18 +70,11 @@ export class ProposalService {
       status: "draft",
       createdAt: now,
       updatedAt: now,
-    };
-
-    if (request.metadata) {
-      proposal.metadata = {
+      metadata: {
         ...request.metadata,
         runtimeSessionId: session.id,
-      };
-    } else {
-      proposal.metadata = {
-        runtimeSessionId: session.id,
-      };
-    }
+      },
+    };
 
     return this.repository.create(
       proposal,
@@ -82,10 +91,65 @@ export class ProposalService {
   /**
    * Returns one saved proposal.
    */
-  get(proposalId: string): ProposalRecord {
+  get(
+    proposalId: string,
+  ): ProposalRecord {
     return this.repository.get(
       proposalId,
     );
+  }
+
+  /**
+   * Returns proposals belonging to one client.
+   */
+  listForClient(
+    clientId: string,
+  ): readonly ProposalRecord[] {
+    return this.repository
+      .list()
+      .filter(
+        (proposal) =>
+          proposal.clientId ===
+          clientId,
+      );
+  }
+
+  /**
+   * Finds an existing client by company name or creates one.
+   */
+  private findOrCreateClient(
+    companyName: string,
+  ) {
+    const normalizedName =
+      companyName
+        .trim()
+        .toLowerCase();
+
+    const existing =
+      this.clients
+        .list()
+        .find(
+          (client) =>
+            client.companyName
+              .trim()
+              .toLowerCase() ===
+            normalizedName,
+        );
+
+    if (existing) {
+      return existing;
+    }
+
+    return this.clients.create({
+      companyName:
+        companyName.trim(),
+
+      primaryContact:
+        "To be confirmed",
+
+      notes:
+        "Client record created automatically from proposal generation.",
+    });
   }
 
   /**

@@ -3,6 +3,8 @@ import type { ProposalStatus } from "./ProposalStatus";
 export interface ProposalRecord {
   id: string;
 
+  clientId: string;
+
   clientName: string;
 
   service: string;

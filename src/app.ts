@@ -3,6 +3,7 @@ import { join } from "node:path";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
+import type { DatabaseSync } from "node:sqlite";
 
 import type { AIService } from "./ai/AIService";
 import {
@@ -14,10 +15,13 @@ import { BlackboxProviderInstaller } from "./ai/installers/BlackboxProviderInsta
 import { OllamaProviderInstaller } from "./ai/installers/OllamaProviderInstaller";
 import { OpenAIProviderInstaller } from "./ai/installers/OpenAIProviderInstaller";
 import { createAIRouter } from "./ai/routes/AIRouter";
+import { createClientRouter } from "./clients/ClientRouter";
+import { ClientService } from "./clients/ClientService";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
 import { SQLiteDatabase } from "./persistence/SQLiteDatabase";
+import { ProposalRepository } from "./proposals/ProposalRepository";
 import { createProposalRouter } from "./proposals/ProposalRouter";
 import { ProposalService } from "./proposals/ProposalService";
 import { WorkflowEngine } from "./workflow";
@@ -34,9 +38,12 @@ function createProviderInstallers():
   if (config.OPENAI_API_KEY) {
     installers.push(
       new OpenAIProviderInstaller({
-        apiKey: config.OPENAI_API_KEY,
+        apiKey:
+          config.OPENAI_API_KEY,
+
         organization:
           config.OPENAI_ORGANIZATION,
+
         project:
           config.OPENAI_PROJECT,
       }),
@@ -59,9 +66,13 @@ function createProviderInstallers():
  *
  * Tests can call this synchronously without configuring
  * external AI providers or opening a database.
+ *
+ * When a SQLite connection is supplied, clients and proposals
+ * persist across application restarts.
  */
 export function createApp(
   aiService?: AIService,
+  database?: DatabaseSync,
 ) {
   const app = express();
 
@@ -71,9 +82,19 @@ export function createApp(
   const departmentService =
     new DepartmentService();
 
+  const clientService =
+    new ClientService(database);
+
+  const proposalRepository =
+    new ProposalRepository(database);
+
   const proposalService =
     aiService
-      ? new ProposalService(aiService)
+      ? new ProposalService(
+          aiService,
+          clientService,
+          proposalRepository,
+        )
       : undefined;
 
   for (
@@ -86,8 +107,10 @@ export function createApp(
   }
 
   app.disable("x-powered-by");
+
   app.use(helmet());
   app.use(cors());
+
   app.use(
     express.json({
       limit: "1mb",
@@ -115,20 +138,37 @@ export function createApp(
 
   app.get("/", (_req, res) => {
     res.json({
-      name: config.APP_NAME,
-      version: config.APP_VERSION,
+      name:
+        config.APP_NAME,
+
+      version:
+        config.APP_VERSION,
+
       mission:
         "Technology is our tool. People are our purpose. Christ is our foundation.",
+
       status:
-        "client-automation-foundation",
+        "persistent-client-workspace",
+
       links: {
-        console: "/console/",
-        health: "/health",
+        console:
+          "/console/",
+
+        health:
+          "/health",
+
         departments:
           "/api/v1/departments",
-        ai: "/api/v1/ai",
+
+        clients:
+          "/api/v1/clients",
+
+        ai:
+          "/api/v1/ai",
+
         proposals:
           "/api/v1/proposals",
+
         workflows:
           "/api/v1/workflows",
       },
@@ -137,22 +177,39 @@ export function createApp(
 
   app.get("/health", (_req, res) => {
     res.json({
-      status: "ok",
-      service: config.APP_NAME,
-      version: config.APP_VERSION,
+      status:
+        "ok",
+
+      service:
+        config.APP_NAME,
+
+      version:
+        config.APP_VERSION,
+
       environment:
         config.NODE_ENV,
+
       databaseConfigured:
-        Boolean(
-          app.locals.database,
-        ) ||
+        Boolean(database) ||
         Boolean(
           config.DATABASE_URL,
         ),
+
       aiConfigured:
         Boolean(aiService),
+
       proposalGenerationAvailable:
         Boolean(proposalService),
+
+      clientManagementAvailable:
+        true,
+
+      persistentClientStorage:
+        Boolean(database),
+
+      persistentProposalStorage:
+        Boolean(database),
+
       timestamp:
         new Date().toISOString(),
     });
@@ -168,9 +225,18 @@ export function createApp(
       res.json({
         count:
           departments.length,
+
         departments,
       });
     },
+  );
+
+  app.use(
+    "/api/v1/clients",
+    createClientRouter(
+      clientService,
+      proposalService,
+    ),
   );
 
   app.use(
@@ -195,7 +261,9 @@ export function createApp(
   app.use((_req, res) => {
     res.status(404).json({
       error: {
-        code: "NOT_FOUND",
+        code:
+          "NOT_FOUND",
+
         message:
           "The requested resource was not found.",
       },
@@ -216,6 +284,7 @@ export function createApp(
         error: {
           code:
             "INTERNAL_ERROR",
+
           message:
             "An unexpected error occurred.",
         },
@@ -241,12 +310,16 @@ export async function createConfiguredApp() {
     const aiService =
       await AIBootstrap.create(
         installers,
+
         database.connection as unknown as
           AIOperationsDatabase,
       );
 
     const app =
-      createApp(aiService);
+      createApp(
+        aiService,
+        database.connection,
+      );
 
     app.locals.database =
       database;
@@ -254,6 +327,7 @@ export async function createConfiguredApp() {
     return app;
   } catch (error) {
     database.close();
+
     throw error;
   }
 }

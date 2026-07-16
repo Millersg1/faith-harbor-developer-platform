@@ -59,7 +59,7 @@ export class SQLiteDatabase {
   }
 
   /**
-   * Creates the initial AI Operations tables.
+   * Creates the Faith Harbor OS database tables.
    */
   private initialize(): void {
     this.database.exec(`
@@ -89,11 +89,53 @@ export class SQLiteDatabase {
         model TEXT NOT NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS clients (
+        id TEXT PRIMARY KEY,
+        company_name TEXT NOT NULL,
+        primary_contact TEXT NOT NULL,
+        email TEXT,
+        phone TEXT,
+        website TEXT,
+        industry TEXT,
+        notes TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS proposals (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        client_name TEXT NOT NULL,
+        service TEXT NOT NULL,
+        requested_outcome TEXT NOT NULL,
+        proposal TEXT NOT NULL,
+        status TEXT NOT NULL,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE CASCADE
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_provider
         ON ai_decisions(provider_id);
+
+      CREATE INDEX IF NOT EXISTS idx_clients_company_name
+        ON clients(company_name);
+
+      CREATE INDEX IF NOT EXISTS idx_proposals_client
+        ON proposals(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_proposals_status
+        ON proposals(status);
+
+      CREATE INDEX IF NOT EXISTS idx_proposals_created
+        ON proposals(created_at);
     `);
   }
 }

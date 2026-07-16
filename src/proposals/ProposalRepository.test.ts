@@ -6,38 +6,40 @@ import {
 
 import { ProposalRepository } from "./ProposalRepository";
 
-describe(
-  "ProposalRepository",
-  () => {
-    it(
-      "stores and retrieves proposals",
-      () => {
-        const repository =
-          new ProposalRepository();
+describe("ProposalRepository", () => {
+  it("stores and retrieves proposals", () => {
+    const repository =
+      new ProposalRepository();
 
-        repository.create({
-          id: "proposal-1",
-          clientName: "Acme",
-          service: "Managed IT",
-          requestedOutcome:
-            "Managed IT Proposal",
-          proposal: "Proposal text",
-          status: "draft",
-          createdAt:
-            new Date().toISOString(),
-          updatedAt:
-            new Date().toISOString(),
-        });
+    const now =
+      new Date().toISOString();
 
-        expect(
-          repository.list(),
-        ).toHaveLength(1);
+    repository.create({
+      id: "proposal-1",
+      clientId: "client-1",
+      clientName: "Acme",
+      service: "Managed IT",
+      requestedOutcome:
+        "Managed IT Proposal",
+      proposal: "Proposal text",
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
+    });
 
-        expect(
-          repository.get("proposal-1")
-            .clientName,
-        ).toBe("Acme");
-      },
+    expect(
+      repository.list(),
+    ).toHaveLength(1);
+
+    const proposal =
+      repository.get("proposal-1");
+
+    expect(proposal.clientId).toBe(
+      "client-1",
     );
-  },
-);
+
+    expect(proposal.clientName).toBe(
+      "Acme",
+    );
+  });
+});
