@@ -216,6 +216,54 @@ export class WorkflowEngine {
     );
   }
 
+  /**
+   * Advances a workflow through every safe automatic
+   * transition available from its current state.
+   *
+   * Workflows requiring approval stop in
+   * "waiting_for_approval". Approved workflows continue
+   * to completion.
+   */
+  advance(
+    id: string,
+    actor = "automation",
+  ): WorkflowRecord {
+    let workflow = this.get(id);
+
+    if (workflow.state === "draft") {
+      workflow = this.submit(
+        id,
+        actor,
+      );
+    }
+
+    if (workflow.state === "ready") {
+      workflow = this.start(
+        id,
+        actor,
+      );
+    }
+
+    if (
+      workflow.state === "running" &&
+      !workflow.requiresApproval
+    ) {
+      workflow = this.complete(
+        id,
+        actor,
+      );
+    }
+
+    if (workflow.state === "approved") {
+      workflow = this.complete(
+        id,
+        actor,
+      );
+    }
+
+    return workflow;
+  }
+
   history(id: string) {
     this.get(id);
 

@@ -12,6 +12,9 @@ import {
 } from "../metrics/ProviderMetricsRegistry";
 import { ProviderManager } from "../ProviderManager";
 import { ProviderRegistry } from "../ProviderRegistry";
+import { RuntimeSessionManager } from "../runtime/RuntimeSessionManager";
+import { AIWorkerRegistry } from "../workers/AIWorkerRegistry";
+import { BuiltinWorkerInstaller } from "../workers/installers/BuiltinWorkerInstaller";
 
 export interface AIOperationsDatabase
   extends DecisionLogDatabase,
@@ -22,7 +25,8 @@ export interface AIOperationsDatabase
  */
 export class AIBootstrap {
   /**
-   * Installs providers and creates the AI service.
+   * Installs providers and workers, configures the runtime,
+   * and creates the AI service.
    *
    * When a database connection is supplied, provider metrics
    * and Director decisions are loaded and persisted.
@@ -66,9 +70,22 @@ export class AIBootstrap {
       decisionLog,
     );
 
+    const runtime =
+      new RuntimeSessionManager();
+
+    const workers =
+      new AIWorkerRegistry();
+
+    const workerInstaller =
+      new BuiltinWorkerInstaller();
+
+    await workerInstaller.install(workers);
+
     return new AIService(
       registry,
       manager,
+      runtime,
+      workers,
     );
   }
 }
