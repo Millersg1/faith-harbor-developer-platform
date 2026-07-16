@@ -5,8 +5,10 @@ import express from "express";
 import helmet from "helmet";
 
 import type { AIService } from "./ai/AIService";
-import { AIBootstrap } from "./ai/bootstrap/AIBootstrap";
-import type { DecisionLogDatabase } from "./ai/director/AIDecisionLog";
+import {
+  AIBootstrap,
+  type AIOperationsDatabase,
+} from "./ai/bootstrap/AIBootstrap";
 import type { AIProviderInstaller } from "./ai/installers/AIProviderInstaller";
 import { BlackboxProviderInstaller } from "./ai/installers/BlackboxProviderInstaller";
 import { OllamaProviderInstaller } from "./ai/installers/OllamaProviderInstaller";
@@ -16,10 +18,13 @@ import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
 import { SQLiteDatabase } from "./persistence/SQLiteDatabase";
+import { createProposalRouter } from "./proposals/ProposalRouter";
+import { ProposalService } from "./proposals/ProposalService";
 import { WorkflowEngine } from "./workflow";
 import { createWorkflowRouter } from "./workflow/WorkflowRouter";
 
-function createProviderInstallers(): AIProviderInstaller[] {
+function createProviderInstallers():
+  AIProviderInstaller[] {
   const installers: AIProviderInstaller[] = [
     new OllamaProviderInstaller({
       model: "hermes3:latest",
@@ -30,8 +35,10 @@ function createProviderInstallers(): AIProviderInstaller[] {
     installers.push(
       new OpenAIProviderInstaller({
         apiKey: config.OPENAI_API_KEY,
-        organization: config.OPENAI_ORGANIZATION,
-        project: config.OPENAI_PROJECT,
+        organization:
+          config.OPENAI_ORGANIZATION,
+        project:
+          config.OPENAI_PROJECT,
       }),
     );
   }
@@ -57,17 +64,35 @@ export function createApp(
   aiService?: AIService,
 ) {
   const app = express();
-  const workflowEngine = new WorkflowEngine();
-  const departmentService = new DepartmentService();
 
-  for (const department of defaultDepartments) {
-    departmentService.createDepartment(department);
+  const workflowEngine =
+    new WorkflowEngine();
+
+  const departmentService =
+    new DepartmentService();
+
+  const proposalService =
+    aiService
+      ? new ProposalService(aiService)
+      : undefined;
+
+  for (
+    const department of
+    defaultDepartments
+  ) {
+    departmentService.createDepartment(
+      department,
+    );
   }
 
   app.disable("x-powered-by");
   app.use(helmet());
   app.use(cors());
-  app.use(express.json({ limit: "1mb" }));
+  app.use(
+    express.json({
+      limit: "1mb",
+    }),
+  );
 
   app.use((_req, res, next) => {
     res.setHeader(
@@ -80,7 +105,12 @@ export function createApp(
 
   app.use(
     "/console",
-    express.static(join(process.cwd(), "public")),
+    express.static(
+      join(
+        process.cwd(),
+        "public",
+      ),
+    ),
   );
 
   app.get("/", (_req, res) => {
@@ -89,13 +119,18 @@ export function createApp(
       version: config.APP_VERSION,
       mission:
         "Technology is our tool. People are our purpose. Christ is our foundation.",
-      status: "workflow-foundation",
+      status:
+        "client-automation-foundation",
       links: {
         console: "/console/",
         health: "/health",
-        departments: "/api/v1/departments",
+        departments:
+          "/api/v1/departments",
         ai: "/api/v1/ai",
-        workflows: "/api/v1/workflows",
+        proposals:
+          "/api/v1/proposals",
+        workflows:
+          "/api/v1/workflows",
       },
     });
   });
@@ -105,24 +140,38 @@ export function createApp(
       status: "ok",
       service: config.APP_NAME,
       version: config.APP_VERSION,
-      environment: config.NODE_ENV,
+      environment:
+        config.NODE_ENV,
       databaseConfigured:
-        Boolean(app.locals.database) ||
-        Boolean(config.DATABASE_URL),
-      aiConfigured: Boolean(aiService),
-      timestamp: new Date().toISOString(),
+        Boolean(
+          app.locals.database,
+        ) ||
+        Boolean(
+          config.DATABASE_URL,
+        ),
+      aiConfigured:
+        Boolean(aiService),
+      proposalGenerationAvailable:
+        Boolean(proposalService),
+      timestamp:
+        new Date().toISOString(),
     });
   });
 
-  app.get("/api/v1/departments", (_req, res) => {
-    const departments =
-      departmentService.listDepartments();
+  app.get(
+    "/api/v1/departments",
+    (_req, res) => {
+      const departments =
+        departmentService
+          .listDepartments();
 
-    res.json({
-      count: departments.length,
-      departments,
-    });
-  });
+      res.json({
+        count:
+          departments.length,
+        departments,
+      });
+    },
+  );
 
   app.use(
     "/api/v1/ai",
@@ -130,8 +179,17 @@ export function createApp(
   );
 
   app.use(
+    "/api/v1/proposals",
+    createProposalRouter(
+      proposalService,
+    ),
+  );
+
+  app.use(
     "/api/v1/workflows",
-    createWorkflowRouter(workflowEngine),
+    createWorkflowRouter(
+      workflowEngine,
+    ),
   );
 
   app.use((_req, res) => {
@@ -149,13 +207,15 @@ export function createApp(
       error: unknown,
       _req: express.Request,
       res: express.Response,
-      _next: express.NextFunction,
+      _next:
+        express.NextFunction,
     ) => {
       console.error(error);
 
       res.status(500).json({
         error: {
-          code: "INTERNAL_ERROR",
+          code:
+            "INTERNAL_ERROR",
           message:
             "An unexpected error occurred.",
         },
@@ -168,23 +228,28 @@ export function createApp(
 
 /**
  * Creates the production application, initializes SQLite,
- * and installs all configured AI providers.
+ * and installs all configured AI providers and workers.
  */
 export async function createConfiguredApp() {
-  const database = new SQLiteDatabase();
-  const installers = createProviderInstallers();
+  const database =
+    new SQLiteDatabase();
+
+  const installers =
+    createProviderInstallers();
 
   try {
     const aiService =
       await AIBootstrap.create(
         installers,
         database.connection as unknown as
-          DecisionLogDatabase,
+          AIOperationsDatabase,
       );
 
-    const app = createApp(aiService);
+    const app =
+      createApp(aiService);
 
-    app.locals.database = database;
+    app.locals.database =
+      database;
 
     return app;
   } catch (error) {

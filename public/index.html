@@ -8,51 +8,336 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>Faith Harbor OS AI Console</title>
+    <title>Faith Harbor OS</title>
 
     <link rel="stylesheet" href="css/app.css">
 </head>
 
 <body>
     <main class="container">
-        <header>
-            <h1>Faith Harbor OS</h1>
+        <header class="page-header">
+            <div>
+                <p class="eyebrow">
+                    Faith Harbor LLC
+                </p>
 
-            <p>
-                Technology is our tool. People are our purpose.
-                Christ is our foundation.
-            </p>
+                <h1>Faith Harbor OS</h1>
+
+                <p class="mission">
+                    Technology is our tool. People are our purpose.
+                    Christ is our foundation.
+                </p>
+            </div>
+
+            <div class="status-badge">
+                Client Automation
+            </div>
         </header>
 
-        <section class="card">
-            <h2>AI Console</h2>
-
-            <label for="provider">Provider</label>
-
-            <select id="provider">
-                <option value="ollama">Ollama</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="openrouter">OpenRouter</option>
-            </select>
-
-            <label for="prompt">Prompt</label>
-
-            <textarea
-                id="prompt"
-                rows="8"
-                placeholder="Ask Faith Harbor OS something..."
-            ></textarea>
-
-            <button id="generate" type="button">
-                Generate
+        <nav class="tabs" aria-label="Faith Harbor tools">
+            <button
+                class="tab-button active"
+                id="proposal-tab"
+                type="button"
+                data-panel="proposal-panel"
+            >
+                Proposal Generator
             </button>
+
+            <button
+                class="tab-button"
+                id="ai-tab"
+                type="button"
+                data-panel="ai-panel"
+            >
+                AI Console
+            </button>
+        </nav>
+
+        <section
+            class="tab-panel active"
+            id="proposal-panel"
+        >
+            <div class="layout-grid">
+                <section class="card">
+                    <div class="card-heading">
+                        <div>
+                            <p class="eyebrow">
+                                Client Delivery
+                            </p>
+
+                            <h2>Generate a Proposal</h2>
+                        </div>
+                    </div>
+
+                    <p class="help-text">
+                        Enter the client information below.
+                        Faith Harbor OS will create and save a
+                        proposal draft for human review.
+                    </p>
+
+                    <form id="proposal-form">
+                        <div class="form-group">
+                            <label for="service">
+                                Service
+                            </label>
+
+                            <select id="service" required>
+                                <option value="">
+                                    Select a service
+                                </option>
+
+                                <option value="Managed IT Services">
+                                    Managed IT Services
+                                </option>
+
+                                <option value="Website Development">
+                                    Website Development
+                                </option>
+
+                                <option value="AI Consulting">
+                                    AI Consulting
+                                </option>
+
+                                <option value="Business Automation">
+                                    Business Automation
+                                </option>
+
+                                <option value="Proposal Writing">
+                                    Proposal Writing
+                                </option>
+
+                                <option value="Book Publishing">
+                                    Book Publishing
+                                </option>
+
+                                <option value="Marketing Services">
+                                    Marketing Services
+                                </option>
+
+                                <option value="Custom Service">
+                                    Custom Service
+                                </option>
+                            </select>
+                        </div>
+
+                        <div
+                            class="form-group hidden"
+                            id="custom-service-group"
+                        >
+                            <label for="custom-service">
+                                Custom service name
+                            </label>
+
+                            <input
+                                id="custom-service"
+                                type="text"
+                                placeholder="Describe the service"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="client-name">
+                                Client name
+                            </label>
+
+                            <input
+                                id="client-name"
+                                type="text"
+                                placeholder="Acme Manufacturing"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="requested-outcome">
+                                Requested outcome
+                            </label>
+
+                            <input
+                                id="requested-outcome"
+                                type="text"
+                                placeholder="Prepare a managed IT services proposal"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="requirements">
+                                Requirements and discovery notes
+                            </label>
+
+                            <textarea
+                                id="requirements"
+                                rows="10"
+                                placeholder="Describe the client's goals, problems, users, locations, current systems, required services, concerns, and any other important details."
+                                required
+                            ></textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="due-date">
+                                Requested delivery date
+                            </label>
+
+                            <input
+                                id="due-date"
+                                type="date"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="additional-notes">
+                                Additional notes
+                            </label>
+
+                            <textarea
+                                id="additional-notes"
+                                rows="4"
+                                placeholder="Optional internal notes, exclusions, assumptions, or special instructions."
+                            ></textarea>
+                        </div>
+
+                        <button
+                            id="generate-proposal"
+                            type="submit"
+                        >
+                            Generate Proposal
+                        </button>
+                    </form>
+                </section>
+
+                <section class="card output-card">
+                    <div class="card-heading">
+                        <div>
+                            <p class="eyebrow">
+                                Draft Deliverable
+                            </p>
+
+                            <h2>Proposal Preview</h2>
+                        </div>
+
+                        <button
+                            class="secondary-button"
+                            id="copy-proposal"
+                            type="button"
+                            disabled
+                        >
+                            Copy
+                        </button>
+                    </div>
+
+                    <div
+                        class="status-message"
+                        id="proposal-status"
+                    >
+                        Complete the form to generate a proposal.
+                    </div>
+
+                    <div
+                        class="status-message hidden"
+                        id="proposal-details"
+                    ></div>
+
+                    <pre id="proposal-output"></pre>
+                </section>
+            </div>
+
+            <section class="card">
+                <div class="card-heading">
+                    <div>
+                        <p class="eyebrow">
+                            Proposal Management
+                        </p>
+
+                        <h2>Saved Proposals</h2>
+                    </div>
+
+                    <button
+                        class="secondary-button"
+                        id="refresh-proposals"
+                        type="button"
+                    >
+                        Refresh
+                    </button>
+                </div>
+
+                <p class="help-text">
+                    Select a saved proposal to reopen it.
+                </p>
+
+                <div
+                    id="saved-proposals"
+                    class="saved-proposals"
+                >
+                    Loading saved proposals...
+                </div>
+            </section>
         </section>
 
-        <section class="card">
-            <h2>Response</h2>
+        <section
+            class="tab-panel"
+            id="ai-panel"
+        >
+            <div class="layout-grid">
+                <section class="card">
+                    <p class="eyebrow">
+                        Developer Tool
+                    </p>
 
-            <pre id="response">Waiting for your first prompt...</pre>
+                    <h2>AI Console</h2>
+
+                    <div class="form-group">
+                        <label for="provider">
+                            Provider
+                        </label>
+
+                        <select id="provider">
+                            <option value="auto">
+                                Auto
+                            </option>
+
+                            <option value="ollama">
+                                Ollama
+                            </option>
+
+                            <option value="openai">
+                                OpenAI
+                            </option>
+
+                            <option value="blackbox">
+                                Blackbox
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="prompt">
+                            Prompt
+                        </label>
+
+                        <textarea
+                            id="prompt"
+                            rows="10"
+                            placeholder="Ask Faith Harbor OS something..."
+                        ></textarea>
+                    </div>
+
+                    <button id="generate" type="button">
+                        Generate
+                    </button>
+                </section>
+
+                <section class="card output-card">
+                    <p class="eyebrow">
+                        AI Response
+                    </p>
+
+                    <h2>Response</h2>
+
+                    <pre id="response">Waiting for your first prompt...</pre>
+                </section>
+            </div>
         </section>
     </main>
 
