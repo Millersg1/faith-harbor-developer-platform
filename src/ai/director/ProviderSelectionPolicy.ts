@@ -11,4 +11,9 @@ export enum ProviderSelectionPolicy {
    * Select the provider with the highest priority.
    */
   HIGHEST_PRIORITY = "highest-priority",
+
+  /**
+   * Select the provider recommended by operational metrics.
+   */
+  METRICS_DRIVEN = "metrics-driven",
 }

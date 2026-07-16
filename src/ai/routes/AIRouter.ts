@@ -50,12 +50,11 @@ export function createAIRouter(
       return;
     }
 
-    const scorecards =
-      aiService.getProviderScorecards();
-
     res.json({
-      count: scorecards.length,
-      scorecards,
+      count:
+        aiService.getProviderScorecards().length,
+      scorecards:
+        aiService.getProviderScorecards(),
     });
   });
 
@@ -82,7 +81,8 @@ export function createAIRouter(
       if (!scorecard) {
         res.status(404).json({
           error: {
-            code: "PROVIDER_METRICS_NOT_FOUND",
+            code:
+              "PROVIDER_METRICS_NOT_FOUND",
             message:
               `No metrics were found for provider "${req.params.providerId}".`,
           },
@@ -96,6 +96,28 @@ export function createAIRouter(
       });
     },
   );
+
+  router.get("/decisions", (_req, res) => {
+    if (!aiService) {
+      res.status(503).json({
+        error: {
+          code: "AI_NOT_CONFIGURED",
+          message:
+            "No AI provider is currently configured.",
+        },
+      });
+
+      return;
+    }
+
+    const decisions =
+      aiService.getDecisionHistory();
+
+    res.json({
+      count: decisions.length,
+      decisions,
+    });
+  });
 
   router.post("/chat", async (req, res, next) => {
     try {

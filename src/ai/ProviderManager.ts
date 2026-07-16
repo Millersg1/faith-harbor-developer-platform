@@ -3,6 +3,8 @@ import type {
   AIRequest,
   AIResponse,
 } from "./AIProvider";
+import { DefaultProviderAdvisor } from "./advisor/DefaultProviderAdvisor";
+import type { AIDecisionLog } from "./director/AIDecisionLog";
 import { AIRequestDirector } from "./director/AIRequestDirector";
 import { ProviderSelectionPolicy } from "./director/ProviderSelectionPolicy";
 import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
@@ -21,9 +23,16 @@ export class ProviderManager {
     private readonly metrics =
       new ProviderMetricsRegistry(),
   ) {
+    const advisor =
+      new DefaultProviderAdvisor(
+        registry,
+        this.metrics,
+      );
+
     this.director = new AIRequestDirector(
       registry,
       policy,
+      advisor,
     );
   }
 
@@ -48,6 +57,13 @@ export class ProviderManager {
    */
   getMetricsRegistry(): ProviderMetricsRegistry {
     return this.metrics;
+  }
+
+  /**
+   * Returns the Director's routing decision log.
+   */
+  getDecisionLog(): AIDecisionLog {
+    return this.director.getDecisionLog();
   }
 
   /**

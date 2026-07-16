@@ -3,6 +3,7 @@ import type {
   AIRequest,
   AIResponse,
 } from "./AIProvider";
+import type { AIDecisionRecord } from "./director/AIDecisionRecord";
 import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
 import type { AIProviderScorecard } from "./metrics/AIProviderScorecard";
 import { ProviderManager } from "./ProviderManager";
@@ -83,6 +84,16 @@ export class AIService {
     return this.manager
       .getMetricsRegistry()
       .get(providerId);
+  }
+
+  /**
+   * Returns the Director's decision history.
+   */
+  getDecisionHistory():
+    readonly AIDecisionRecord[] {
+    return this.manager
+      .getDecisionLog()
+      .getAll();
   }
 
   /**

@@ -1,14 +1,19 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   AIProvider,
   AIRequest,
 } from "../AIProvider";
+import type { ProviderAdvisor } from "../advisor/ProviderAdvisor";
 import type { AIExecutionPlan } from "../execution/AIExecutionPlan";
 import { ProviderRegistry } from "../ProviderRegistry";
+import { AIDecisionLog } from "./AIDecisionLog";
 import { ProviderSelectionPolicy } from "./ProviderSelectionPolicy";
 
 interface ProviderSelection {
   provider: AIProvider;
   reason: string;
+  confidence: number;
 }
 
 /**
@@ -19,6 +24,9 @@ export class AIRequestDirector {
     private readonly registry: ProviderRegistry,
     private readonly policy =
       ProviderSelectionPolicy.FIRST_AVAILABLE,
+    private readonly advisor?: ProviderAdvisor,
+    private readonly decisionLog =
+      new AIDecisionLog(),
   ) {}
 
   /**
@@ -30,15 +38,35 @@ export class AIRequestDirector {
     const selection =
       this.selectProvider(request);
 
+    const model =
+      selection.provider.metadata.models[0];
+
+    this.decisionLog.record({
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      capability: request.capability,
+      providerId: selection.provider.id,
+      providerName: selection.provider.name,
+      reason: selection.reason,
+      confidence: selection.confidence,
+      model,
+    });
+
     return {
       provider: selection.provider,
-      model:
-        selection.provider.metadata.models[0],
+      model,
       reason: selection.reason,
       streaming:
         selection.provider.metadata
           .supportsStreaming,
     };
+  }
+
+  /**
+   * Returns the Director's decision history.
+   */
+  getDecisionLog(): AIDecisionLog {
+    return this.decisionLog;
   }
 
   /**
@@ -84,10 +112,14 @@ export class AIRequestDirector {
         provider,
         reason:
           `Provider "${provider.name}" was explicitly selected.`,
+        confidence: 100,
       };
     }
 
-    return this.selectByPolicy(providers);
+    return this.selectByPolicy(
+      request,
+      providers,
+    );
   }
 
   /**
@@ -115,14 +147,36 @@ export class AIRequestDirector {
    * selection policy.
    */
   private selectByPolicy(
+    request: AIRequest,
     providers: readonly AIProvider[],
   ): ProviderSelection {
     switch (this.policy) {
+      case ProviderSelectionPolicy.METRICS_DRIVEN: {
+        if (!this.advisor) {
+          throw new Error(
+            "A provider advisor is required for metrics-driven selection.",
+          );
+        }
+
+        const recommendation =
+          this.advisor.recommend(request);
+
+        return {
+          provider:
+            recommendation.provider,
+          reason:
+            recommendation.reason,
+          confidence:
+            recommendation.confidence,
+        };
+      }
+
       case ProviderSelectionPolicy.HIGHEST_PRIORITY:
         return {
           provider: providers[0],
           reason:
             "Highest priority provider.",
+          confidence: 100,
         };
 
       case ProviderSelectionPolicy.FIRST_AVAILABLE:
@@ -131,6 +185,7 @@ export class AIRequestDirector {
           provider: providers[0],
           reason:
             "First available provider.",
+          confidence: 100,
         };
     }
   }
