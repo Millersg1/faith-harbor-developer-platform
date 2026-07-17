@@ -1,6 +1,15 @@
 import "dotenv/config";
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { z } from "zod";
+
+const packageJsonPath = resolve(process.cwd(), "package.json");
+const packageJson = JSON.parse(
+  readFileSync(packageJsonPath, "utf8"),
+) as {
+  version?: string;
+};
 
 const schema = z.object({
   NODE_ENV: z
@@ -22,7 +31,7 @@ const schema = z.object({
   APP_VERSION: z
     .string()
     .min(1)
-    .default("4.0.0"),
+    .default(packageJson.version ?? "0.0.0"),
 
   DATABASE_URL: z
     .string()
