@@ -1,3 +1,15 @@
+const navigationButtons =
+    document.querySelectorAll(".nav-button");
+
+const workspaces =
+    document.querySelectorAll(".workspace");
+
+const workspaceTitle =
+    document.getElementById("workspace-title");
+
+const workspaceEyebrow =
+    document.getElementById("workspace-eyebrow");
+
 const proposalForm =
     document.getElementById("proposal-form");
 
@@ -31,35 +43,129 @@ const refreshProposalsButton =
 const savedProposalsElement =
     document.getElementById("saved-proposals");
 
+const clientForm =
+    document.getElementById("client-form");
+
+const clientStatus =
+    document.getElementById("client-status");
+
+const clientList =
+    document.getElementById("client-list");
+
+const refreshClientsButton =
+    document.getElementById("refresh-clients");
+
+const clientWorkspaceCard =
+    document.getElementById("client-workspace-card");
+
+const clientWorkspaceName =
+    document.getElementById("client-workspace-name");
+
+const clientOverview =
+    document.getElementById("client-overview");
+
+const clientProposalList =
+    document.getElementById("client-proposal-list");
+
+const clientWorkspaceNewProposal =
+    document.getElementById("client-workspace-new-proposal");
+
 const aiButton =
     document.getElementById("generate");
 
 const aiResponse =
     document.getElementById("response");
 
-const tabButtons =
-    document.querySelectorAll(".tab-button");
+const dashboardClientCount =
+    document.getElementById("dashboard-client-count");
 
-const tabPanels =
-    document.querySelectorAll(".tab-panel");
+const dashboardProposalCount =
+    document.getElementById("dashboard-proposal-count");
 
-tabButtons.forEach((button) => {
+const dashboardDraftCount =
+    document.getElementById("dashboard-draft-count");
+
+const dashboardRecentProposals =
+    document.getElementById("dashboard-recent-proposals");
+
+const workspaceNames = {
+    "dashboard-workspace": {
+        title: "Dashboard",
+        eyebrow: "Command Center",
+    },
+
+    "clients-workspace": {
+        title: "Clients",
+        eyebrow: "Relationship Management",
+    },
+
+    "proposals-workspace": {
+        title: "Proposals",
+        eyebrow: "Client Delivery",
+    },
+
+    "projects-workspace": {
+        title: "Projects",
+        eyebrow: "Delivery Management",
+    },
+
+    "ai-workspace": {
+        title: "AI Workspace",
+        eyebrow: "Faith Harbor Intelligence",
+    },
+
+    "reports-workspace": {
+        title: "Reports",
+        eyebrow: "Business Intelligence",
+    },
+
+    "settings-workspace": {
+        title: "Settings",
+        eyebrow: "Administration",
+    },
+};
+
+navigationButtons.forEach((button) => {
     button.addEventListener("click", () => {
-        tabButtons.forEach((item) => {
-            item.classList.remove("active");
-        });
-
-        tabPanels.forEach((panel) => {
-            panel.classList.remove("active");
-        });
-
-        button.classList.add("active");
-
-        document
-            .getElementById(button.dataset.panel)
-            .classList.add("active");
+        openWorkspace(
+            button.dataset.workspace,
+        );
     });
 });
+
+document
+    .getElementById("dashboard-new-proposal")
+    .addEventListener("click", () => {
+        openWorkspace("proposals-workspace");
+    });
+
+document
+    .getElementById("dashboard-view-proposals")
+    .addEventListener("click", () => {
+        openWorkspace("proposals-workspace");
+    });
+
+document
+    .getElementById("dashboard-add-client")
+    .addEventListener("click", () => {
+        openWorkspace("clients-workspace");
+
+        document
+            .getElementById("client-company-name")
+            .focus();
+    });
+
+document
+    .getElementById("dashboard-open-ai")
+    .addEventListener("click", () => {
+        openWorkspace("ai-workspace");
+    });
+
+document
+    .getElementById("dashboard-open-clients")
+    .addEventListener("click", () => {
+        openWorkspace("clients-workspace");
+    });
 
 serviceSelect.addEventListener("change", () => {
     const isCustom =
@@ -76,14 +182,16 @@ serviceSelect.addEventListener("change", () => {
         customServiceInput.value = "";
     }
 
-    const outcomeInput =
-        document.getElementById("requested-outcome");
+    const requestedOutcome =
+        document.getElementById(
+            "requested-outcome",
+        );
 
     if (
         serviceSelect.value &&
-        !outcomeInput.value.trim()
+        !requestedOutcome.value.trim()
     ) {
-        outcomeInput.value =
+        requestedOutcome.value =
             `Prepare a ${serviceSelect.value} proposal`;
     }
 });
@@ -196,24 +304,22 @@ proposalForm.addEventListener(
                 );
             }
 
-            const savedProposal =
-                result.proposal;
-
-            displayProposal(savedProposal);
+            displayProposal(
+                result.proposal,
+            );
 
             showProposalStatus(
                 "Proposal draft generated and saved. Review and approve it before sending it to the client.",
                 "success",
             );
 
-            copyProposalButton.disabled = false;
-
-            await loadSavedProposals();
+            await refreshApplicationData();
         } catch (error) {
             showProposalStatus(
-                error instanceof Error
-                    ? error.message
-                    : "Proposal generation failed.",
+                getErrorMessage(
+                    error,
+                    "Proposal generation failed.",
+                ),
                 "error",
             );
         } finally {
@@ -259,6 +365,131 @@ copyProposalButton.addEventListener(
 refreshProposalsButton.addEventListener(
     "click",
     loadSavedProposals,
+);
+
+clientForm.addEventListener(
+    "submit",
+    async (event) => {
+        event.preventDefault();
+
+        const payload = {
+            companyName:
+                document
+                    .getElementById(
+                        "client-company-name",
+                    )
+                    .value
+                    .trim(),
+
+            primaryContact:
+                document
+                    .getElementById(
+                        "client-primary-contact",
+                    )
+                    .value
+                    .trim(),
+
+            email:
+                optionalValue(
+                    "client-email",
+                ),
+
+            phone:
+                optionalValue(
+                    "client-phone",
+                ),
+
+            website:
+                optionalValue(
+                    "client-website",
+                ),
+
+            industry:
+                optionalValue(
+                    "client-industry",
+                ),
+
+            notes:
+                optionalValue(
+                    "client-notes",
+                ),
+        };
+
+        showClientStatus(
+            "Creating client...",
+            "working",
+        );
+
+        try {
+            const response = await fetch(
+                "/api/v1/clients",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json",
+                    },
+
+                    body: JSON.stringify(
+                        payload,
+                    ),
+                },
+            );
+
+            const client =
+                await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    client.error?.message ||
+                    "Client creation failed.",
+                );
+            }
+
+            clientForm.reset();
+
+            showClientStatus(
+                "Client created successfully.",
+                "success",
+            );
+
+            await refreshApplicationData();
+
+            await openClientWorkspace(
+                client.id,
+            );
+        } catch (error) {
+            showClientStatus(
+                getErrorMessage(
+                    error,
+                    "Client creation failed.",
+                ),
+                "error",
+            );
+        }
+    },
+);
+
+refreshClientsButton.addEventListener(
+    "click",
+    loadClients,
+);
+
+clientWorkspaceNewProposal.addEventListener(
+    "click",
+    () => {
+        const companyName =
+            clientWorkspaceName.textContent.trim();
+
+        document.getElementById(
+            "client-name",
+        ).value = companyName;
+
+        openWorkspace(
+            "proposals-workspace",
+        );
+    },
 );
 
 aiButton.addEventListener(
@@ -318,7 +549,10 @@ aiButton.addEventListener(
                 );
         } catch (error) {
             aiResponse.textContent =
-                `Connection failed.\n\n${error}`;
+                `Connection failed.\n\n${getErrorMessage(
+                    error,
+                    "Unknown error",
+                )}`;
         } finally {
             aiButton.disabled = false;
             aiButton.textContent =
@@ -327,13 +561,59 @@ aiButton.addEventListener(
     },
 );
 
+function openWorkspace(workspaceId) {
+    navigationButtons.forEach((button) => {
+        button.classList.toggle(
+            "active",
+            button.dataset.workspace ===
+                workspaceId,
+        );
+    });
+
+    workspaces.forEach((workspace) => {
+        workspace.classList.toggle(
+            "active",
+            workspace.id ===
+                workspaceId,
+        );
+    });
+
+    const workspace =
+        workspaceNames[workspaceId];
+
+    if (workspace) {
+        workspaceTitle.textContent =
+            workspace.title;
+
+        workspaceEyebrow.textContent =
+            workspace.eyebrow;
+    }
+
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+    });
+}
+
 function showProposalStatus(
     message,
     statusType,
 ) {
-    proposalStatus.textContent = message;
+    proposalStatus.textContent =
+        message;
 
     proposalStatus.className =
+        `status-message ${statusType}`;
+}
+
+function showClientStatus(
+    message,
+    statusType,
+) {
+    clientStatus.textContent =
+        message;
+
+    clientStatus.className =
         `status-message ${statusType}`;
 }
 
@@ -354,18 +634,11 @@ function displayProposal(proposal) {
         "status-message";
 
     copyProposalButton.disabled = false;
-
-    window.scrollTo({
-        top: proposalOutput.offsetTop - 100,
-        behavior: "smooth",
-    });
 }
 
 async function loadSavedProposals() {
     savedProposalsElement.textContent =
         "Loading saved proposals...";
-
-    refreshProposalsButton.disabled = true;
 
     try {
         const response = await fetch(
@@ -382,46 +655,254 @@ async function loadSavedProposals() {
             );
         }
 
-        renderSavedProposals(
+        renderProposalList(
+            savedProposalsElement,
+            result.proposals,
+            true,
+        );
+
+        updateProposalMetrics(
+            result.proposals,
+        );
+
+        renderDashboardProposals(
             result.proposals,
         );
     } catch (error) {
         savedProposalsElement.textContent =
-            error instanceof Error
-                ? error.message
-                : "Saved proposals could not be loaded.";
-    } finally {
-        refreshProposalsButton.disabled = false;
+            getErrorMessage(
+                error,
+                "Saved proposals could not be loaded.",
+            );
     }
 }
 
-function renderSavedProposals(proposals) {
-    savedProposalsElement.replaceChildren();
+async function loadClients() {
+    clientList.textContent =
+        "Loading clients...";
+
+    try {
+        const response = await fetch(
+            "/api/v1/clients",
+        );
+
+        const result =
+            await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                result.error?.message ||
+                "Clients could not be loaded.",
+            );
+        }
+
+        dashboardClientCount.textContent =
+            String(result.count);
+
+        renderClients(
+            result.clients,
+        );
+    } catch (error) {
+        clientList.textContent =
+            getErrorMessage(
+                error,
+                "Clients could not be loaded.",
+            );
+    }
+}
+
+function renderClients(clients) {
+    clientList.replaceChildren();
+
+    if (clients.length === 0) {
+        clientList.textContent =
+            "No clients have been created yet.";
+
+        return;
+    }
+
+    clients.forEach((client) => {
+        const button =
+            createRecordButton(
+                client.companyName,
+
+                [
+                    client.primaryContact,
+                    client.industry,
+                    formatDate(
+                        client.createdAt,
+                    ),
+                ]
+                    .filter(Boolean)
+                    .join(" • "),
+            );
+
+        button.addEventListener(
+            "click",
+            () => {
+                openClientWorkspace(
+                    client.id,
+                );
+            },
+        );
+
+        clientList.appendChild(
+            button,
+        );
+    });
+}
+
+async function openClientWorkspace(
+    clientId,
+) {
+    try {
+        const response = await fetch(
+            `/api/v1/clients/${clientId}/workspace`,
+        );
+
+        const workspace =
+            await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                workspace.error?.message ||
+                "Client workspace could not be opened.",
+            );
+        }
+
+        const client =
+            workspace.client;
+
+        clientWorkspaceName.textContent =
+            client.companyName;
+
+        clientOverview.replaceChildren();
+
+        const details = [
+            [
+                "Primary Contact",
+                client.primaryContact,
+            ],
+
+            [
+                "Email",
+                client.email ||
+                    "Not provided",
+            ],
+
+            [
+                "Phone",
+                client.phone ||
+                    "Not provided",
+            ],
+
+            [
+                "Website",
+                client.website ||
+                    "Not provided",
+            ],
+
+            [
+                "Industry",
+                client.industry ||
+                    "Not provided",
+            ],
+
+            [
+                "Created",
+                formatDate(
+                    client.createdAt,
+                ),
+            ],
+        ];
+
+        details.forEach(
+            ([label, value]) => {
+                const item =
+                    document.createElement(
+                        "div",
+                    );
+
+                item.className =
+                    "client-overview-item";
+
+                const labelElement =
+                    document.createElement(
+                        "span",
+                    );
+
+                labelElement.textContent =
+                    label;
+
+                const valueElement =
+                    document.createElement(
+                        "strong",
+                    );
+
+                valueElement.textContent =
+                    value;
+
+                item.append(
+                    labelElement,
+                    valueElement,
+                );
+
+                clientOverview.appendChild(
+                    item,
+                );
+            },
+        );
+
+        renderProposalList(
+            clientProposalList,
+            workspace.proposals,
+            false,
+        );
+
+        clientWorkspaceCard.classList.remove(
+            "hidden",
+        );
+    } catch (error) {
+        showClientStatus(
+            getErrorMessage(
+                error,
+                "Client workspace could not be opened.",
+            ),
+            "error",
+        );
+    }
+}
+
+function renderProposalList(
+    container,
+    proposals,
+    showClientName,
+) {
+    container.replaceChildren();
 
     if (proposals.length === 0) {
-        savedProposalsElement.textContent =
+        container.textContent =
             "No proposals have been saved yet.";
 
         return;
     }
 
-    const newestFirst =
-        [...proposals].sort(
-            (left, right) =>
-                new Date(right.createdAt) -
-                new Date(left.createdAt),
-        );
+    proposals.forEach((proposal) => {
+        const title =
+            showClientName
+                ? `${proposal.clientName} - ${proposal.service}`
+                : proposal.service;
 
-    newestFirst.forEach((proposal) => {
+        const detail =
+            `${proposal.status} • ${formatDate(
+                proposal.createdAt,
+            )}`;
+
         const button =
-            document.createElement("button");
-
-        button.type = "button";
-        button.className =
-            "secondary-button";
-
-        button.textContent =
-            `${proposal.clientName} — ${proposal.service} — ${proposal.status}`;
+            createRecordButton(
+                title,
+                detail,
+            );
 
         button.addEventListener(
             "click",
@@ -432,18 +913,44 @@ function renderSavedProposals(proposals) {
             },
         );
 
-        savedProposalsElement.appendChild(
+        container.appendChild(
             button,
         );
     });
 }
 
-async function openSavedProposal(proposalId) {
-    showProposalStatus(
-        "Opening saved proposal...",
-        "working",
-    );
+function renderDashboardProposals(
+    proposals,
+) {
+    const recent =
+        proposals.slice(0, 5);
 
+    renderProposalList(
+        dashboardRecentProposals,
+        recent,
+        true,
+    );
+}
+
+function updateProposalMetrics(
+    proposals,
+) {
+    dashboardProposalCount.textContent =
+        String(proposals.length);
+
+    const draftCount =
+        proposals.filter(
+            (proposal) =>
+                proposal.status === "draft",
+        ).length;
+
+    dashboardDraftCount.textContent =
+        String(draftCount);
+}
+
+async function openSavedProposal(
+    proposalId,
+) {
     try {
         const response = await fetch(
             `/api/v1/proposals/${proposalId}`,
@@ -465,24 +972,97 @@ async function openSavedProposal(proposalId) {
             "Saved proposal opened.",
             "success",
         );
+
+        openWorkspace(
+            "proposals-workspace",
+        );
     } catch (error) {
         showProposalStatus(
-            error instanceof Error
-                ? error.message
-                : "The proposal could not be opened.",
+            getErrorMessage(
+                error,
+                "The proposal could not be opened.",
+            ),
             "error",
         );
     }
 }
 
-function formatDate(value) {
-    const date = new Date(value);
+function createRecordButton(
+    title,
+    detail,
+) {
+    const button =
+        document.createElement("button");
 
-    if (Number.isNaN(date.getTime())) {
+    button.type = "button";
+    button.className =
+        "record-button";
+
+    const titleElement =
+        document.createElement("span");
+
+    titleElement.className =
+        "record-title";
+
+    titleElement.textContent =
+        title;
+
+    const detailElement =
+        document.createElement("span");
+
+    detailElement.className =
+        "record-detail";
+
+    detailElement.textContent =
+        detail;
+
+    button.append(
+        titleElement,
+        detailElement,
+    );
+
+    return button;
+}
+
+function optionalValue(elementId) {
+    const value =
+        document
+            .getElementById(elementId)
+            .value
+            .trim();
+
+    return value || undefined;
+}
+
+function formatDate(value) {
+    const date =
+        new Date(value);
+
+    if (
+        Number.isNaN(
+            date.getTime(),
+        )
+    ) {
         return value;
     }
 
     return date.toLocaleString();
 }
 
-loadSavedProposals();
+function getErrorMessage(
+    error,
+    fallback,
+) {
+    return error instanceof Error
+        ? error.message
+        : fallback;
+}
+
+async function refreshApplicationData() {
+    await Promise.all([
+        loadSavedProposals(),
+        loadClients(),
+    ]);
+}
+
+refreshApplicationData();

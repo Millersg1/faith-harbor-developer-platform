@@ -21,6 +21,9 @@ import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
 import { SQLiteDatabase } from "./persistence/SQLiteDatabase";
+import { ProjectRepository } from "./projects/ProjectRepository";
+import { createProjectRouter } from "./projects/ProjectRouter";
+import { ProjectService } from "./projects/ProjectService";
 import { ProposalRepository } from "./proposals/ProposalRepository";
 import { createProposalRouter } from "./proposals/ProposalRouter";
 import { ProposalService } from "./proposals/ProposalService";
@@ -67,8 +70,8 @@ function createProviderInstallers():
  * Tests can call this synchronously without configuring
  * external AI providers or opening a database.
  *
- * When a SQLite connection is supplied, clients and proposals
- * persist across application restarts.
+ * When a SQLite connection is supplied, clients, proposals,
+ * and projects persist across application restarts.
  */
 export function createApp(
   aiService?: AIService,
@@ -96,6 +99,15 @@ export function createApp(
           proposalRepository,
         )
       : undefined;
+
+  const projectRepository =
+    new ProjectRepository(database);
+
+  const projectService =
+    new ProjectService(
+      clientService,
+      projectRepository,
+    );
 
   for (
     const department of
@@ -169,6 +181,9 @@ export function createApp(
         proposals:
           "/api/v1/proposals",
 
+        projects:
+          "/api/v1/projects",
+
         workflows:
           "/api/v1/workflows",
       },
@@ -204,10 +219,16 @@ export function createApp(
       clientManagementAvailable:
         true,
 
+      projectManagementAvailable:
+        true,
+
       persistentClientStorage:
         Boolean(database),
 
       persistentProposalStorage:
+        Boolean(database),
+
+      persistentProjectStorage:
         Boolean(database),
 
       timestamp:
@@ -248,6 +269,13 @@ export function createApp(
     "/api/v1/proposals",
     createProposalRouter(
       proposalService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/projects",
+    createProjectRouter(
+      projectService,
     ),
   );
 

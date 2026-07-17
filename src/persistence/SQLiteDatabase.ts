@@ -59,10 +59,12 @@ export class SQLiteDatabase {
   }
 
   /**
-   * Creates the Faith Harbor OS database tables.
+   * Creates the Faith Harbor OS database tables and indexes.
    */
   private initialize(): void {
     this.database.exec(`
+      PRAGMA foreign_keys = ON;
+
       CREATE TABLE IF NOT EXISTS ai_provider_metrics (
         provider_id TEXT PRIMARY KEY,
         provider_name TEXT NOT NULL,
@@ -119,6 +121,28 @@ export class SQLiteDatabase {
           ON DELETE CASCADE
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        proposal_id TEXT,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'planned',
+        start_date TEXT,
+        due_date TEXT,
+        completed_date TEXT,
+        notes TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (proposal_id)
+          REFERENCES proposals(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
@@ -136,6 +160,21 @@ export class SQLiteDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_proposals_created
         ON proposals(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_projects_client
+        ON projects(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_projects_proposal
+        ON projects(proposal_id);
+
+      CREATE INDEX IF NOT EXISTS idx_projects_status
+        ON projects(status);
+
+      CREATE INDEX IF NOT EXISTS idx_projects_due_date
+        ON projects(due_date);
+
+      CREATE INDEX IF NOT EXISTS idx_projects_created
+        ON projects(created_at);
     `);
   }
 }
