@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import cors from "cors";
@@ -5,6 +6,9 @@ import express from "express";
 import helmet from "helmet";
 import type { DatabaseSync } from "node:sqlite";
 
+import { InvoiceRepository } from "./accounting/InvoiceRepository";
+import { createInvoiceRouter } from "./accounting/InvoiceRouter";
+import { InvoiceService } from "./accounting/InvoiceService";
 import type { AIService } from "./ai/AIService";
 import {
   AIBootstrap,
@@ -20,6 +24,12 @@ import { ClientService } from "./clients/ClientService";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
+import { HostingAccountRepository } from "./hosting/HostingAccountRepository";
+import { HostingAccountService } from "./hosting/HostingAccountService";
+import { createHostingRouter } from "./hosting/HostingRouter";
+import { HostingAssistantService } from "./hosting/assistant/HostingAssistantService";
+import { nodeDnsResolver } from "./hosting/assistant/HostingDiagnostics";
+import { WHMClient } from "./hosting/whm/WHMClient";
 import { SQLiteDatabase } from "./persistence/SQLiteDatabase";
 import { ProjectRepository } from "./projects/ProjectRepository";
 import { createProjectRouter } from "./projects/ProjectRouter";
@@ -27,6 +37,9 @@ import { ProjectService } from "./projects/ProjectService";
 import { ProposalRepository } from "./proposals/ProposalRepository";
 import { createProposalRouter } from "./proposals/ProposalRouter";
 import { ProposalService } from "./proposals/ProposalService";
+import { TicketRepository } from "./support/TicketRepository";
+import { createTicketRouter } from "./support/TicketRouter";
+import { TicketService } from "./support/TicketService";
 import { WorkflowEngine } from "./workflow";
 import { createWorkflowRouter } from "./workflow/WorkflowRouter";
 
@@ -109,6 +122,66 @@ export function createApp(
       projectRepository,
     );
 
+  const invoiceRepository =
+    new InvoiceRepository(database);
+
+  const invoiceService =
+    new InvoiceService(
+      clientService,
+      invoiceRepository,
+    );
+
+  const ticketRepository =
+    new TicketRepository(database);
+
+  const ticketService =
+    new TicketService(
+      clientService,
+      ticketRepository,
+    );
+
+  const hostingRepository =
+    new HostingAccountRepository(
+      database,
+    );
+
+  const hostingService =
+    new HostingAccountService(
+      clientService,
+      hostingRepository,
+    );
+
+  // The WHM connection is optional and read-only. It is enabled
+  // only when both a host and an API token are configured.
+  const whmClient =
+    config.WHM_HOST &&
+    config.WHM_API_TOKEN
+      ? new WHMClient({
+          host: config.WHM_HOST,
+          apiToken:
+            config.WHM_API_TOKEN,
+          user: config.WHM_USER,
+          port: config.WHM_PORT,
+          useSsl: true,
+        })
+      : undefined;
+
+  const hostingAssistantService =
+    new HostingAssistantService(
+      hostingService,
+      {
+        aiService,
+        ticketService,
+
+        // Live DNS checks are skipped under test so the suite
+        // stays offline and deterministic.
+        dnsResolver:
+          config.NODE_ENV === "test"
+            ? undefined
+            : nodeDnsResolver,
+      },
+    );
+
   for (
     const department of
     defaultDepartments
@@ -148,7 +221,7 @@ export function createApp(
     ),
   );
 
-  app.get("/", (_req, res) => {
+  app.get("/api", (_req, res) => {
     res.json({
       name:
         config.APP_NAME,
@@ -183,6 +256,15 @@ export function createApp(
 
         projects:
           "/api/v1/projects",
+
+        invoices:
+          "/api/v1/invoices",
+
+        tickets:
+          "/api/v1/tickets",
+
+        hosting:
+          "/api/v1/hosting/accounts",
 
         workflows:
           "/api/v1/workflows",
@@ -231,6 +313,27 @@ export function createApp(
       persistentProjectStorage:
         Boolean(database),
 
+      invoiceManagementAvailable:
+        true,
+
+      persistentInvoiceStorage:
+        Boolean(database),
+
+      supportManagementAvailable:
+        true,
+
+      persistentSupportStorage:
+        Boolean(database),
+
+      hostingManagementAvailable:
+        true,
+
+      persistentHostingStorage:
+        Boolean(database),
+
+      whmConfigured:
+        Boolean(whmClient),
+
       timestamp:
         new Date().toISOString(),
     });
@@ -253,12 +356,13 @@ export function createApp(
   );
 
   app.use(
-    "/api/v1/clients",
-    createClientRouter(
-      clientService,
-      proposalService,
-    ),
-  );
+  "/api/v1/clients",
+  createClientRouter(
+    clientService,
+    proposalService,
+    projectService,
+  ),
+);
 
   app.use(
     "/api/v1/ai",
@@ -280,11 +384,94 @@ export function createApp(
   );
 
   app.use(
+    "/api/v1/invoices",
+    createInvoiceRouter(
+      invoiceService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/tickets",
+    createTicketRouter(
+      ticketService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/hosting",
+    createHostingRouter(
+      hostingService,
+      whmClient,
+      hostingAssistantService,
+    ),
+  );
+
+  app.use(
     "/api/v1/workflows",
     createWorkflowRouter(
       workflowEngine,
     ),
   );
+
+  // Serve the built React frontend when it is present.
+  //
+  // In production a single Node process serves both the API and
+  // the UI from the same origin (the cPanel deployment model).
+  // In development the Vite dev server runs separately and proxies
+  // API requests here, so this block is simply skipped.
+  const frontendDist =
+    join(
+      process.cwd(),
+      "frontend",
+      "dist",
+    );
+
+  if (existsSync(frontendDist)) {
+    app.use(
+      express.static(
+        frontendDist,
+      ),
+    );
+
+    // Single-page-app fallback: any non-API GET request that
+    // accepts HTML returns index.html so client-side routes
+    // (for example /clients or /support) work on a hard refresh.
+    app.use(
+      (req, res, next) => {
+        if (req.method !== "GET") {
+          next();
+          return;
+        }
+
+        if (
+          req.path.startsWith(
+            "/api",
+          ) ||
+          req.path.startsWith(
+            "/health",
+          ) ||
+          req.path.startsWith(
+            "/console",
+          )
+        ) {
+          next();
+          return;
+        }
+
+        if (!req.accepts("html")) {
+          next();
+          return;
+        }
+
+        res.sendFile(
+          join(
+            frontendDist,
+            "index.html",
+          ),
+        );
+      },
+    );
+  }
 
   app.use((_req, res) => {
     res.status(404).json({

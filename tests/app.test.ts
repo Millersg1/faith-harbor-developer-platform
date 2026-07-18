@@ -7,7 +7,7 @@ describe("Faith Harbor OS API", () => {
   const app = createApp();
 
   it("returns system information", async () => {
-    const response = await request(app).get("/");
+    const response = await request(app).get("/api");
 
     expect(response.status).toBe(200);
     expect(response.body.name).toBe(config.APP_NAME);
@@ -29,7 +29,9 @@ describe("Faith Harbor OS API", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.count).toBe(2);
+    expect(response.body.count).toBe(12);
+    expect(departmentNames).toContain("Client Services");
+    expect(departmentNames).toContain("Artificial Intelligence");
     expect(departmentNames).toContain("Engineering");
     expect(departmentNames).toContain("Ministry");
   });

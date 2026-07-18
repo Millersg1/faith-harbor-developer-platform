@@ -1,102 +1,351 @@
-import { useEffect, useState } from "react";
+import {
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 
-type HealthResponse = {
-  status: string;
-  service: string;
-  version: string;
-  environment: string;
+import AccountingPage from "./pages/AccountingPage";
+import AIWorkspacePage from "./pages/AIWorkspacePage";
+import ClientsPage from "./pages/ClientsPage";
+import DashboardPage from "./pages/DashboardPage";
+import DepartmentsPage from "./pages/DepartmentsPage";
+import HostingPage from "./pages/HostingPage";
+import ProjectsPage from "./pages/ProjectsPage";
+import ProposalsPage from "./pages/ProposalsPage";
+import ReportsPage from "./pages/ReportsPage";
+import SettingsPage from "./pages/SettingsPage";
+import SupportPage from "./pages/SupportPage";
+
+type NavigationItem = {
+  label: string;
+  path: string;
+  eyebrow: string;
 };
 
+type NavigationGroup = {
+  label: string;
+  items: readonly NavigationItem[];
+};
+
+const navigationGroups: readonly NavigationGroup[] = [
+  {
+    label: "Command",
+    items: [
+      {
+        label: "Command Center",
+        path: "/dashboard",
+        eyebrow: "Faith Harbor OS",
+      },
+      {
+        label: "Departments",
+        path: "/departments",
+        eyebrow: "Faith Harbor LLC",
+      },
+    ],
+  },
+  {
+    label: "Client Services",
+    items: [
+      {
+        label: "Clients",
+        path: "/clients",
+        eyebrow: "Client Services",
+      },
+      {
+        label: "Proposals",
+        path: "/proposals",
+        eyebrow: "Client Services",
+      },
+      {
+        label: "Projects",
+        path: "/projects",
+        eyebrow: "Client Services",
+      },
+      {
+        label: "Support",
+        path: "/support",
+        eyebrow: "Client Services",
+      },
+    ],
+  },
+  {
+    label: "Finance",
+    items: [
+      {
+        label: "Accounting",
+        path: "/accounting",
+        eyebrow: "Accounting",
+      },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      {
+        label: "Hosting",
+        path: "/hosting",
+        eyebrow: "Hosting Operations",
+      },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [
+      {
+        label: "AI Workspace",
+        path: "/ai-console",
+        eyebrow: "Faith Harbor Intelligence",
+      },
+      {
+        label: "Reports",
+        path: "/reports",
+        eyebrow: "Business Intelligence",
+      },
+    ],
+  },
+  {
+    label: "Administration",
+    items: [
+      {
+        label: "Settings",
+        path: "/settings",
+        eyebrow: "System Administration",
+      },
+    ],
+  },
+];
+
+const navigationItems =
+  navigationGroups.flatMap(
+    (group) => group.items,
+  );
+
 function App() {
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  return (
+    <div className="app-shell">
+      <Sidebar />
 
-  useEffect(() => {
-    async function loadHealth() {
-      try {
-        const response = await fetch("/health");
+      <div className="application">
+        <Topbar />
 
-        if (!response.ok) {
-          throw new Error(`Server returned ${response.status}`);
-        }
+        <main className="workspace-container">
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <Navigate
+                  to="/dashboard"
+                  replace
+                />
+              }
+            />
 
-        const data: HealthResponse = await response.json();
+            <Route
+              path="/dashboard"
+              element={<DashboardPage />}
+            />
 
-        setHealth(data);
-      } catch (err) {
-        if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError("Unknown error");
-        }
-      } finally {
-        setLoading(false);
-      }
-    }
+            <Route
+              path="/departments"
+              element={<DepartmentsPage />}
+            />
 
-    loadHealth();
-  }, []);
+            <Route
+              path="/clients"
+              element={<ClientsPage />}
+            />
+
+            <Route
+              path="/proposals"
+              element={<ProposalsPage />}
+            />
+
+            <Route
+              path="/projects"
+              element={<ProjectsPage />}
+            />
+
+            <Route
+              path="/accounting"
+              element={<AccountingPage />}
+            />
+
+            <Route
+              path="/support"
+              element={<SupportPage />}
+            />
+
+            <Route
+              path="/hosting"
+              element={<HostingPage />}
+            />
+
+            <Route
+              path="/ai-console"
+              element={<AIWorkspacePage />}
+            />
+
+            <Route
+              path="/reports"
+              element={<ReportsPage />}
+            />
+
+            <Route
+              path="/settings"
+              element={<SettingsPage />}
+            />
+
+            <Route
+              path="*"
+              element={
+                <Navigate
+                  to="/dashboard"
+                  replace
+                />
+              }
+            />
+          </Routes>
+        </main>
+
+        <StatusBar />
+      </div>
+    </div>
+  );
+}
+
+function Sidebar() {
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <p className="eyebrow">
+          Faith Harbor LLC
+        </p>
+
+        <h1>Faith Harbor OS</h1>
+
+        <p className="brand-mission">
+          Technology is our tool.
+          <br />
+          People are our purpose.
+          <br />
+          Christ is our foundation.
+        </p>
+      </div>
+
+      <nav
+        className="navigation"
+        aria-label="Faith Harbor OS navigation"
+      >
+        {navigationGroups.map(
+          (group) => (
+            <section
+              className="navigation-group"
+              key={group.label}
+              aria-labelledby={`navigation-${group.label
+                .toLowerCase()
+                .replace(/\s+/g, "-")}`}
+            >
+              <h2
+                className="navigation-group-label"
+                id={`navigation-${group.label
+                  .toLowerCase()
+                  .replace(/\s+/g, "-")}`}
+              >
+                {group.label}
+              </h2>
+
+              <div className="navigation-group-links">
+                {group.items.map(
+                  (item) => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      className={({
+                        isActive,
+                      }) =>
+                        isActive
+                          ? "nav-button active"
+                          : "nav-button"
+                      }
+                    >
+                      {item.label}
+                    </NavLink>
+                  ),
+                )}
+              </div>
+            </section>
+          ),
+        )}
+      </nav>
+
+      <div className="sidebar-footer">
+        <span
+          className="connection-dot"
+          aria-hidden="true"
+        />
+
+        <span>
+          Faith Harbor OS Online
+        </span>
+      </div>
+    </aside>
+  );
+}
+
+function Topbar() {
+  const location = useLocation();
+
+  const currentItem =
+    navigationItems.find(
+      (item) =>
+        item.path ===
+        location.pathname,
+    ) ?? navigationItems[0];
 
   return (
-    <main
-      style={{
-        maxWidth: "900px",
-        margin: "40px auto",
-        padding: "2rem",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
-    >
-      <h1>Faith Harbor OS</h1>
+    <header className="topbar">
+      <div>
+        <p className="eyebrow">
+          {currentItem.eyebrow}
+        </p>
 
-      <p>
-        React frontend successfully connected to the Express backend.
-      </p>
+        <h2>{currentItem.label}</h2>
+      </div>
 
-      {loading && <p>Checking server status...</p>}
+      <div className="user-summary">
+        <span>
+          Pastor Shawn Miller
+        </span>
 
-      {error && (
-        <div
-          style={{
-            color: "red",
-            border: "1px solid red",
-            padding: "1rem",
-            marginTop: "1rem",
-          }}
-        >
-          {error}
-        </div>
-      )}
+        <span className="user-role">
+          Founder and Director
+        </span>
+      </div>
+    </header>
+  );
+}
 
-      {health && (
-        <div
-          style={{
-            marginTop: "2rem",
-            padding: "1.5rem",
-            border: "1px solid #ccc",
-            borderRadius: "8px",
-          }}
-        >
-          <h2>Backend Status</h2>
+function StatusBar() {
+  return (
+    <footer className="statusbar">
+      <span>
+        Backend Connected
+      </span>
 
-          <p>
-            <strong>Service:</strong> {health.service}
-          </p>
+      <span>
+        React Frontend
+      </span>
 
-          <p>
-            <strong>Status:</strong> {health.status}
-          </p>
+      <span>
+        SQLite Storage
+      </span>
 
-          <p>
-            <strong>Version:</strong> {health.version}
-          </p>
-
-          <p>
-            <strong>Environment:</strong> {health.environment}
-          </p>
-        </div>
-      )}
-    </main>
+      <span>
+        Human Approval Required
+      </span>
+    </footer>
   );
 }
 

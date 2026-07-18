@@ -42,6 +42,7 @@ export class SQLiteDatabase {
     );
 
     this.initialize();
+    this.migrate();
   }
 
   /**
@@ -143,6 +144,74 @@ export class SQLiteDatabase {
           ON DELETE SET NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS invoices (
+        id TEXT PRIMARY KEY,
+        number TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        project_id TEXT,
+        status TEXT NOT NULL DEFAULT 'draft',
+        currency TEXT NOT NULL DEFAULT 'USD',
+        line_items_json TEXT NOT NULL DEFAULT '[]',
+        amount REAL NOT NULL DEFAULT 0,
+        issue_date TEXT,
+        due_date TEXT,
+        paid_date TEXT,
+        notes TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (project_id)
+          REFERENCES projects(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS support_tickets (
+        id TEXT PRIMARY KEY,
+        number TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        project_id TEXT,
+        subject TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        priority TEXT NOT NULL DEFAULT 'medium',
+        assignee TEXT,
+        resolution TEXT,
+        resolved_date TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (project_id)
+          REFERENCES projects(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS hosting_accounts (
+        id TEXT PRIMARY KEY,
+        client_id TEXT,
+        brand TEXT,
+        domain TEXT NOT NULL,
+        username TEXT NOT NULL,
+        plan TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        server TEXT,
+        ip_address TEXT,
+        disk_used_mb REAL,
+        disk_limit_mb REAL,
+        notes TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
@@ -175,6 +244,63 @@ export class SQLiteDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_projects_created
         ON projects(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_invoices_client
+        ON invoices(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_invoices_project
+        ON invoices(project_id);
+
+      CREATE INDEX IF NOT EXISTS idx_invoices_status
+        ON invoices(status);
+
+      CREATE INDEX IF NOT EXISTS idx_invoices_created
+        ON invoices(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_client
+        ON support_tickets(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_project
+        ON support_tickets(project_id);
+
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_status
+        ON support_tickets(status);
+
+      CREATE INDEX IF NOT EXISTS idx_support_tickets_created
+        ON support_tickets(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_hosting_accounts_client
+        ON hosting_accounts(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_hosting_accounts_status
+        ON hosting_accounts(status);
+
+      CREATE INDEX IF NOT EXISTS idx_hosting_accounts_created
+        ON hosting_accounts(created_at);
     `);
+  }
+
+  /**
+   * Applies idempotent migrations to databases created by an
+   * earlier version. Each statement is safe to run repeatedly.
+   */
+  private migrate(): void {
+    const columnAdditions:
+      readonly string[] = [
+        "ALTER TABLE hosting_accounts ADD COLUMN brand TEXT",
+      ];
+
+    for (
+      const statement of
+      columnAdditions
+    ) {
+      try {
+        this.database.exec(
+          statement,
+        );
+      } catch {
+        // The column already exists; nothing to do.
+      }
+    }
   }
 }

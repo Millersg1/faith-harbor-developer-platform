@@ -62,6 +62,30 @@ const schema = z.object({
     .trim()
     .optional()
     .transform((value) => value || undefined),
+
+  WHM_HOST: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  WHM_API_TOKEN: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  WHM_USER: z
+    .string()
+    .trim()
+    .default("root"),
+
+  WHM_PORT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(65535)
+    .default(2087),
 });
 
 export const config = schema.parse(process.env);
