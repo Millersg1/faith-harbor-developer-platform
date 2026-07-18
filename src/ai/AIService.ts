@@ -5,6 +5,9 @@ import type {
 } from "./AIProvider";
 import type { AIDecisionRecord } from "./director/AIDecisionRecord";
 import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
+import {
+  buildFaithHarborPrompt,
+} from "./FaithHarborGrounding";
 import type { AIProviderScorecard } from "./metrics/AIProviderScorecard";
 import { ProviderManager } from "./ProviderManager";
 import { ProviderRegistry } from "./ProviderRegistry";
@@ -24,6 +27,9 @@ import { AIWorkerRegistry } from "./workers/AIWorkerRegistry";
  *
  * Other Faith Harbor OS modules should depend on this service instead
  * of directly selecting or invoking concrete AI providers.
+ *
+ * Every executed request is grounded in the canonical Faith Harbor
+ * identity and governance context before reaching a provider.
  */
 export class AIService {
   constructor(
@@ -38,7 +44,9 @@ export class AIService {
   /**
    * Registers an AI provider with the system.
    */
-  registerProvider(provider: AIProvider): void {
+  registerProvider(
+    provider: AIProvider,
+  ): void {
     this.registry.register(provider);
 
     this.manager
@@ -52,9 +60,13 @@ export class AIService {
   /**
    * Removes an AI provider from the system.
    */
-  unregisterProvider(providerId: string): boolean {
+  unregisterProvider(
+    providerId: string,
+  ): boolean {
     const removed =
-      this.registry.unregister(providerId);
+      this.registry.unregister(
+        providerId,
+      );
 
     if (removed) {
       this.manager
@@ -68,14 +80,19 @@ export class AIService {
   /**
    * Determines whether a provider is registered.
    */
-  hasProvider(providerId: string): boolean {
-    return this.registry.has(providerId);
+  hasProvider(
+    providerId: string,
+  ): boolean {
+    return this.registry.has(
+      providerId,
+    );
   }
 
   /**
    * Returns all currently registered providers.
    */
-  getProviders(): readonly AIProvider[] {
+  getProviders():
+  readonly AIProvider[] {
     return this.registry.getAll();
   }
 
@@ -83,7 +100,7 @@ export class AIService {
    * Returns all AI provider operational scorecards.
    */
   getProviderScorecards():
-    readonly AIProviderScorecard[] {
+  readonly AIProviderScorecard[] {
     return this.manager
       .getMetricsRegistry()
       .getAll();
@@ -104,7 +121,7 @@ export class AIService {
    * Returns the Director's decision history.
    */
   getDecisionHistory():
-    readonly AIDecisionRecord[] {
+  readonly AIDecisionRecord[] {
     return this.manager
       .getDecisionLog()
       .getAll();
@@ -113,35 +130,50 @@ export class AIService {
   /**
    * Registers a reusable AI worker.
    */
-  registerWorker(worker: AIWorker): void {
+  registerWorker(
+    worker: AIWorker,
+  ): void {
     this.workers.register(worker);
   }
 
   /**
    * Removes a reusable AI worker.
    */
-  unregisterWorker(workerId: string): boolean {
-    return this.workers.unregister(workerId);
+  unregisterWorker(
+    workerId: string,
+  ): boolean {
+    return this.workers.unregister(
+      workerId,
+    );
   }
 
   /**
    * Determines whether an AI worker is registered.
    */
-  hasWorker(workerId: string): boolean {
-    return this.workers.has(workerId);
+  hasWorker(
+    workerId: string,
+  ): boolean {
+    return this.workers.has(
+      workerId,
+    );
   }
 
   /**
    * Returns one registered AI worker.
    */
-  getWorker(workerId: string): AIWorker {
-    return this.workers.get(workerId);
+  getWorker(
+    workerId: string,
+  ): AIWorker {
+    return this.workers.get(
+      workerId,
+    );
   }
 
   /**
    * Returns all registered AI workers.
    */
-  getWorkers(): readonly AIWorker[] {
+  getWorkers():
+  readonly AIWorker[] {
     return this.workers.list();
   }
 
@@ -151,7 +183,9 @@ export class AIService {
   createRuntimeSession(
     input: CreateRuntimeSessionInput,
   ): RuntimeSession {
-    return this.runtime.create(input);
+    return this.runtime.create(
+      input,
+    );
   }
 
   /**
@@ -159,15 +193,17 @@ export class AIService {
    */
   createWorkerSession(
     workerId: string,
-    input: CreateWorkerSessionInput = {},
+    input:
+      CreateWorkerSessionInput = {},
   ): RuntimeSession {
     const worker =
       this.workers.get(workerId);
 
-    return this.runtime.createFromWorker(
-      worker,
-      input,
-    );
+    return this.runtime
+      .createFromWorker(
+        worker,
+        input,
+      );
   }
 
   /**
@@ -176,14 +212,16 @@ export class AIService {
   getRuntimeSession(
     sessionId: string,
   ): RuntimeSession {
-    return this.runtime.get(sessionId);
+    return this.runtime.get(
+      sessionId,
+    );
   }
 
   /**
    * Returns all LLM runtime sessions.
    */
   getRuntimeSessions():
-    readonly RuntimeSession[] {
+  readonly RuntimeSession[] {
     return this.runtime.list();
   }
 
@@ -217,7 +255,9 @@ export class AIService {
   deleteRuntimeSession(
     sessionId: string,
   ): boolean {
-    return this.runtime.delete(sessionId);
+    return this.runtime.delete(
+      sessionId,
+    );
   }
 
   /**
@@ -245,15 +285,19 @@ export class AIService {
         await this.generate({
           capability:
             session.capability,
+
           prompt:
             this.buildRuntimePrompt(
               sessionId,
             ),
+
           context: {
             requestedProvider:
               session.provider,
+
             requestedModel:
               session.model,
+
             runtimeSessionId:
               session.id,
           },
@@ -263,12 +307,20 @@ export class AIService {
         sessionId,
         {
           role: "assistant",
-          content: response.content,
-          provider: response.provider,
-          model: response.model,
+
+          content:
+            response.content,
+
+          provider:
+            response.provider,
+
+          model:
+            response.model,
+
           metadata: {
             capability:
               response.capability,
+
             tokensUsed:
               response.tokensUsed,
           },
@@ -279,10 +331,13 @@ export class AIService {
         sessionId,
         {
           role: "assistant",
+
           content:
             "The AI request could not be completed.",
+
           metadata: {
             failed: true,
+
             userMessageId:
               userMessage.id,
           },
@@ -295,18 +350,52 @@ export class AIService {
 
   /**
    * Creates an execution plan without running the request.
+   *
+   * Planning does not send content to a provider, so the original
+   * request remains intact until execution.
    */
-  plan(request: AIRequest): AIExecutionPlan {
-    return this.manager.plan(request);
+  plan(
+    request: AIRequest,
+  ): AIExecutionPlan {
+    return this.manager.plan(
+      request,
+    );
   }
 
   /**
-   * Executes an AI request using the generated execution plan.
+   * Executes an AI request through the AI Director.
+   *
+   * Before execution, the request is grounded in Faith Harbor's
+   * canonical identity, mission, architecture, and governance rules.
+   * The selected provider therefore receives trusted organizational
+   * context together with the current request.
    */
   async generate(
     request: AIRequest,
   ): Promise<AIResponse> {
-    return this.manager.generate(request);
+    const groundedRequest:
+      AIRequest = {
+        ...request,
+
+        prompt:
+          buildFaithHarborPrompt(
+            request.prompt,
+          ),
+
+        context: {
+          ...request.context,
+
+          faithHarborGrounded:
+            true,
+
+          humanAuthority:
+            true,
+        },
+      };
+
+    return this.manager.generate(
+      groundedRequest,
+    );
   }
 
   /**

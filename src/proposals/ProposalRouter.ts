@@ -60,87 +60,149 @@ export function createProposalRouter(
     });
   });
 
-  router.get("/:proposalId", (req, res) => {
-    if (!proposalService) {
-      res.status(503).json({
-        error: {
-          code: "AI_NOT_CONFIGURED",
-          message:
-            "Proposal management is not currently available.",
-        },
-      });
-
-      return;
-    }
-
-    try {
-      res.json(
-        proposalService.get(
-          req.params.proposalId,
-        ),
-      );
-    } catch (error) {
-      res.status(404).json({
-        error: {
-          code: "PROPOSAL_NOT_FOUND",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Proposal not found.",
-        },
-      });
-    }
-  });
-
-  router.post("/", async (req, res, next) => {
-    try {
+  router.get(
+    "/:proposalId",
+    (req, res) => {
       if (!proposalService) {
         res.status(503).json({
           error: {
-            code: "AI_NOT_CONFIGURED",
+            code:
+              "AI_NOT_CONFIGURED",
             message:
-              "Proposal generation is not currently available.",
+              "Proposal management is not currently available.",
           },
         });
 
         return;
       }
 
-      const parsed =
-        proposalRequestSchema.safeParse(
-          req.body,
-        );
+      try {
+        const proposal =
+          proposalService.get(
+            req.params.proposalId,
+          );
 
-      if (!parsed.success) {
-        res.status(400).json({
+        res.json(proposal);
+      } catch (error) {
+        res.status(404).json({
           error: {
             code:
-              "INVALID_PROPOSAL_REQUEST",
+              "PROPOSAL_NOT_FOUND",
             message:
-              "Proposal request validation failed.",
-            details:
-              parsed.error.flatten(),
+              error instanceof Error
+                ? error.message
+                : "Proposal not found.",
           },
         });
-
-        return;
       }
+    },
+  );
 
-      const proposal =
-        await proposalService.generate(
-          parsed.data,
+  router.post(
+    "/",
+    async (req, res, next) => {
+      try {
+        if (!proposalService) {
+          res.status(503).json({
+            error: {
+              code:
+                "AI_NOT_CONFIGURED",
+              message:
+                "Proposal generation is not currently available.",
+            },
+          });
+
+          return;
+        }
+
+        const parsed =
+          proposalRequestSchema.safeParse(
+            req.body,
+          );
+
+        if (!parsed.success) {
+          res.status(400).json({
+            error: {
+              code:
+                "INVALID_PROPOSAL_REQUEST",
+              message:
+                "Proposal request validation failed.",
+              details:
+                parsed.error.flatten(),
+            },
+          });
+
+          return;
+        }
+
+        const proposal =
+          await proposalService.generate(
+            parsed.data,
+          );
+
+        res.status(201).json({
+          success: true,
+          status: proposal.status,
+          requiresApproval: true,
+          proposal,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  /**
+   * Permanently deletes one proposal.
+   *
+   * The frontend must obtain explicit confirmation
+   * before calling this endpoint.
+   */
+  router.delete(
+    "/:proposalId",
+    (req, res, next) => {
+      try {
+        if (!proposalService) {
+          res.status(503).json({
+            error: {
+              code:
+                "AI_NOT_CONFIGURED",
+              message:
+                "Proposal management is not currently available.",
+            },
+          });
+
+          return;
+        }
+
+        proposalService.delete(
+          req.params.proposalId,
         );
 
-      res.status(201).json({
-        success: true,
-        status: proposal.status,
-        requiresApproval: true,
-        proposal,
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
+        res.status(204).send();
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes(
+            "was not found",
+          )
+        ) {
+          res.status(404).json({
+            error: {
+              code:
+                "PROPOSAL_NOT_FOUND",
+              message:
+                error.message,
+            },
+          });
+
+          return;
+        }
+
+        next(error);
+      }
+    },
+  );
 
   return router;
 }

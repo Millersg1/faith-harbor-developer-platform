@@ -34,7 +34,8 @@ export class ClientService {
     new Map<string, ClientRecord>();
 
   constructor(
-    private readonly database?: DatabaseSync,
+    private readonly database?:
+      DatabaseSync,
   ) {}
 
   create(
@@ -43,22 +44,23 @@ export class ClientService {
     const now =
       new Date().toISOString();
 
-    const client: ClientRecord = {
-      id: randomUUID(),
+    const client:
+      ClientRecord = {
+        id: randomUUID(),
 
-      companyName:
-        request.companyName.trim(),
+        companyName:
+          request.companyName.trim(),
 
-      primaryContact:
-        request.primaryContact.trim(),
+        primaryContact:
+          request.primaryContact.trim(),
 
-      metadata:
-        request.metadata ?? {},
+        metadata:
+          request.metadata ?? {},
 
-      createdAt: now,
+        createdAt: now,
 
-      updatedAt: now,
-    };
+        updatedAt: now,
+      };
 
     if (request.email) {
       client.email =
@@ -223,31 +225,69 @@ export class ClientService {
   }
 
   /**
+   * Permanently deletes one client.
+   *
+   * Related-record protection is enforced by ClientRouter
+   * before this method is called.
+   */
+  delete(
+    id: string,
+  ): void {
+    if (this.database) {
+      const result =
+        this.database
+          .prepare(`
+            DELETE FROM clients
+            WHERE id = ?
+          `)
+          .run(id);
+
+      if (result.changes === 0) {
+        throw new Error(
+          `Client "${id}" was not found.`,
+        );
+      }
+
+      return;
+    }
+
+    const deleted =
+      this.clients.delete(id);
+
+    if (!deleted) {
+      throw new Error(
+        `Client "${id}" was not found.`,
+      );
+    }
+  }
+
+  /**
    * Converts one SQLite row into the public client record.
    */
   private mapRow(
     row: ClientRow,
   ): ClientRecord {
-    const client: ClientRecord = {
-      id: row.id,
+    const client:
+      ClientRecord = {
+        id: row.id,
 
-      companyName:
-        row.company_name,
+        companyName:
+          row.company_name,
 
-      primaryContact:
-        row.primary_contact,
+        primaryContact:
+          row.primary_contact,
 
-      metadata:
-        this.parseMetadata(
-          row.metadata_json,
-        ),
+        metadata:
+          this.parseMetadata(
+            row.metadata_json,
+          ),
 
-      createdAt:
-        row.created_at,
+        createdAt:
+          row.created_at,
 
-      updatedAt:
-        row.updated_at,
-    };
+        updatedAt:
+          row.updated_at,
+      };
 
     if (row.email) {
       client.email = row.email;
@@ -258,7 +298,8 @@ export class ClientService {
     }
 
     if (row.website) {
-      client.website = row.website;
+      client.website =
+        row.website;
     }
 
     if (row.industry) {

@@ -147,7 +147,13 @@ describe("AIService", () => {
     });
 
     expect(response.provider).toBe("provider1");
-    expect(response.content).toBe("Hello");
+    // generate() grounds every prompt in the Faith Harbor
+    // organizational context before dispatching it, so the
+    // echoing TestProvider returns the grounded prompt.
+    expect(response.content).toContain(
+      "FAITH HARBOR ORGANIZATIONAL CONTEXT",
+    );
+    expect(response.content).toContain("Hello");
   });
 
   it("reports registered providers", () => {

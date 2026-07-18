@@ -29,7 +29,8 @@ export class ProposalRepository {
     new Map<string, ProposalRecord>();
 
   constructor(
-    private readonly database?: DatabaseSync,
+    private readonly database?:
+      DatabaseSync,
   ) {}
 
   create(
@@ -228,6 +229,40 @@ export class ProposalRepository {
   }
 
   /**
+   * Permanently deletes one proposal.
+   */
+  delete(
+    id: string,
+  ): void {
+    if (this.database) {
+      const result =
+        this.database
+          .prepare(`
+            DELETE FROM proposals
+            WHERE id = ?
+          `)
+          .run(id);
+
+      if (result.changes === 0) {
+        throw new Error(
+          `Proposal "${id}" was not found.`,
+        );
+      }
+
+      return;
+    }
+
+    const deleted =
+      this.proposals.delete(id);
+
+    if (!deleted) {
+      throw new Error(
+        `Proposal "${id}" was not found.`,
+      );
+    }
+  }
+
+  /**
    * Converts one SQLite row into a proposal record.
    */
   private mapRow(
@@ -235,20 +270,35 @@ export class ProposalRepository {
   ): ProposalRecord {
     return {
       id: row.id,
-      clientId: row.client_id,
-      clientName: row.client_name,
-      service: row.service,
+
+      clientId:
+        row.client_id,
+
+      clientName:
+        row.client_name,
+
+      service:
+        row.service,
+
       requestedOutcome:
         row.requested_outcome,
-      proposal: row.proposal,
+
+      proposal:
+        row.proposal,
+
       status:
         row.status as ProposalStatus,
+
       metadata:
         this.parseMetadata(
           row.metadata_json,
         ),
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+
+      createdAt:
+        row.created_at,
+
+      updatedAt:
+        row.updated_at,
     };
   }
 

@@ -13,7 +13,8 @@ import type { ProposalRequest } from "./ProposalRequest";
 export class ProposalService {
   constructor(
     private readonly ai: AIService,
-    private readonly clients: ClientService,
+    private readonly clients:
+      ClientService,
     private readonly repository =
       new ProposalRepository(),
   ) {}
@@ -35,6 +36,7 @@ export class ProposalService {
         {
           metadata: {
             clientId: client.id,
+
             clientName:
               client.companyName,
           },
@@ -54,27 +56,42 @@ export class ProposalService {
     const now =
       new Date().toISOString();
 
-    const proposal: ProposalRecord = {
-      id: randomUUID(),
-      clientId: client.id,
-      clientName:
-        client.companyName,
-      service:
-        this.getServiceName(request),
-      requestedOutcome:
-        request.requestedOutcome,
-      proposal:
-        this.findLatestAssistantMessage(
-          messages,
-        ),
-      status: "draft",
-      createdAt: now,
-      updatedAt: now,
-      metadata: {
-        ...request.metadata,
-        runtimeSessionId: session.id,
-      },
-    };
+    const proposal:
+      ProposalRecord = {
+        id: randomUUID(),
+
+        clientId:
+          client.id,
+
+        clientName:
+          client.companyName,
+
+        service:
+          this.getServiceName(
+            request,
+          ),
+
+        requestedOutcome:
+          request.requestedOutcome,
+
+        proposal:
+          this.findLatestAssistantMessage(
+            messages,
+          ),
+
+        status: "draft",
+
+        createdAt: now,
+
+        updatedAt: now,
+
+        metadata: {
+          ...request.metadata,
+
+          runtimeSessionId:
+            session.id,
+        },
+      };
 
     return this.repository.create(
       proposal,
@@ -84,7 +101,8 @@ export class ProposalService {
   /**
    * Returns every saved proposal.
    */
-  list(): readonly ProposalRecord[] {
+  list():
+  readonly ProposalRecord[] {
     return this.repository.list();
   }
 
@@ -112,6 +130,17 @@ export class ProposalService {
           proposal.clientId ===
           clientId,
       );
+  }
+
+  /**
+   * Permanently deletes one proposal.
+   */
+  delete(
+    proposalId: string,
+  ): void {
+    this.repository.delete(
+      proposalId,
+    );
   }
 
   /**
@@ -159,7 +188,9 @@ export class ProposalService {
     request: ProposalRequest,
   ): string {
     const service =
-      this.getServiceName(request);
+      this.getServiceName(
+        request,
+      );
 
     const additionalNotes =
       typeof request.metadata
@@ -229,7 +260,8 @@ service levels, credentials, or commitments.
    * Returns the latest assistant response.
    */
   private findLatestAssistantMessage(
-    messages: readonly RuntimeMessage[],
+    messages:
+      readonly RuntimeMessage[],
   ): string {
     const assistantMessages =
       messages.filter(
