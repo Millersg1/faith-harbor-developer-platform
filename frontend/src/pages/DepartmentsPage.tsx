@@ -93,8 +93,9 @@ const departmentCatalog: readonly CatalogDepartment[] = [
     name: "Publishing",
     description:
       "Manage manuscripts, editing stages, book production, distribution, and royalties.",
-    status: "planned",
-    statusLabel: "Planned",
+    status: "active",
+    statusLabel: "Active",
+    path: "/publishing",
   },
   {
     name: "Ministry",

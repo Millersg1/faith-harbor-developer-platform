@@ -138,7 +138,7 @@ export const defaultDepartments: Department[] = [
     permissions: [],
     successMetrics: ["Manuscripts published"],
     health: {
-      status: "unknown",
+      status: "healthy",
       activeWorkflows: 0,
       pendingApprovals: 0,
       lastCheckedAt: checkedAt,

@@ -17,6 +17,7 @@ import DepartmentsPage from "./pages/DepartmentsPage";
 import HostingPage from "./pages/HostingPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProposalsPage from "./pages/ProposalsPage";
+import PublishingPage from "./pages/PublishingPage";
 import ReportsPage from "./pages/ReportsPage";
 import SettingsPage from "./pages/SettingsPage";
 import SupportPage from "./pages/SupportPage";
@@ -90,6 +91,16 @@ const navigationGroups: readonly NavigationGroup[] = [
         label: "Hosting",
         path: "/hosting",
         eyebrow: "Hosting Operations",
+      },
+    ],
+  },
+  {
+    label: "Publishing",
+    items: [
+      {
+        label: "Books",
+        path: "/publishing",
+        eyebrow: "Faith Harbor Publishing",
       },
     ],
   },
@@ -184,6 +195,11 @@ function App() {
             <Route
               path="/hosting"
               element={<HostingPage />}
+            />
+
+            <Route
+              path="/publishing"
+              element={<PublishingPage />}
             />
 
             <Route

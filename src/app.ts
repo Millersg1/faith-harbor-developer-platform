@@ -40,6 +40,9 @@ import { ProjectService } from "./projects/ProjectService";
 import { ProposalRepository } from "./proposals/ProposalRepository";
 import { createProposalRouter } from "./proposals/ProposalRouter";
 import { ProposalService } from "./proposals/ProposalService";
+import { BookRepository } from "./publishing/BookRepository";
+import { createBookRouter } from "./publishing/BookRouter";
+import { BookService } from "./publishing/BookService";
 import { TicketRepository } from "./support/TicketRepository";
 import { createTicketRouter } from "./support/TicketRouter";
 import { TicketService } from "./support/TicketService";
@@ -142,6 +145,15 @@ export function createApp(
     new TicketService(
       clientService,
       ticketRepository,
+    );
+
+  const bookRepository =
+    new BookRepository(database);
+
+  const bookService =
+    new BookService(
+      clientService,
+      bookRepository,
     );
 
   const hostingRepository =
@@ -277,6 +289,9 @@ export function createApp(
         tickets:
           "/api/v1/tickets",
 
+        books:
+          "/api/v1/books",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -337,6 +352,12 @@ export function createApp(
         true,
 
       persistentSupportStorage:
+        Boolean(database),
+
+      publishingManagementAvailable:
+        true,
+
+      persistentPublishingStorage:
         Boolean(database),
 
       hostingManagementAvailable:
@@ -424,6 +445,13 @@ export function createApp(
     "/api/v1/tickets",
     createTicketRouter(
       ticketService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/books",
+    createBookRouter(
+      bookService,
     ),
   );
 

@@ -1158,6 +1158,46 @@ pre {
     background: rgba(100, 116, 139, 0.15);
 }
 
+/* Publishing */
+.book-status {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 650;
+    text-transform: uppercase;
+}
+
+.book-status-draft {
+    color: #9fb2c6;
+    background: rgba(127, 148, 170, 0.15);
+}
+
+.book-status-editing {
+    color: #fcd34d;
+    background: rgba(245, 158, 11, 0.15);
+}
+
+.book-status-design {
+    color: #c4b5fd;
+    background: rgba(139, 92, 246, 0.15);
+}
+
+.book-status-proof {
+    color: #7dd3fc;
+    background: rgba(56, 189, 248, 0.15);
+}
+
+.book-status-published {
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.15);
+}
+
+.book-status-archived {
+    color: #cbd5e1;
+    background: rgba(100, 116, 139, 0.15);
+}
+
 .assessment {
     margin-top: 16px;
 }
