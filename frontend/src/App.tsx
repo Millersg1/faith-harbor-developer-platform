@@ -6,6 +6,9 @@ import {
   useLocation,
 } from "react-router-dom";
 
+import AuthGate, {
+  useAuth,
+} from "./components/AuthGate";
 import AccountingPage from "./pages/AccountingPage";
 import AIWorkspacePage from "./pages/AIWorkspacePage";
 import ClientsPage from "./pages/ClientsPage";
@@ -124,8 +127,9 @@ const navigationItems =
 
 function App() {
   return (
-    <div className="app-shell">
-      <Sidebar />
+    <AuthGate>
+      <div className="app-shell">
+        <Sidebar />
 
       <div className="application">
         <Topbar />
@@ -211,7 +215,8 @@ function App() {
 
         <StatusBar />
       </div>
-    </div>
+      </div>
+    </AuthGate>
   );
 }
 
@@ -290,7 +295,35 @@ function Sidebar() {
           Faith Harbor OS Online
         </span>
       </div>
+
+      <SidebarSession />
     </aside>
+  );
+}
+
+function SidebarSession() {
+  const { user, logout } = useAuth();
+
+  if (!user) {
+    return null;
+  }
+
+  return (
+    <div className="sidebar-session">
+      <span className="sidebar-session-email">
+        {user.email}
+      </span>
+
+      <button
+        type="button"
+        className="secondary-button"
+        onClick={() =>
+          void logout()
+        }
+      >
+        Sign Out
+      </button>
+    </div>
   );
 }
 

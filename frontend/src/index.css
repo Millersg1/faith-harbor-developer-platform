@@ -917,6 +917,71 @@ pre {
     font-size: 0.8rem;
 }
 
+/* Authentication */
+.login-shell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+    background:
+        radial-gradient(
+            circle at top,
+            rgba(20, 78, 119, 0.35),
+            transparent 55%
+        ),
+        #07111f;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 32px;
+    border: 1px solid #20364d;
+    border-radius: 16px;
+    background: rgba(13, 30, 49, 0.96);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.login-card h1 {
+    margin-top: 4px;
+    font-size: 1.7rem;
+}
+
+.login-mission {
+    margin: 12px 0 8px;
+    color: #91a5bc;
+    font-size: 0.86rem;
+    line-height: 1.55;
+}
+
+.login-card .primary-button {
+    width: 100%;
+}
+
+.login-loading {
+    color: #91a5bc;
+}
+
+.sidebar-session {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px 10px 0;
+    border-top: 1px solid #20364c;
+}
+
+.sidebar-session-email {
+    color: #8fa4ba;
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+}
+
+.sidebar-session .secondary-button {
+    align-self: flex-start;
+}
+
 /* Accounting / Invoices */
 .line-item-row {
     display: grid;

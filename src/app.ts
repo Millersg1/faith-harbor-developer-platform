@@ -9,6 +9,9 @@ import type { DatabaseSync } from "node:sqlite";
 import { InvoiceRepository } from "./accounting/InvoiceRepository";
 import { createInvoiceRouter } from "./accounting/InvoiceRouter";
 import { InvoiceService } from "./accounting/InvoiceService";
+import { createAuthRouter } from "./auth/AuthRouter";
+import { AuthService } from "./auth/AuthService";
+import { requireAuth } from "./auth/requireAuth";
 import type { AIService } from "./ai/AIService";
 import {
   AIBootstrap,
@@ -89,6 +92,7 @@ function createProviderInstallers():
 export function createApp(
   aiService?: AIService,
   database?: DatabaseSync,
+  authService?: AuthService,
 ) {
   const app = express();
 
@@ -194,7 +198,17 @@ export function createApp(
   app.disable("x-powered-by");
 
   app.use(helmet());
-  app.use(cors());
+
+  // The UI is served from the same origin in production, so
+  // cross-origin requests are disabled unless an explicit origin
+  // is configured. Credentials (the session cookie) are allowed.
+  app.use(
+    cors({
+      origin:
+        config.CORS_ORIGIN ?? false,
+      credentials: true,
+    }),
+  );
 
   app.use(
     express.json({
@@ -338,6 +352,22 @@ export function createApp(
         new Date().toISOString(),
     });
   });
+
+  // Authentication gate. When an auth service is configured, the
+  // login routes are public and everything else under /api/v1
+  // requires a valid session. The static UI shell stays public so
+  // it can render the login screen; all data lives behind the gate.
+  if (authService) {
+    app.use(
+      "/api/v1/auth",
+      createAuthRouter(authService),
+    );
+
+    app.use(
+      "/api/v1",
+      requireAuth(authService),
+    );
+  }
 
   app.get(
     "/api/v1/departments",
@@ -511,10 +541,57 @@ export function createApp(
 }
 
 /**
+ * Builds the single-administrator auth service from configuration,
+ * or returns undefined when no credentials are configured.
+ */
+function createAuthService():
+  AuthService | undefined {
+  if (
+    config.ADMIN_EMAIL &&
+    (config.ADMIN_PASSWORD_HASH ||
+      config.ADMIN_PASSWORD)
+  ) {
+    return new AuthService({
+      adminEmail:
+        config.ADMIN_EMAIL,
+
+      passwordHash:
+        config.ADMIN_PASSWORD_HASH,
+
+      passwordPlain:
+        config.ADMIN_PASSWORD,
+
+      sessionTtlMs:
+        config.SESSION_TTL_HOURS *
+        60 *
+        60 *
+        1000,
+    });
+  }
+
+  return undefined;
+}
+
+/**
  * Creates the production application, initializes SQLite,
  * and installs all configured AI providers and workers.
  */
 export async function createConfiguredApp() {
+  const authService =
+    createAuthService();
+
+  // A production deployment must never run unauthenticated.
+  if (
+    config.NODE_ENV ===
+      "production" &&
+    !authService
+  ) {
+    throw new Error(
+      "Refusing to start: authentication is not configured. " +
+        "Set ADMIN_EMAIL and ADMIN_PASSWORD (or ADMIN_PASSWORD_HASH) in the environment.",
+    );
+  }
+
   const database =
     new SQLiteDatabase();
 
@@ -534,6 +611,7 @@ export async function createConfiguredApp() {
       createApp(
         aiService,
         database.connection,
+        authService,
       );
 
     app.locals.database =

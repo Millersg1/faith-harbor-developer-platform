@@ -86,6 +86,35 @@ const schema = z.object({
     .positive()
     .max(65535)
     .default(2087),
+
+  ADMIN_EMAIL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  ADMIN_PASSWORD: z
+    .string()
+    .optional()
+    .transform((value) => value || undefined),
+
+  ADMIN_PASSWORD_HASH: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  SESSION_TTL_HOURS: z.coerce
+    .number()
+    .positive()
+    .max(720)
+    .default(12),
+
+  CORS_ORIGIN: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
 });
 
 export const config = schema.parse(process.env);

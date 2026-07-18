@@ -33,6 +33,27 @@ cp .env.example .env
 # edit .env: set NODE_ENV=production and any AI keys
 ```
 
+### Authentication (required)
+
+The app **refuses to start in production** unless a login is
+configured. In `.env` set:
+
+```bash
+ADMIN_EMAIL=you@faithharborwebsolutions.com
+# Simplest: a plaintext password
+ADMIN_PASSWORD=choose-a-strong-password
+```
+
+For a hashed password instead of plaintext, run locally:
+
+```bash
+npm run hash-password "choose-a-strong-password"
+# then put the printed scrypt$... value in .env as ADMIN_PASSWORD_HASH
+```
+
+Only this account can sign in, and every page and API route requires
+a valid session. Keep `.env` readable only by the cPanel user.
+
 ## 3. Install dependencies and build
 
 ```bash
