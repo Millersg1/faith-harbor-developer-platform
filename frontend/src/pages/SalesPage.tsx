@@ -77,12 +77,23 @@ interface LeadMutationResponse {
   lead: Lead;
 }
 
+interface Campaign {
+  id: string;
+  name: string;
+}
+
+interface CampaignsResponse {
+  count: number;
+  campaigns: Campaign[];
+}
+
 interface LeadFormData {
   name: string;
   company: string;
   email: string;
   phone: string;
   source: string;
+  campaignId: string;
   serviceInterest: string;
   estimatedValue: string;
   status: LeadStatus;
@@ -104,6 +115,7 @@ const emptyForm:
     email: "",
     phone: "",
     source: "",
+    campaignId: "",
     serviceInterest: "",
     estimatedValue: "",
     status: "new",
@@ -224,6 +236,9 @@ export default function SalesPage() {
   const [clients, setClients] =
     useState<Client[]>([]);
 
+  const [campaigns, setCampaigns] =
+    useState<Campaign[]>([]);
+
   const [leads, setLeads] =
     useState<Lead[]>([]);
 
@@ -262,16 +277,32 @@ export default function SalesPage() {
             "Clients could not be loaded.",
           ),
       ),
+      fetch("/api/v1/campaigns")
+        .then((response) =>
+          getResponseData<CampaignsResponse>(
+            response,
+            "Campaigns could not be loaded.",
+          ),
+        )
+        .catch(() => ({
+          count: 0,
+          campaigns: [],
+        })),
       requestLeads(),
     ])
       .then(
         ([
           clientsResult,
+          campaignsResult,
           leadsResult,
         ]) => {
           if (cancelled) {
             return;
           }
+
+          setCampaigns(
+            campaignsResult.campaigns,
+          );
 
           setClients(
             clientsResult.clients,
@@ -432,6 +463,9 @@ export default function SalesPage() {
             source:
               formData.source
                 .trim() ||
+              undefined,
+            campaignId:
+              formData.campaignId ||
               undefined,
             serviceInterest:
               formData.serviceInterest
@@ -837,6 +871,51 @@ export default function SalesPage() {
                 />
               </div>
             </div>
+
+            {campaigns.length > 0 && (
+              <div className="form-group">
+                <label htmlFor="lead-campaign">
+                  Campaign (attribution)
+                </label>
+
+                <select
+                  id="lead-campaign"
+                  value={
+                    formData.campaignId
+                  }
+                  onChange={(event) =>
+                    setFormData(
+                      (current) => ({
+                        ...current,
+                        campaignId:
+                          event
+                            .target
+                            .value,
+                      }),
+                    )
+                  }
+                >
+                  <option value="">
+                    Not attributed
+                  </option>
+
+                  {campaigns.map(
+                    (campaign) => (
+                      <option
+                        key={
+                          campaign.id
+                        }
+                        value={
+                          campaign.id
+                        }
+                      >
+                        {campaign.name}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+            )}
 
             <div className="form-row">
               <div className="form-group">

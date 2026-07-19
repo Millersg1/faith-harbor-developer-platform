@@ -45,6 +45,12 @@ const leadRequestSchema = z.object({
     .trim()
     .optional(),
 
+  campaignId: z
+    .string()
+    .trim()
+    .min(1)
+    .optional(),
+
   serviceInterest: z
     .string()
     .trim()
@@ -96,12 +102,25 @@ export function createLeadRouter(
         ? req.query.clientId.trim()
         : "";
 
-    const leads =
+    const campaignId =
+      typeof req.query.campaignId ===
+      "string"
+        ? req.query.campaignId.trim()
+        : "";
+
+    let leads =
       clientId.length > 0
         ? leadService.listForClient(
             clientId,
           )
         : leadService.list();
+
+    if (campaignId.length > 0) {
+      leads =
+        leadService.listForCampaign(
+          campaignId,
+        );
+    }
 
     res.json({
       count: leads.length,

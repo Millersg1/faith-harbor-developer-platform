@@ -19,6 +19,11 @@ export interface LeadRequest {
 
   source?: string;
 
+  /**
+   * Marketing campaign that generated this lead, if any.
+   */
+  campaignId?: string;
+
   serviceInterest?: string;
 
   estimatedValue?: number;

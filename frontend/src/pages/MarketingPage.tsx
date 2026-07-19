@@ -239,6 +239,50 @@ export default function MarketingPage() {
   const [creating, setCreating] =
     useState(false);
 
+  const [
+    attributedLeads,
+    setAttributedLeads,
+  ] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!selectedCampaign) {
+      setAttributedLeads(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch(
+      `/api/v1/leads?campaignId=${encodeURIComponent(
+        selectedCampaign.id,
+      )}`,
+    )
+      .then((response) =>
+        response.ok
+          ? response.json()
+          : { count: 0 },
+      )
+      .then((result) => {
+        if (!cancelled) {
+          setAttributedLeads(
+            typeof result.count ===
+              "number"
+              ? result.count
+              : 0,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAttributedLeads(0);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCampaign]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -965,6 +1009,17 @@ export default function MarketingPage() {
                       selectedCampaign.clientId,
                     ) ?? "Client"
                   : "Faith Harbor"}
+              </strong>
+            </div>
+
+            <div className="client-overview-item">
+              <span>
+                Attributed Leads
+              </span>
+
+              <strong>
+                {attributedLeads ??
+                  "..."}
               </strong>
             </div>
           </div>

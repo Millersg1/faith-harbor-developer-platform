@@ -155,6 +155,38 @@ describe("LeadService", () => {
     ]);
   });
 
+  it("attributes leads to a campaign", () => {
+    const {
+      service,
+    } = createLeadService();
+
+    const first =
+      service.create({
+        name: "From Campaign A",
+        campaignId: "campaign-1",
+      });
+
+    service.create({
+      name: "From Campaign B",
+      campaignId: "campaign-2",
+    });
+
+    const third =
+      service.create({
+        name: "Also Campaign A",
+        campaignId: "campaign-1",
+      });
+
+    expect(first.campaignId)
+      .toBe("campaign-1");
+
+    expect(
+      service.listForCampaign(
+        "campaign-1",
+      ),
+    ).toEqual([first, third]);
+  });
+
   it("moves a lead through the pipeline on update", () => {
     const {
       service,

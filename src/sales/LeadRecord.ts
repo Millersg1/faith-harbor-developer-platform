@@ -32,6 +32,11 @@ export interface LeadRecord {
   source?: string;
 
   /**
+   * Marketing campaign that generated this lead, if any.
+   */
+  campaignId?: string;
+
+  /**
    * Service the lead is interested in.
    */
   serviceInterest?: string;

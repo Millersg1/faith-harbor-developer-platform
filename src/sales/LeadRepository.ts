@@ -13,6 +13,7 @@ interface LeadRow {
   email: string | null;
   phone: string | null;
   source: string | null;
+  campaign_id: string | null;
   service_interest: string | null;
   estimated_value: number | null;
   status: string;
@@ -51,6 +52,7 @@ export class LeadRepository {
             email,
             phone,
             source,
+            campaign_id,
             service_interest,
             estimated_value,
             status,
@@ -60,6 +62,7 @@ export class LeadRepository {
             created_at,
             updated_at
           ) VALUES (
+            ?,
             ?,
             ?,
             ?,
@@ -85,6 +88,7 @@ export class LeadRepository {
           lead.email ?? null,
           lead.phone ?? null,
           lead.source ?? null,
+          lead.campaignId ?? null,
           lead.serviceInterest ?? null,
           lead.estimatedValue ?? null,
           lead.status,
@@ -123,6 +127,7 @@ export class LeadRepository {
               email,
               phone,
               source,
+              campaign_id,
               service_interest,
               estimated_value,
               status,
@@ -172,6 +177,7 @@ export class LeadRepository {
               email,
               phone,
               source,
+              campaign_id,
               service_interest,
               estimated_value,
               status,
@@ -212,6 +218,7 @@ export class LeadRepository {
               email,
               phone,
               source,
+              campaign_id,
               service_interest,
               estimated_value,
               status,
@@ -241,6 +248,16 @@ export class LeadRepository {
     );
   }
 
+  findByCampaignId(
+    campaignId: string,
+  ): LeadRecord[] {
+    return this.list().filter(
+      (lead) =>
+        lead.campaignId ===
+        campaignId,
+    );
+  }
+
   update(
     lead: LeadRecord,
   ): LeadRecord {
@@ -256,6 +273,7 @@ export class LeadRepository {
               email = ?,
               phone = ?,
               source = ?,
+              campaign_id = ?,
               service_interest = ?,
               estimated_value = ?,
               status = ?,
@@ -272,6 +290,7 @@ export class LeadRepository {
             lead.email ?? null,
             lead.phone ?? null,
             lead.source ?? null,
+            lead.campaignId ?? null,
             lead.serviceInterest ?? null,
             lead.estimatedValue ?? null,
             lead.status,
@@ -359,6 +378,8 @@ export class LeadRepository {
         row.phone ?? undefined,
       source:
         row.source ?? undefined,
+      campaignId:
+        row.campaign_id ?? undefined,
       serviceInterest:
         row.service_interest ??
         undefined,

@@ -82,6 +82,32 @@ describe("TicketRouter", () => {
     ).toBeDefined();
   });
 
+  it("links a ticket to a hosting account", async () => {
+    const app = createApp();
+
+    const client =
+      await createClient(app);
+
+    const response =
+      await request(app)
+        .post("/api/v1/tickets")
+        .send({
+          clientId: client.id,
+          subject:
+            "Email down on server",
+          hostingAccountId:
+            "hosting-account-1",
+        });
+
+    expect(response.status)
+      .toBe(201);
+
+    expect(
+      response.body.ticket
+        .hostingAccountId,
+    ).toBe("hosting-account-1");
+  });
+
   it("defaults priority to medium", async () => {
     const app = createApp();
 

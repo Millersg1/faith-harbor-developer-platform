@@ -11,6 +11,7 @@ interface TicketRow {
   number: string;
   client_id: string;
   project_id: string | null;
+  hosting_account_id: string | null;
   subject: string;
   description: string | null;
   status: string;
@@ -48,6 +49,7 @@ export class TicketRepository {
             number,
             client_id,
             project_id,
+            hosting_account_id,
             subject,
             description,
             status,
@@ -72,6 +74,7 @@ export class TicketRepository {
             ?,
             ?,
             ?,
+            ?,
             ?
           )
         `)
@@ -80,6 +83,8 @@ export class TicketRepository {
           ticket.number,
           ticket.clientId,
           ticket.projectId ?? null,
+          ticket.hostingAccountId ??
+            null,
           ticket.subject,
           ticket.description ?? null,
           ticket.status,
@@ -117,6 +122,7 @@ export class TicketRepository {
               number,
               client_id,
               project_id,
+              hosting_account_id,
               subject,
               description,
               status,
@@ -165,6 +171,7 @@ export class TicketRepository {
               number,
               client_id,
               project_id,
+              hosting_account_id,
               subject,
               description,
               status,
@@ -204,6 +211,7 @@ export class TicketRepository {
               number,
               client_id,
               project_id,
+              hosting_account_id,
               subject,
               description,
               status,
@@ -265,6 +273,7 @@ export class TicketRepository {
               number = ?,
               client_id = ?,
               project_id = ?,
+              hosting_account_id = ?,
               subject = ?,
               description = ?,
               status = ?,
@@ -280,6 +289,8 @@ export class TicketRepository {
             ticket.number,
             ticket.clientId,
             ticket.projectId ?? null,
+            ticket.hostingAccountId ??
+              null,
             ticket.subject,
             ticket.description ?? null,
             ticket.status,
@@ -364,6 +375,9 @@ export class TicketRepository {
       clientId: row.client_id,
       projectId:
         row.project_id ?? undefined,
+      hostingAccountId:
+        row.hosting_account_id ??
+        undefined,
       subject: row.subject,
       description:
         row.description ?? undefined,

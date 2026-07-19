@@ -49,6 +49,9 @@ export class TicketService {
       projectId:
         request.projectId,
 
+      hostingAccountId:
+        request.hostingAccountId,
+
       subject,
 
       description:

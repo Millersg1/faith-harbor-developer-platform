@@ -24,6 +24,12 @@ export interface TicketRecord {
   projectId?: string;
 
   /**
+   * Hosting account this ticket relates to, if any.
+   * Enables in-context AI diagnostics.
+   */
+  hostingAccountId?: string;
+
+  /**
    * Short summary of the issue.
    */
   subject: string;

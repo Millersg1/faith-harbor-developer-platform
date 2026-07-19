@@ -310,6 +310,43 @@ describe("LeadRouter", () => {
     );
   });
 
+  it("filters leads by campaign", async () => {
+    const app = createApp();
+
+    await request(app)
+      .post("/api/v1/leads")
+      .send({
+        name: "A",
+        campaignId: "campaign-1",
+      });
+
+    await request(app)
+      .post("/api/v1/leads")
+      .send({
+        name: "B",
+        campaignId: "campaign-2",
+      });
+
+    const response =
+      await request(app)
+        .get("/api/v1/leads")
+        .query({
+          campaignId:
+            "campaign-1",
+        });
+
+    expect(response.status)
+      .toBe(200);
+
+    expect(response.body.count)
+      .toBe(1);
+
+    expect(
+      response.body.leads[0]
+        .campaignId,
+    ).toBe("campaign-1");
+  });
+
   it("converts a lead into a client", async () => {
     const app = createApp();
 

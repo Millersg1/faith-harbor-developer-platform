@@ -13,6 +13,11 @@ export interface TicketRequest {
   projectId?: string;
 
   /**
+   * Optional hosting account this ticket relates to.
+   */
+  hostingAccountId?: string;
+
+  /**
    * Optional ticket number. Generated when omitted.
    */
   number?: string;

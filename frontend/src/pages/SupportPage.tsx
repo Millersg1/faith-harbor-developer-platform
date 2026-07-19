@@ -50,11 +50,44 @@ interface ClientsResponse {
   clients: Client[];
 }
 
+interface HostingAccount {
+  id: string;
+  domain: string;
+}
+
+interface HostingAccountsResponse {
+  count: number;
+  accounts: HostingAccount[];
+}
+
+type DiagnosticSeverity =
+  | "info"
+  | "warning"
+  | "critical";
+
+interface DiagnosticFinding {
+  code: string;
+  severity: DiagnosticSeverity;
+  message: string;
+}
+
+interface HostingAssessment {
+  findings: DiagnosticFinding[];
+  summary: string;
+  recommendation: string;
+  aiGenerated: boolean;
+}
+
+interface AssessmentResponse {
+  assessment: HostingAssessment;
+}
+
 interface Ticket {
   id: string;
   number: string;
   clientId: string;
   projectId?: string;
+  hostingAccountId?: string;
   subject: string;
   description?: string;
   status: TicketStatus;
@@ -87,6 +120,7 @@ interface TicketFormData {
   description: string;
   priority: TicketPriority;
   assignee: string;
+  hostingAccountId: string;
 }
 
 interface StatusMessage {
@@ -104,6 +138,7 @@ const emptyForm:
     description: "",
     priority: "medium",
     assignee: "",
+    hostingAccountId: "",
   };
 
 function getErrorMessage(
@@ -253,17 +288,50 @@ export default function SupportPage() {
   const [updating, setUpdating] =
     useState(false);
 
+  const [
+    hostingAccounts,
+    setHostingAccounts,
+  ] = useState<HostingAccount[]>([]);
+
+  const [
+    assessment,
+    setAssessment,
+  ] = useState<HostingAssessment | null>(
+    null,
+  );
+
+  const [diagnosing, setDiagnosing] =
+    useState(false);
+
+  useEffect(() => {
+    setAssessment(null);
+  }, [selectedTicket?.id]);
+
   useEffect(() => {
     let requestCancelled = false;
 
     Promise.all([
       requestClients(),
       requestTickets(),
+      fetch(
+        "/api/v1/hosting/accounts",
+      )
+        .then((response) =>
+          getResponseData<HostingAccountsResponse>(
+            response,
+            "Hosting accounts could not be loaded.",
+          ),
+        )
+        .catch(() => ({
+          count: 0,
+          accounts: [],
+        })),
     ])
       .then(
         ([
           clientsResult,
           ticketsResult,
+          hostingResult,
         ]) => {
           if (requestCancelled) {
             return;
@@ -275,6 +343,10 @@ export default function SupportPage() {
 
           setTickets(
             ticketsResult.tickets,
+          );
+
+          setHostingAccounts(
+            hostingResult.accounts,
           );
         },
       )
@@ -424,6 +496,9 @@ export default function SupportPage() {
               formData.assignee
                 .trim() ||
               undefined,
+            hostingAccountId:
+              formData.hostingAccountId ||
+              undefined,
           }),
         },
       );
@@ -558,6 +633,69 @@ export default function SupportPage() {
         nextPriority,
       )}.`,
     );
+  }
+
+  async function runDiagnostics(
+    ticket: Ticket,
+  ): Promise<void> {
+    if (!ticket.hostingAccountId) {
+      return;
+    }
+
+    setDiagnosing(true);
+
+    setAssessment(null);
+
+    setStatus({
+      message:
+        "Diagnosing the linked hosting account...",
+      type: "working",
+    });
+
+    try {
+      const response = await fetch(
+        "/api/v1/hosting/assist",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            accountId:
+              ticket.hostingAccountId,
+            ticketId: ticket.id,
+          }),
+        },
+      );
+
+      const result =
+        await getResponseData<AssessmentResponse>(
+          response,
+          "The diagnosis could not be completed.",
+        );
+
+      setAssessment(
+        result.assessment,
+      );
+
+      setStatus({
+        message:
+          "Diagnosis complete.",
+        type: "success",
+      });
+    } catch (error) {
+      setStatus({
+        message:
+          getErrorMessage(
+            error,
+            "The diagnosis could not be completed.",
+          ),
+        type: "error",
+      });
+    } finally {
+      setDiagnosing(false);
+    }
   }
 
   async function handleDelete(
@@ -880,6 +1018,55 @@ export default function SupportPage() {
               </div>
             </div>
 
+            {hostingAccounts.length >
+              0 && (
+              <div className="form-group">
+                <label htmlFor="ticket-hosting">
+                  Hosting account
+                  (for diagnostics)
+                </label>
+
+                <select
+                  id="ticket-hosting"
+                  value={
+                    formData.hostingAccountId
+                  }
+                  onChange={(event) =>
+                    setFormData(
+                      (current) => ({
+                        ...current,
+                        hostingAccountId:
+                          event
+                            .target
+                            .value,
+                      }),
+                    )
+                  }
+                >
+                  <option value="">
+                    Not linked
+                  </option>
+
+                  {hostingAccounts.map(
+                    (account) => (
+                      <option
+                        key={
+                          account.id
+                        }
+                        value={
+                          account.id
+                        }
+                      >
+                        {
+                          account.domain
+                        }
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+            )}
+
             <button
               type="submit"
               className="primary-button"
@@ -1075,6 +1262,94 @@ export default function SupportPage() {
                 selectedTicket.resolution
               }
             </p>
+          )}
+
+          {selectedTicket.hostingAccountId && (
+            <>
+              <div className="section-divider" />
+
+              <div className="card-heading">
+                <div>
+                  <p className="eyebrow">
+                    AI Hosting Assistant
+                  </p>
+
+                  <h4>
+                    Diagnose Linked
+                    Server
+                  </h4>
+                </div>
+
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={
+                    diagnosing
+                  }
+                  onClick={() =>
+                    void runDiagnostics(
+                      selectedTicket,
+                    )
+                  }
+                >
+                  {diagnosing
+                    ? "Diagnosing..."
+                    : "Run Diagnostics"}
+                </button>
+              </div>
+
+              {assessment && (
+                <div className="assessment">
+                  <p className="help-text">
+                    {
+                      assessment.summary
+                    }
+                  </p>
+
+                  {assessment.findings
+                    .length > 0 && (
+                    <div className="record-list">
+                      {assessment.findings.map(
+                        (
+                          finding,
+                          index,
+                        ) => (
+                          <div
+                            className="finding"
+                            key={index}
+                          >
+                            <span
+                              className={`finding-severity finding-severity-${finding.severity}`}
+                            >
+                              {
+                                finding.severity
+                              }
+                            </span>{" "}
+                            {
+                              finding.message
+                            }
+                          </div>
+                        ),
+                      )}
+                    </div>
+                  )}
+
+                  <div className="assessment-recommendation">
+                    <p className="eyebrow">
+                      {assessment.aiGenerated
+                        ? "AI recommendation — human approval required"
+                        : "Recommendation — human approval required"}
+                    </p>
+
+                    <pre>
+                      {
+                        assessment.recommendation
+                      }
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           <div className="section-divider" />

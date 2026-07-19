@@ -32,6 +32,12 @@ const ticketRequestSchema = z.object({
     .min(1)
     .optional(),
 
+  hostingAccountId: z
+    .string()
+    .trim()
+    .min(1)
+    .optional(),
+
   number: z
     .string()
     .trim()

@@ -70,6 +70,9 @@ export class LeadService {
       source:
         request.source,
 
+      campaignId:
+        request.campaignId,
+
       serviceInterest:
         request.serviceInterest,
 
@@ -125,6 +128,17 @@ export class LeadService {
   ): readonly LeadRecord[] {
     return this.repository.findByClientId(
       clientId,
+    );
+  }
+
+  /**
+   * Returns all leads attributed to one campaign.
+   */
+  listForCampaign(
+    campaignId: string,
+  ): readonly LeadRecord[] {
+    return this.repository.findByCampaignId(
+      campaignId,
     );
   }
 

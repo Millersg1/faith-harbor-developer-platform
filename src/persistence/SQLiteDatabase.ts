@@ -173,6 +173,7 @@ export class SQLiteDatabase {
         number TEXT NOT NULL,
         client_id TEXT NOT NULL,
         project_id TEXT,
+        hosting_account_id TEXT,
         subject TEXT NOT NULL,
         description TEXT,
         status TEXT NOT NULL DEFAULT 'open',
@@ -242,6 +243,7 @@ export class SQLiteDatabase {
         email TEXT,
         phone TEXT,
         source TEXT,
+        campaign_id TEXT,
         service_interest TEXT,
         estimated_value REAL,
         status TEXT NOT NULL DEFAULT 'new',
@@ -439,6 +441,8 @@ export class SQLiteDatabase {
     const columnAdditions:
       readonly string[] = [
         "ALTER TABLE hosting_accounts ADD COLUMN brand TEXT",
+        "ALTER TABLE leads ADD COLUMN campaign_id TEXT",
+        "ALTER TABLE support_tickets ADD COLUMN hosting_account_id TEXT",
       ];
 
     for (
