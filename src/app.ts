@@ -9,6 +9,10 @@ import type { DatabaseSync } from "node:sqlite";
 import { InvoiceRepository } from "./accounting/InvoiceRepository";
 import { createInvoiceRouter } from "./accounting/InvoiceRouter";
 import { InvoiceService } from "./accounting/InvoiceService";
+import { AutomationRepository } from "./automation/AutomationRepository";
+import { createAutomationRouter } from "./automation/AutomationRouter";
+import { AutomationScanner } from "./automation/AutomationScanner";
+import { AutomationService } from "./automation/AutomationService";
 import { createAuthRouter } from "./auth/AuthRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
 import { createCampaignRouter } from "./marketing/CampaignRouter";
@@ -30,6 +34,15 @@ import { OpenAIProviderInstaller } from "./ai/installers/OpenAIProviderInstaller
 import { createAIRouter } from "./ai/routes/AIRouter";
 import { createClientRouter } from "./clients/ClientRouter";
 import { ClientService } from "./clients/ClientService";
+import { EmailRepository } from "./communications/EmailRepository";
+import { createEmailRouter } from "./communications/EmailRouter";
+import { EmailService } from "./communications/EmailService";
+import {
+  HttpEmailTransport,
+  LoggingEmailTransport,
+  type EmailTransport,
+} from "./communications/EmailTransport";
+import { SmtpEmailTransport } from "./communications/SmtpEmailTransport";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
@@ -120,6 +133,60 @@ export function createApp(
   const clientService =
     new ClientService(database);
 
+  // Email is safe by default: when no provider is configured the
+  // logging transport records messages to the outbox without sending.
+  // SMTP (a cPanel mailbox) takes precedence, then the HTTP email API,
+  // then the safe logging fallback. Under test the logging transport
+  // is always used so the suite never opens a real connection, even
+  // when a .env supplies live credentials.
+  const emailTransport:
+    EmailTransport =
+    config.NODE_ENV === "test"
+      ? new LoggingEmailTransport()
+      : config.SMTP_HOST &&
+          config.SMTP_USER &&
+          config.SMTP_PASSWORD
+        ? new SmtpEmailTransport({
+            host: config.SMTP_HOST,
+            port: config.SMTP_PORT,
+            user: config.SMTP_USER,
+            password:
+              config.SMTP_PASSWORD,
+            secure:
+              config.SMTP_SECURE,
+            rejectUnauthorized:
+              config.SMTP_REJECT_UNAUTHORIZED,
+          })
+        : config.EMAIL_API_URL &&
+            config.EMAIL_API_KEY
+          ? new HttpEmailTransport({
+              apiUrl:
+                config.EMAIL_API_URL,
+              apiKey:
+                config.EMAIL_API_KEY,
+            })
+          : new LoggingEmailTransport();
+
+  const emailService =
+    new EmailService(
+      emailTransport,
+      config.EMAIL_FROM ??
+        config.ADMIN_EMAIL ??
+        "Faith Harbor OS",
+      new EmailRepository(database),
+    );
+
+  // The automation engine prepares proposed actions (today, email
+  // drafts) in response to business events and holds them for human
+  // approval. It never sends anything without an explicit approval.
+  const automationService =
+    new AutomationService(
+      emailService,
+      new AutomationRepository(
+        database,
+      ),
+    );
+
   const proposalRepository =
     new ProposalRepository(database);
 
@@ -139,6 +206,11 @@ export function createApp(
     new ProjectService(
       clientService,
       projectRepository,
+      (project, client) =>
+        automationService.onProjectCreated(
+          project,
+          client,
+        ),
     );
 
   const invoiceRepository =
@@ -175,6 +247,30 @@ export function createApp(
     new LeadService(
       clientService,
       leadRepository,
+      (lead) =>
+        automationService.onLeadCreated(
+          lead,
+        ),
+    );
+
+  // The scanner is the periodic side of automation: it finds
+  // time-based work — overdue invoices, quiet leads, stalled
+  // projects — and asks the engine to prepare drafts for review. The
+  // scheduler that runs it lives in the server entry point so tests
+  // never start timers.
+  const automationScanner =
+    new AutomationScanner(
+      invoiceService,
+      clientService,
+      automationService,
+      {
+        leads: leadService,
+        projects: projectService,
+        leadQuietDays:
+          config.AUTOMATION_LEAD_QUIET_DAYS,
+        projectStalledDays:
+          config.AUTOMATION_PROJECT_STALLED_DAYS,
+      },
     );
 
   const campaignRepository =
@@ -352,6 +448,12 @@ export function createApp(
         products:
           "/api/v1/products",
 
+        emails:
+          "/api/v1/emails",
+
+        automations:
+          "/api/v1/automations",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -442,6 +544,24 @@ export function createApp(
         true,
 
       persistentEngineeringStorage:
+        Boolean(database),
+
+      emailAvailable:
+        true,
+
+      emailDeliveryConfigured:
+        Boolean(
+          (config.SMTP_HOST &&
+            config.SMTP_USER &&
+            config.SMTP_PASSWORD) ||
+            (config.EMAIL_API_URL &&
+              config.EMAIL_API_KEY),
+        ),
+
+      automationAvailable:
+        true,
+
+      persistentAutomationStorage:
         Boolean(database),
 
       hostingManagementAvailable:
@@ -566,6 +686,25 @@ export function createApp(
       productService,
     ),
   );
+
+  app.use(
+    "/api/v1/emails",
+    createEmailRouter(
+      emailService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/automations",
+    createAutomationRouter(
+      automationService,
+      automationScanner,
+    ),
+  );
+
+  // Exposed so the server entry point can run periodic scans.
+  app.locals.automationScanner =
+    automationScanner;
 
   app.use(
     "/api/v1/hosting",

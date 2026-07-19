@@ -320,6 +320,41 @@ export class SQLiteDatabase {
           ON DELETE SET NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS emails (
+        id TEXT PRIMARY KEY,
+        from_address TEXT NOT NULL,
+        to_address TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        status TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        error TEXT,
+        client_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS automation_drafts (
+        id TEXT PRIMARY KEY,
+        trigger TEXT NOT NULL,
+        title TEXT NOT NULL,
+        to_address TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        status TEXT NOT NULL,
+        related_type TEXT NOT NULL,
+        related_id TEXT NOT NULL,
+        client_id TEXT,
+        email_id TEXT,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
@@ -430,6 +465,12 @@ export class SQLiteDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_products_created
         ON products(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_emails_client
+        ON emails(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_emails_created
+        ON emails(created_at);
     `);
   }
 

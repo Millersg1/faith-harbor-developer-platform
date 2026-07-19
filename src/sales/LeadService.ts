@@ -16,6 +16,17 @@ export interface LeadConversion {
 }
 
 /**
+ * Notified after a lead is created.
+ *
+ * The automation engine uses this to prepare a welcome-email draft.
+ * It is optional so the sales module has no hard dependency on
+ * automation, and failures here never block lead creation.
+ */
+export type LeadCreatedHook = (
+  lead: LeadRecord,
+) => void;
+
+/**
  * Creates and manages sales leads.
  */
 export class LeadService {
@@ -23,6 +34,7 @@ export class LeadService {
     private readonly clients: ClientService,
     private readonly repository =
       new LeadRepository(),
+    private readonly onLeadCreated?: LeadCreatedHook,
   ) {}
 
   /**
@@ -97,9 +109,20 @@ export class LeadService {
       updatedAt: now,
     };
 
-    return this.repository.create(
-      lead,
-    );
+    const created =
+      this.repository.create(lead);
+
+    // Best-effort: notify the automation engine. A drafting failure
+    // must never prevent the lead itself from being saved.
+    if (this.onLeadCreated) {
+      try {
+        this.onLeadCreated(created);
+      } catch {
+        // Intentionally ignored; the lead is already stored.
+      }
+    }
+
+    return created;
   }
 
   /**

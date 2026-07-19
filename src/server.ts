@@ -1,4 +1,6 @@
 import { createConfiguredApp } from "./app";
+import type { AutomationScanner } from "./automation/AutomationScanner";
+import { AutomationScheduler } from "./automation/AutomationScheduler";
 import { config } from "./config";
 import type { SQLiteDatabase } from "./persistence/SQLiteDatabase";
 
@@ -9,6 +11,27 @@ async function startServer(): Promise<void> {
     app.locals.database as
       | SQLiteDatabase
       | undefined;
+
+  // Start the periodic automation scan (overdue invoices, etc.).
+  // A zero interval disables it. Drafts still require human approval.
+  const scanner =
+    app.locals.automationScanner as
+      | AutomationScanner
+      | undefined;
+
+  const scheduler =
+    scanner &&
+    config.AUTOMATION_SCAN_INTERVAL_MINUTES >
+      0
+      ? new AutomationScheduler(
+          () => scanner.run(),
+          config.AUTOMATION_SCAN_INTERVAL_MINUTES *
+            60 *
+            1000,
+        )
+      : undefined;
+
+  scheduler?.start();
 
   let shuttingDown = false;
 
@@ -31,6 +54,8 @@ async function startServer(): Promise<void> {
     console.log(
       `Received ${signal}. Shutting down.`,
     );
+
+    scheduler?.stop();
 
     server.close((error) => {
       try {
