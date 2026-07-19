@@ -136,30 +136,34 @@ export function createApp(
   // Email is safe by default: when no provider is configured the
   // logging transport records messages to the outbox without sending.
   // SMTP (a cPanel mailbox) takes precedence, then the HTTP email API,
-  // then the safe logging fallback.
+  // then the safe logging fallback. Under test the logging transport
+  // is always used so the suite never opens a real connection, even
+  // when a .env supplies live credentials.
   const emailTransport:
     EmailTransport =
-    config.SMTP_HOST &&
-    config.SMTP_USER &&
-    config.SMTP_PASSWORD
-      ? new SmtpEmailTransport({
-          host: config.SMTP_HOST,
-          port: config.SMTP_PORT,
-          user: config.SMTP_USER,
-          password:
-            config.SMTP_PASSWORD,
-          secure:
-            config.SMTP_SECURE,
-        })
-      : config.EMAIL_API_URL &&
-          config.EMAIL_API_KEY
-        ? new HttpEmailTransport({
-            apiUrl:
-              config.EMAIL_API_URL,
-            apiKey:
-              config.EMAIL_API_KEY,
+    config.NODE_ENV === "test"
+      ? new LoggingEmailTransport()
+      : config.SMTP_HOST &&
+          config.SMTP_USER &&
+          config.SMTP_PASSWORD
+        ? new SmtpEmailTransport({
+            host: config.SMTP_HOST,
+            port: config.SMTP_PORT,
+            user: config.SMTP_USER,
+            password:
+              config.SMTP_PASSWORD,
+            secure:
+              config.SMTP_SECURE,
           })
-        : new LoggingEmailTransport();
+        : config.EMAIL_API_URL &&
+            config.EMAIL_API_KEY
+          ? new HttpEmailTransport({
+              apiUrl:
+                config.EMAIL_API_URL,
+              apiKey:
+                config.EMAIL_API_KEY,
+            })
+          : new LoggingEmailTransport();
 
   const emailService =
     new EmailService(
