@@ -39,6 +39,11 @@ interface HostingAccount {
   status: string;
 }
 
+interface AutomationDraft {
+  id: string;
+  title: string;
+}
+
 interface CommandData {
   leads: Lead[];
   invoices: Invoice[];
@@ -46,6 +51,7 @@ interface CommandData {
   projects: Project[];
   campaigns: Campaign[];
   accounts: HostingAccount[];
+  drafts: AutomationDraft[];
 }
 
 interface AttentionItem {
@@ -136,6 +142,7 @@ export default function CommandCenter() {
         projects,
         campaigns,
         accounts,
+        drafts,
       ] = await Promise.all([
         fetchList<Lead>(
           "/api/v1/leads",
@@ -161,6 +168,10 @@ export default function CommandCenter() {
           "/api/v1/hosting/accounts",
           "accounts",
         ),
+        fetchList<AutomationDraft>(
+          "/api/v1/automations?status=pending",
+          "drafts",
+        ),
       ]);
 
       setData({
@@ -170,6 +181,7 @@ export default function CommandCenter() {
         projects,
         campaigns,
         accounts,
+        drafts,
       });
     }, []);
 
@@ -313,6 +325,15 @@ export default function CommandCenter() {
             severity: "warning",
           });
         }
+      }
+
+      for (const draft of data.drafts) {
+        items.push({
+          key: `draft-${draft.id}`,
+          label: `Draft ready to review: ${draft.title}`,
+          to: "/automations",
+          severity: "warning",
+        });
       }
 
       return items;
