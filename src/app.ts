@@ -9,6 +9,17 @@ import type { DatabaseSync } from "node:sqlite";
 import { InvoiceRepository } from "./accounting/InvoiceRepository";
 import { createInvoiceRouter } from "./accounting/InvoiceRouter";
 import { InvoiceService } from "./accounting/InvoiceService";
+import { PaymentRepository } from "./payments/PaymentRepository";
+import {
+  createPaymentRouter,
+  handleStripeWebhook,
+} from "./payments/PaymentRouter";
+import { PaymentService } from "./payments/PaymentService";
+import {
+  DisconnectedStripeGateway,
+  HttpStripeGateway,
+  type StripeGateway,
+} from "./payments/StripeGateway";
 import { AutomationRepository } from "./automation/AutomationRepository";
 import { createAutomationRouter } from "./automation/AutomationRouter";
 import { AutomationScanner } from "./automation/AutomationScanner";
@@ -249,6 +260,28 @@ export function createApp(
       invoiceRepository,
     );
 
+  // Payments: collect on invoices via Stripe Checkout. Dependency-free
+  // (REST + node:crypto). Gated behind STRIPE_SECRET_KEY; when unset a
+  // disconnected gateway reports "not connected".
+  const stripeGateway:
+    StripeGateway =
+    config.STRIPE_SECRET_KEY
+      ? new HttpStripeGateway({
+          secretKey:
+            config.STRIPE_SECRET_KEY,
+          webhookSecret:
+            config.STRIPE_WEBHOOK_SECRET,
+        })
+      : new DisconnectedStripeGateway();
+
+  const paymentService =
+    new PaymentService(
+      invoiceService,
+      stripeGateway,
+      new PaymentRepository(database),
+      config.APP_URL ?? "",
+    );
+
   const ticketRepository =
     new TicketRepository(database);
 
@@ -393,6 +426,18 @@ export function createApp(
     }),
   );
 
+  // The Stripe webhook must see the raw body to verify its signature,
+  // so it is registered before the JSON parser and is public (Stripe
+  // cannot authenticate). It only acts on cryptographically valid
+  // events.
+  app.post(
+    "/webhooks/stripe",
+    express.raw({ type: "*/*" }),
+    handleStripeWebhook(
+      paymentService,
+    ),
+  );
+
   app.use(
     express.json({
       limit: "1mb",
@@ -483,6 +528,9 @@ export function createApp(
 
         reviews:
           "/api/v1/reviews",
+
+        payments:
+          "/api/v1/payments",
 
         hosting:
           "/api/v1/hosting/accounts",
@@ -601,6 +649,14 @@ export function createApp(
         reviewService
           .integrationStatus()
           .googleConnected,
+
+      paymentsAvailable:
+        true,
+
+      paymentsConnected:
+        paymentService
+          .integrationStatus()
+          .connected,
 
       hostingManagementAvailable:
         true,
@@ -744,6 +800,13 @@ export function createApp(
     "/api/v1/reviews",
     createReviewRouter(
       reviewService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/payments",
+    createPaymentRouter(
+      paymentService,
     ),
   );
 
