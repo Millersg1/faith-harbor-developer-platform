@@ -233,6 +233,30 @@ const schema = z.object({
     .trim()
     .optional()
     .transform((value) => value || undefined),
+
+  // ---- Backups ----
+  // Directory for database snapshots. Defaults to data/backups.
+  BACKUP_DIR: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  // Hours between automatic backups. 0 disables scheduling (manual
+  // backups still work). Default 24.
+  BACKUP_INTERVAL_HOURS: z.coerce
+    .number()
+    .min(0)
+    .max(168)
+    .default(24),
+
+  // How many recent snapshots to keep. Default 14.
+  BACKUP_RETAIN: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(14),
 });
 
 export const config = schema.parse(process.env);

@@ -77,13 +77,18 @@ export class DisconnectedStripeGateway
     return false;
   }
 
-  async createCheckout(): Promise<CheckoutResult> {
+  async createCheckout(
+    _input: CheckoutInput,
+  ): Promise<CheckoutResult> {
     throw new Error(
       "Stripe is not configured. Set STRIPE_SECRET_KEY to accept payments.",
     );
   }
 
-  verifyWebhook(): boolean {
+  verifyWebhook(
+    _rawBody: string,
+    _signatureHeader: string | undefined,
+  ): boolean {
     return false;
   }
 }
