@@ -482,6 +482,92 @@ describe("ProjectService", () => {
       .toHaveLength(0);
   });
 
+  it("creates a project from a proposal", () => {
+    const {
+      service,
+      clients,
+    } = createProjectService();
+
+    const client =
+      createClient(clients);
+
+    const project =
+      service.createFromProposal({
+        proposalId:
+          "proposal-42",
+        clientId: client.id,
+        service:
+          "Managed IT Services",
+        requestedOutcome:
+          "Prepare a managed IT services proposal",
+      });
+
+    expect(project.clientId)
+      .toBe(client.id);
+
+    expect(project.proposalId)
+      .toBe("proposal-42");
+
+    expect(project.name)
+      .toBe(
+        "Prepare a managed IT services proposal",
+      );
+
+    expect(project.status)
+      .toBe("planned");
+
+    expect(
+      project.metadata
+        ?.fromProposalId,
+    ).toBe("proposal-42");
+
+    expect(service.list())
+      .toHaveLength(1);
+  });
+
+  it("falls back to the service name for the project name", () => {
+    const {
+      service,
+      clients,
+    } = createProjectService();
+
+    const client =
+      createClient(clients);
+
+    const project =
+      service.createFromProposal({
+        proposalId:
+          "proposal-1",
+        clientId: client.id,
+        service:
+          "Website Development",
+      });
+
+    expect(project.name)
+      .toBe("Website Development");
+  });
+
+  it("rejects creating a project from a proposal for a missing client", () => {
+    const {
+      service,
+    } = createProjectService();
+
+    expect(() =>
+      service.createFromProposal({
+        proposalId:
+          "proposal-1",
+        clientId:
+          "missing-client",
+        service: "IT",
+      }),
+    ).toThrow(
+      'Client "missing-client" was not found.',
+    );
+
+    expect(service.list())
+      .toHaveLength(0);
+  });
+
   it("rejects an update for a missing client", () => {
     const {
       service,

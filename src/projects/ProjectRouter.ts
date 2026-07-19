@@ -67,6 +67,33 @@ const projectRequestSchema = z.object({
 const projectUpdateSchema =
   projectRequestSchema.partial();
 
+const fromProposalSchema = z.object({
+  proposalId: z
+    .string()
+    .trim()
+    .min(1),
+
+  clientId: z
+    .string()
+    .trim()
+    .min(1),
+
+  service: z
+    .string()
+    .trim()
+    .optional(),
+
+  requestedOutcome: z
+    .string()
+    .trim()
+    .optional(),
+
+  name: z
+    .string()
+    .trim()
+    .optional(),
+});
+
 /**
  * Creates the project management routes.
  */
@@ -124,6 +151,71 @@ export function createProjectRouter(
                 : "Project not found.",
           },
         });
+      }
+    },
+  );
+
+  /**
+   * Starts a project from an accepted proposal.
+   */
+  router.post(
+    "/from-proposal",
+    (req, res, next) => {
+      try {
+        const parsed =
+          fromProposalSchema.safeParse(
+            req.body,
+          );
+
+        if (!parsed.success) {
+          res.status(400).json({
+            error: {
+              code:
+                "INVALID_PROJECT_REQUEST",
+              message:
+                "Project from proposal validation failed.",
+              details:
+                parsed.error.flatten(),
+            },
+          });
+
+          return;
+        }
+
+        const project =
+          projectService.createFromProposal(
+            parsed.data,
+          );
+
+        res.status(201).json({
+          success: true,
+          status: project.status,
+          project,
+        });
+      } catch (error) {
+        // The proposal or client reference no longer exists.
+        if (
+          error instanceof Error &&
+          (error.message.includes(
+            "FOREIGN KEY",
+          ) ||
+            error.message.includes(
+              "constraint",
+            ))
+        ) {
+          res.status(400).json({
+            error: {
+              code:
+                "PROPOSAL_LINK_FAILED",
+              message:
+                "The project could not be linked to that proposal. It may no longer exist.",
+            },
+          });
+
+          return;
+        }
+
+        next(error);
       }
     },
   );

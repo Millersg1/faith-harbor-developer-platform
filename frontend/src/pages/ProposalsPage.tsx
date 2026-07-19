@@ -26,6 +26,7 @@ interface StatusMessage {
 
 interface Proposal {
   id: string;
+  clientId?: string;
   clientName: string;
   service: string;
   status: string;
@@ -312,6 +313,76 @@ export default function ProposalsPage() {
     loadingProposal,
     setLoadingProposal,
   ] = useState(false);
+
+  const [
+    creatingProject,
+    setCreatingProject,
+  ] = useState(false);
+
+  async function startProjectFromProposal(
+    proposal: Proposal,
+  ): Promise<void> {
+    if (!proposal.clientId) {
+      setStatus({
+        message:
+          "This proposal is not linked to a client, so a project cannot be started.",
+        type: "error",
+      });
+
+      return;
+    }
+
+    setCreatingProject(true);
+
+    setStatus({
+      message:
+        "Starting a project from this proposal...",
+      type: "working",
+    });
+
+    try {
+      const response = await fetch(
+        "/api/v1/projects/from-proposal",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            proposalId:
+              proposal.id,
+            clientId:
+              proposal.clientId,
+            service:
+              proposal.service,
+            requestedOutcome:
+              proposal.requestedOutcome,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "The project could not be created.",
+        );
+      }
+
+      setStatus({
+        message:
+          "Project created. Find it in the Projects workspace.",
+        type: "success",
+      });
+    } catch {
+      setStatus({
+        message:
+          "The project could not be created from this proposal.",
+        type: "error",
+      });
+    } finally {
+      setCreatingProject(false);
+    }
+  }
 
   useEffect(() => {
     let requestCancelled = false;
@@ -1078,6 +1149,37 @@ export default function ProposalsPage() {
                   selectedProposal.proposal
                 }
               </pre>
+
+              <div className="convert-panel">
+                <div>
+                  <strong>
+                    Proposal accepted?
+                  </strong>
+
+                  <span>
+                    Start a project in
+                    delivery, linked to
+                    this proposal.
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={
+                    creatingProject
+                  }
+                  onClick={() =>
+                    void startProjectFromProposal(
+                      selectedProposal,
+                    )
+                  }
+                >
+                  {creatingProject
+                    ? "Starting..."
+                    : "Start Project"}
+                </button>
+              </div>
 
               <div className="section-divider" />
 

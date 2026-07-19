@@ -7,6 +7,17 @@ import { ProjectRepository } from "./ProjectRepository";
 import type { ProjectRequest } from "./ProjectRequest";
 
 /**
+ * The proposal details needed to start a project.
+ */
+export interface ProposalToProject {
+  proposalId: string;
+  clientId: string;
+  service?: string;
+  requestedOutcome?: string;
+  name?: string;
+}
+
+/**
  * Creates and manages client projects.
  */
 export class ProjectService {
@@ -68,6 +79,45 @@ export class ProjectService {
     return this.repository.create(
       project,
     );
+  }
+
+  /**
+   * Starts a project from an accepted proposal, linking the two.
+   *
+   * This connects Client Services (proposals) to delivery
+   * (projects) so accepted work flows straight into execution.
+   */
+  createFromProposal(
+    input: ProposalToProject,
+  ): ProjectRecord {
+    const name =
+      input.name?.trim() ||
+      input.requestedOutcome?.trim() ||
+      input.service?.trim() ||
+      "New Project";
+
+    const description =
+      input.service
+        ? `Project created from the ${input.service.trim()} proposal.`
+        : "Project created from a proposal.";
+
+    return this.create({
+      clientId: input.clientId,
+
+      proposalId:
+        input.proposalId,
+
+      name,
+
+      description,
+
+      status: "planned",
+
+      metadata: {
+        fromProposalId:
+          input.proposalId,
+      },
+    });
   }
 
   /**

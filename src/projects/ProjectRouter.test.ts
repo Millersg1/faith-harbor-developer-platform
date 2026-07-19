@@ -646,4 +646,65 @@ describe("ProjectRouter", () => {
         consoleError;
     }
   });
+
+  it("starts a project from a proposal", async () => {
+    const app = createApp();
+
+    const client =
+      await createClient(app);
+
+    const response =
+      await request(app)
+        .post(
+          "/api/v1/projects/from-proposal",
+        )
+        .send({
+          proposalId:
+            "proposal-42",
+          clientId: client.id,
+          service:
+            "Managed IT Services",
+          requestedOutcome:
+            "Prepare a managed IT services proposal",
+        });
+
+    expect(response.status)
+      .toBe(201);
+
+    expect(response.body.success)
+      .toBe(true);
+
+    expect(response.body.project)
+      .toMatchObject({
+        clientId: client.id,
+        proposalId:
+          "proposal-42",
+        name:
+          "Prepare a managed IT services proposal",
+        status: "planned",
+      });
+  });
+
+  it("rejects an invalid from-proposal request", async () => {
+    const app = createApp();
+
+    const response =
+      await request(app)
+        .post(
+          "/api/v1/projects/from-proposal",
+        )
+        .send({
+          proposalId: "",
+          clientId: "",
+        });
+
+    expect(response.status)
+      .toBe(400);
+
+    expect(
+      response.body.error.code,
+    ).toBe(
+      "INVALID_PROJECT_REQUEST",
+    );
+  });
 });
