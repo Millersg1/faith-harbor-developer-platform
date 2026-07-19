@@ -381,6 +381,19 @@ export class SQLiteDatabase {
           ON DELETE CASCADE
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS payments (
+        id TEXT PRIMARY KEY,
+        invoice_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        amount REAL NOT NULL,
+        currency TEXT NOT NULL,
+        status TEXT NOT NULL,
+        session_id TEXT,
+        checkout_url TEXT,
+        created_at TEXT NOT NULL,
+        paid_at TEXT
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 

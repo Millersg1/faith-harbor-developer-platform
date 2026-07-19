@@ -211,6 +211,28 @@ const schema = z.object({
     .min(1)
     .max(365)
     .default(14),
+
+  // The public URL of this app, used for payment redirects and links.
+  APP_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  // ---- Payments (Stripe, optional) ----
+  // When set, invoices can be paid by card through Stripe Checkout.
+  STRIPE_SECRET_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  // The signing secret for the Stripe webhook endpoint.
+  STRIPE_WEBHOOK_SECRET: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
 });
 
 export const config = schema.parse(process.env);

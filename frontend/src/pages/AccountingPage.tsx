@@ -299,6 +299,103 @@ export default function AccountingPage() {
   const [updating, setUpdating] =
     useState(false);
 
+  const [
+    paymentsConnected,
+    setPaymentsConnected,
+  ] = useState(false);
+
+  const [collecting, setCollecting] =
+    useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/v1/payments/status")
+      .then((response) =>
+        response.ok
+          ? response.json()
+          : null,
+      )
+      .then(
+        (data: {
+          connected?: boolean;
+        } | null) => {
+          if (!cancelled && data) {
+            setPaymentsConnected(
+              Boolean(
+                data.connected,
+              ),
+            );
+          }
+        },
+      )
+      .catch(() => {
+        // Payments status is optional.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleCollectPayment(
+    invoice: Invoice,
+  ): Promise<void> {
+    setCollecting(true);
+    setStatus({
+      message:
+        "Creating a secure payment link...",
+      type: "working",
+    });
+
+    try {
+      const response = await fetch(
+        `/api/v1/payments/invoices/${invoice.id}/checkout`,
+        { method: "POST" },
+      );
+
+      const data =
+        (await response.json()) as {
+          checkoutUrl?: string;
+          error?: {
+            message?: string;
+          };
+        };
+
+      if (
+        !response.ok ||
+        !data.checkoutUrl
+      ) {
+        throw new Error(
+          data.error?.message ??
+            "Could not create a payment link.",
+        );
+      }
+
+      window.open(
+        data.checkoutUrl,
+        "_blank",
+        "noopener",
+      );
+
+      setStatus({
+        message:
+          "Payment link opened. It is also ready to send to the client.",
+        type: "success",
+      });
+    } catch (error) {
+      setStatus({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not create a payment link.",
+        type: "error",
+      });
+    } finally {
+      setCollecting(false);
+    }
+  }
+
   useEffect(() => {
     let requestCancelled = false;
 
@@ -1403,6 +1500,39 @@ export default function AccountingPage() {
               )}
             </select>
           </div>
+
+          {paymentsConnected &&
+            selectedInvoice.status !==
+              "paid" &&
+            selectedInvoice.status !==
+              "void" && (
+              <>
+                <div className="section-divider" />
+
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={collecting}
+                  onClick={() =>
+                    void handleCollectPayment(
+                      selectedInvoice,
+                    )
+                  }
+                >
+                  {collecting
+                    ? "Creating link..."
+                    : "Collect Payment"}
+                </button>
+
+                <p className="help-text">
+                  Opens a secure Stripe
+                  checkout link for this
+                  invoice. It is marked
+                  paid automatically once
+                  the client pays.
+                </p>
+              </>
+            )}
 
           <ConfirmDeleteButton
             recordName={`invoice ${selectedInvoice.number}`}
