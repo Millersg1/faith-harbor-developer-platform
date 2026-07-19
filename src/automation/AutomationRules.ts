@@ -1,3 +1,4 @@
+import type { InvoiceRecord } from "../accounting/InvoiceRecord";
 import type { ClientRecord } from "../clients/ClientTypes";
 import type { ProjectRecord } from "../projects/ProjectRecord";
 import type { LeadRecord } from "../sales/LeadRecord";
@@ -116,6 +117,69 @@ export function buildProjectOnboardingDraft(
     title: `Onboarding email for ${projectName}`,
     to,
     subject: `Getting started on ${projectName}`,
+    body,
+    clientId: client.id,
+  };
+}
+
+/**
+ * Formats a currency amount for an invoice body.
+ */
+function formatAmount(
+  amount: number,
+  currency: string,
+): string {
+  const formatted =
+    amount.toFixed(2);
+
+  return `${currency} ${formatted}`;
+}
+
+/**
+ * Builds a gentle payment-reminder email draft for an overdue invoice.
+ *
+ * Returns null when the client has no email address on file. The
+ * caller is responsible for deciding *which* invoices are overdue;
+ * this only writes the message.
+ */
+export function buildInvoiceReminderDraft(
+  invoice: InvoiceRecord,
+  client: ClientRecord,
+): DraftContent | null {
+  const to = client.email?.trim();
+
+  if (!to) {
+    return null;
+  }
+
+  const greetingName =
+    client.primaryContact?.trim() ||
+    client.companyName.trim();
+
+  const amount =
+    formatAmount(
+      invoice.amount,
+      invoice.currency,
+    );
+
+  const dueLine = invoice.dueDate
+    ? `It was due on ${invoice.dueDate}.`
+    : "It is now past due.";
+
+  const body =
+    `Hi ${greetingName},\n\n` +
+    `This is a friendly reminder about invoice ${invoice.number} for ${amount}. ` +
+    dueLine +
+    "\n\n" +
+    "If you have already sent payment, thank you — please disregard this note. " +
+    "If not, you can reply to this email with any questions and we will be glad to help.\n\n" +
+    "We appreciate your partnership and the opportunity to serve you.\n\n" +
+    signature;
+
+  return {
+    title: `Payment reminder for ${invoice.number}`,
+    to,
+    subject: `Friendly reminder: invoice ${invoice.number}`,
     body,
     clientId: client.id,
   };

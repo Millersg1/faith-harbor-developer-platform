@@ -44,6 +44,8 @@ const triggerLabels: Record<
 > = {
   "lead.created": "New lead",
   "project.created": "New project",
+  "invoice.overdue":
+    "Overdue invoice",
 };
 
 function getErrorMessage(
@@ -145,6 +147,9 @@ export default function AutomationsPage() {
   const [busyId, setBusyId] =
     useState<string | null>(null);
 
+  const [scanning, setScanning] =
+    useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -205,6 +210,55 @@ export default function AutomationsPage() {
       await requestDrafts();
 
     setDrafts(result.drafts);
+  }
+
+  async function runScan():
+  Promise<void> {
+    setScanning(true);
+
+    setStatus({
+      message:
+        "Scanning for work that needs attention...",
+      type: "working",
+    });
+
+    try {
+      const response = await fetch(
+        "/api/v1/automations/scan",
+        {
+          method: "POST",
+        },
+      );
+
+      const result =
+        await getResponseData<{
+          created: number;
+        }>(
+          response,
+          "The scan could not be run.",
+        );
+
+      await reload();
+
+      setStatus({
+        message:
+          result.created > 0
+            ? `Scan complete. ${result.created} new draft(s) ready for review.`
+            : "Scan complete. Nothing new needs attention.",
+        type: "success",
+      });
+    } catch (error) {
+      setStatus({
+        message:
+          getErrorMessage(
+            error,
+            "The scan could not be run.",
+          ),
+        type: "error",
+      });
+    } finally {
+      setScanning(false);
+    }
   }
 
   async function act(
@@ -279,6 +333,19 @@ export default function AutomationsPage() {
             sent until you approve it.
           </p>
         </div>
+
+        <button
+          type="button"
+          className="secondary-button"
+          disabled={scanning}
+          onClick={() =>
+            void runScan()
+          }
+        >
+          {scanning
+            ? "Scanning..."
+            : "Scan Now"}
+        </button>
       </div>
 
       {status && (

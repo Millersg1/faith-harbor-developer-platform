@@ -4,11 +4,13 @@ import {
   it,
 } from "vitest";
 
+import type { InvoiceRecord } from "../accounting/InvoiceRecord";
 import type { ClientRecord } from "../clients/ClientTypes";
 import type { ProjectRecord } from "../projects/ProjectRecord";
 import type { LeadRecord } from "../sales/LeadRecord";
 
 import {
+  buildInvoiceReminderDraft,
   buildLeadWelcomeDraft,
   buildProjectOnboardingDraft,
 } from "./AutomationRules";
@@ -169,5 +171,62 @@ describe("buildProjectOnboardingDraft", () => {
 
     expect(draft?.body)
       .toContain("Grace Chapel");
+  });
+});
+
+function makeInvoice(
+  overrides: Partial<InvoiceRecord> = {},
+): InvoiceRecord {
+  return {
+    id: "invoice-1",
+    number: "INV-0007",
+    clientId: "client-1",
+    status: "sent",
+    currency: "USD",
+    lineItems: [
+      {
+        description: "Website work",
+        quantity: 1,
+        unitPrice: 1200,
+      },
+    ],
+    amount: 1200,
+    dueDate: "2026-06-01",
+    createdAt: "2026-05-01T00:00:00.000Z",
+    updatedAt: "2026-05-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("buildInvoiceReminderDraft", () => {
+  it("drafts a payment reminder with the invoice number and amount", () => {
+    const draft =
+      buildInvoiceReminderDraft(
+        makeInvoice(),
+        makeClient(),
+      );
+
+    expect(draft).not.toBeNull();
+    expect(draft?.to)
+      .toBe("john@gracechapel.example");
+    expect(draft?.subject)
+      .toContain("INV-0007");
+    expect(draft?.body)
+      .toContain("INV-0007");
+    expect(draft?.body)
+      .toContain("USD 1200.00");
+    expect(draft?.body)
+      .toContain("2026-06-01");
+  });
+
+  it("returns null when the client has no email", () => {
+    expect(
+      buildInvoiceReminderDraft(
+        makeInvoice(),
+        makeClient({
+          email: undefined,
+        }),
+      ),
+    ).toBeNull();
   });
 });

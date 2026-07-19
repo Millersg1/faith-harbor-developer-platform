@@ -7,7 +7,8 @@
  */
 export type AutomationTrigger =
   | "lead.created"
-  | "project.created";
+  | "project.created"
+  | "invoice.overdue";
 
 /**
  * Where an automation draft is in its life cycle.

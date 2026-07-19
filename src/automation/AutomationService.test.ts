@@ -4,6 +4,7 @@ import {
   it,
 } from "vitest";
 
+import type { InvoiceRecord } from "../accounting/InvoiceRecord";
 import type { ClientRecord } from "../clients/ClientTypes";
 import { EmailRepository } from "../communications/EmailRepository";
 import { EmailService } from "../communications/EmailService";
@@ -257,5 +258,67 @@ describe("AutomationService", () => {
     ).rejects.toThrow(
       "Automation draft not found.",
     );
+  });
+
+  it("drafts at most one overdue reminder per invoice", () => {
+    const { service } =
+      createService();
+
+    const invoice: InvoiceRecord = {
+      id: "invoice-1",
+      number: "INV-0007",
+      clientId: "client-1",
+      status: "sent",
+      currency: "USD",
+      lineItems: [
+        {
+          description: "Work",
+          quantity: 1,
+          unitPrice: 500,
+        },
+      ],
+      amount: 500,
+      dueDate: "2026-06-01",
+      createdAt:
+        "2026-05-01T00:00:00.000Z",
+      updatedAt:
+        "2026-05-01T00:00:00.000Z",
+    };
+
+    const client: ClientRecord = {
+      id: "client-1",
+      companyName: "Grace Chapel",
+      primaryContact: "Pastor John",
+      email:
+        "john@gracechapel.example",
+      createdAt:
+        "2026-01-01T00:00:00.000Z",
+      updatedAt:
+        "2026-01-01T00:00:00.000Z",
+    };
+
+    const first =
+      service.onInvoiceOverdue(
+        invoice,
+        client,
+      );
+
+    const second =
+      service.onInvoiceOverdue(
+        invoice,
+        client,
+      );
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    expect(service.list())
+      .toHaveLength(1);
+
+    expect(
+      service.hasDraftFor(
+        "invoice.overdue",
+        "invoice-1",
+      ),
+    ).toBe(true);
   });
 });

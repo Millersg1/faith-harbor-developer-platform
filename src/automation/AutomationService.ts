@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { InvoiceRecord } from "../accounting/InvoiceRecord";
 import type { ClientRecord } from "../clients/ClientTypes";
 import type { EmailService } from "../communications/EmailService";
 import type { ProjectRecord } from "../projects/ProjectRecord";
@@ -7,6 +8,7 @@ import type { LeadRecord } from "../sales/LeadRecord";
 
 import { AutomationRepository } from "./AutomationRepository";
 import {
+  buildInvoiceReminderDraft,
   buildLeadWelcomeDraft,
   buildProjectOnboardingDraft,
 } from "./AutomationRules";
@@ -92,6 +94,68 @@ export class AutomationService {
       content.body,
       content.clientId,
     );
+  }
+
+  /**
+   * Reacts to an overdue invoice by drafting a payment reminder.
+   *
+   * Called by the scanner for each invoice it judges overdue. To
+   * avoid nagging, at most one reminder draft is ever prepared per
+   * invoice: if one already exists (pending, approved, or dismissed)
+   * this does nothing and returns null.
+   */
+  onInvoiceOverdue(
+    invoice: InvoiceRecord,
+    client: ClientRecord,
+  ): AutomationDraft | null {
+    if (
+      this.hasDraftFor(
+        "invoice.overdue",
+        invoice.id,
+      )
+    ) {
+      return null;
+    }
+
+    const content =
+      buildInvoiceReminderDraft(
+        invoice,
+        client,
+      );
+
+    if (!content) {
+      return null;
+    }
+
+    return this.record(
+      "invoice.overdue",
+      "invoice",
+      invoice.id,
+      content.title,
+      content.to,
+      content.subject,
+      content.body,
+      content.clientId,
+    );
+  }
+
+  /**
+   * Returns true when a draft already exists for a given trigger and
+   * related record, so time-based scans never create duplicates.
+   */
+  hasDraftFor(
+    trigger: AutomationTrigger,
+    relatedId: string,
+  ): boolean {
+    return this.repository
+      .list()
+      .some(
+        (draft) =>
+          draft.trigger ===
+            trigger &&
+          draft.relatedId ===
+            relatedId,
+      );
   }
 
   /**

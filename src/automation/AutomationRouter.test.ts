@@ -225,6 +225,82 @@ describe("AutomationRouter", () => {
       .toBe("pending");
   });
 
+  it("scans for overdue invoices and drafts reminders on demand", async () => {
+    const app = createApp();
+
+    const client =
+      await request(app)
+        .post("/api/v1/clients")
+        .send({
+          companyName:
+            "Grace Chapel",
+          primaryContact:
+            "Pastor John",
+          email:
+            "john@gracechapel.example",
+        });
+
+    // A sent invoice with a due date far in the past.
+    await request(app)
+      .post("/api/v1/invoices")
+      .send({
+        clientId: client.body.id,
+        status: "sent",
+        dueDate: "2020-01-01",
+        lineItems: [
+          {
+            description:
+              "Website work",
+            quantity: 1,
+            unitPrice: 1200,
+          },
+        ],
+      });
+
+    const scan =
+      await request(app)
+        .post(
+          "/api/v1/automations/scan",
+        );
+
+    expect(scan.status)
+      .toBe(200);
+    expect(scan.body.created)
+      .toBe(1);
+
+    const list =
+      await request(app)
+        .get(
+          "/api/v1/automations?status=pending",
+        );
+
+    const reminder =
+      list.body.drafts.find(
+        (draft: {
+          trigger: string;
+        }) =>
+          draft.trigger ===
+          "invoice.overdue",
+      );
+
+    expect(reminder)
+      .toBeDefined();
+    expect(reminder.to)
+      .toBe(
+        "john@gracechapel.example",
+      );
+
+    // A second scan must not create a duplicate.
+    const rescan =
+      await request(app)
+        .post(
+          "/api/v1/automations/scan",
+        );
+
+    expect(rescan.body.created)
+      .toBe(0);
+  });
+
   it("does not draft when a lead has no email", async () => {
     const app = createApp();
 

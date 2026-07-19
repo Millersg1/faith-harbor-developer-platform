@@ -11,6 +11,7 @@ import { createInvoiceRouter } from "./accounting/InvoiceRouter";
 import { InvoiceService } from "./accounting/InvoiceService";
 import { AutomationRepository } from "./automation/AutomationRepository";
 import { createAutomationRouter } from "./automation/AutomationRouter";
+import { AutomationScanner } from "./automation/AutomationScanner";
 import { AutomationService } from "./automation/AutomationService";
 import { createAuthRouter } from "./auth/AuthRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
@@ -199,6 +200,17 @@ export function createApp(
     new InvoiceService(
       clientService,
       invoiceRepository,
+    );
+
+  // The scanner is the periodic side of automation: it finds
+  // time-based work (today, overdue invoices) and asks the engine to
+  // prepare reminder drafts. The scheduler that runs it lives in the
+  // server entry point so tests never start timers.
+  const automationScanner =
+    new AutomationScanner(
+      invoiceService,
+      clientService,
+      automationService,
     );
 
   const ticketRepository =
@@ -654,8 +666,13 @@ export function createApp(
     "/api/v1/automations",
     createAutomationRouter(
       automationService,
+      automationScanner,
     ),
   );
+
+  // Exposed so the server entry point can run periodic scans.
+  app.locals.automationScanner =
+    automationScanner;
 
   app.use(
     "/api/v1/hosting",

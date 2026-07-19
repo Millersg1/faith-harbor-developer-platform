@@ -133,6 +133,15 @@ const schema = z.object({
     .trim()
     .optional()
     .transform((value) => value || undefined),
+
+  // How often the automation scheduler scans for time-based work
+  // (for example overdue invoices). Set to 0 to disable scheduling.
+  AUTOMATION_SCAN_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(1440)
+    .default(360),
 });
 
 export const config = schema.parse(process.env);

@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import { AutomationService } from "./AutomationService";
+import type { AutomationScanner } from "./AutomationScanner";
 
 /**
  * Creates the automation routes.
@@ -8,9 +9,13 @@ import { AutomationService } from "./AutomationService";
  * The engine surfaces the drafts it has prepared and lets a human
  * approve or dismiss each one. Approving a draft is the only path
  * that actually sends anything.
+ *
+ * When a scanner is supplied, a scan can also be triggered on demand
+ * (the same work the scheduler runs periodically).
  */
 export function createAutomationRouter(
   automationService: AutomationService,
+  scanner?: AutomationScanner,
 ): Router {
   const router = Router();
 
@@ -30,6 +35,37 @@ export function createAutomationRouter(
       drafts,
     });
   });
+
+  /**
+   * Runs a scan for time-based work (for example overdue invoices)
+   * and reports how many new drafts were prepared.
+   */
+  router.post(
+    "/scan",
+    (_req, res, next) => {
+      if (!scanner) {
+        res.status(503).json({
+          error: {
+            code:
+              "SCANNER_UNAVAILABLE",
+            message:
+              "Automated scanning is not available.",
+          },
+        });
+
+        return;
+      }
+
+      Promise.resolve(scanner.run())
+        .then((created) => {
+          res.json({
+            success: true,
+            created,
+          });
+        })
+        .catch(next);
+    },
+  );
 
   /**
    * Approves a pending draft and carries out its action.
