@@ -13,6 +13,8 @@ import {
   buildLeadWelcomeDraft,
   buildProjectCheckInDraft,
   buildProjectOnboardingDraft,
+  buildReviewRequestDraft,
+  type ReviewRequestContent,
 } from "./AutomationRules";
 import type { DraftPersonalizer } from "./DraftPersonalizer";
 import type {
@@ -231,6 +233,48 @@ export class AutomationService {
       "project.stalled",
       "project",
       project.id,
+      content.title,
+      content.to,
+      content.subject,
+      content.body,
+      content.clientId,
+    );
+  }
+
+  /**
+   * Prepares a Google review-request email to a customer.
+   *
+   * Called by the reviews module. At most one review request is
+   * prepared per customer per business (dedup on the customer email),
+   * so the same person is never asked twice by the automation.
+   */
+  onReviewRequested(
+    input: ReviewRequestContent,
+  ): AutomationDraft | null {
+    const relatedId = `${input.clientId ?? "client"}:${input.customerEmail
+      .trim()
+      .toLowerCase()}`;
+
+    if (
+      this.hasDraftFor(
+        "review.requested",
+        relatedId,
+      )
+    ) {
+      return null;
+    }
+
+    const content =
+      buildReviewRequestDraft(input);
+
+    if (!content) {
+      return null;
+    }
+
+    return this.record(
+      "review.requested",
+      "review",
+      relatedId,
       content.title,
       content.to,
       content.subject,

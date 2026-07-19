@@ -23,6 +23,7 @@ import MinistryPage from "./pages/MinistryPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProposalsPage from "./pages/ProposalsPage";
 import PublishingPage from "./pages/PublishingPage";
+import ReviewsPage from "./pages/ReviewsPage";
 import ReportsPage from "./pages/ReportsPage";
 import SalesPage from "./pages/SalesPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -137,6 +138,11 @@ const navigationGroups: readonly NavigationGroup[] = [
         label: "Campaigns",
         path: "/marketing",
         eyebrow: "Marketing & Social",
+      },
+      {
+        label: "Reviews",
+        path: "/reviews",
+        eyebrow: "Reputation",
       },
     ],
   },
@@ -271,6 +277,11 @@ function App() {
             <Route
               path="/marketing"
               element={<MarketingPage />}
+            />
+
+            <Route
+              path="/reviews"
+              element={<ReviewsPage />}
             />
 
             <Route
