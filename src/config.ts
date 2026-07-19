@@ -134,6 +134,45 @@ const schema = z.object({
     .optional()
     .transform((value) => value || undefined),
 
+  // ---- SMTP delivery (e.g. a cPanel mailbox) ----
+  // When SMTP_HOST, SMTP_USER, and SMTP_PASSWORD are all set, email
+  // is delivered through this SMTP server. SMTP takes precedence over
+  // the HTTP email API when both are configured.
+  SMTP_HOST: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  SMTP_PORT: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(65535)
+    .default(465),
+
+  SMTP_USER: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  SMTP_PASSWORD: z
+    .string()
+    .optional()
+    .transform((value) => value || undefined),
+
+  // Implicit TLS from the first byte. Leave unset to derive from the
+  // port (true on 465). Set to "false" for a STARTTLS port like 587.
+  SMTP_SECURE: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) =>
+      value === undefined
+        ? undefined
+        : value === "true",
+    ),
+
   // How often the automation scheduler scans for time-based work
   // (for example overdue invoices). Set to 0 to disable scheduling.
   AUTOMATION_SCAN_INTERVAL_MINUTES: z.coerce

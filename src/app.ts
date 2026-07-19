@@ -42,6 +42,7 @@ import {
   LoggingEmailTransport,
   type EmailTransport,
 } from "./communications/EmailTransport";
+import { SmtpEmailTransport } from "./communications/SmtpEmailTransport";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
@@ -133,19 +134,32 @@ export function createApp(
     new ClientService(database);
 
   // Email is safe by default: when no provider is configured the
-  // logging transport records messages to the outbox without
-  // sending. Set EMAIL_API_URL + EMAIL_API_KEY to deliver for real.
+  // logging transport records messages to the outbox without sending.
+  // SMTP (a cPanel mailbox) takes precedence, then the HTTP email API,
+  // then the safe logging fallback.
   const emailTransport:
     EmailTransport =
-    config.EMAIL_API_URL &&
-    config.EMAIL_API_KEY
-      ? new HttpEmailTransport({
-          apiUrl:
-            config.EMAIL_API_URL,
-          apiKey:
-            config.EMAIL_API_KEY,
+    config.SMTP_HOST &&
+    config.SMTP_USER &&
+    config.SMTP_PASSWORD
+      ? new SmtpEmailTransport({
+          host: config.SMTP_HOST,
+          port: config.SMTP_PORT,
+          user: config.SMTP_USER,
+          password:
+            config.SMTP_PASSWORD,
+          secure:
+            config.SMTP_SECURE,
         })
-      : new LoggingEmailTransport();
+      : config.EMAIL_API_URL &&
+          config.EMAIL_API_KEY
+        ? new HttpEmailTransport({
+            apiUrl:
+              config.EMAIL_API_URL,
+            apiKey:
+              config.EMAIL_API_KEY,
+          })
+        : new LoggingEmailTransport();
 
   const emailService =
     new EmailService(
@@ -531,8 +545,11 @@ export function createApp(
 
       emailDeliveryConfigured:
         Boolean(
-          config.EMAIL_API_URL &&
-            config.EMAIL_API_KEY,
+          (config.SMTP_HOST &&
+            config.SMTP_USER &&
+            config.SMTP_PASSWORD) ||
+            (config.EMAIL_API_URL &&
+              config.EMAIL_API_KEY),
         ),
 
       automationAvailable:
