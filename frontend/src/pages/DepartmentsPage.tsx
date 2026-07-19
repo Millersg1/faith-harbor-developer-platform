@@ -109,8 +109,9 @@ const departmentCatalog: readonly CatalogDepartment[] = [
     name: "Engineering",
     description:
       "Manage software products, repositories, standards, testing, releases, and deployments.",
-    status: "planned",
-    statusLabel: "Planned",
+    status: "active",
+    statusLabel: "Active",
+    path: "/engineering",
   },
   {
     name: "Hosting",

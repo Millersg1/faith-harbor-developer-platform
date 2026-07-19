@@ -298,6 +298,26 @@ export class SQLiteDatabase {
           ON DELETE SET NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        client_id TEXT,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL DEFAULT 'planning',
+        repo_url TEXT,
+        language TEXT,
+        version TEXT,
+        last_release_date TEXT,
+        owner TEXT,
+        notes TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
@@ -399,6 +419,15 @@ export class SQLiteDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_ministry_programs_created
         ON ministry_programs(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_products_client
+        ON products(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_products_status
+        ON products(status);
+
+      CREATE INDEX IF NOT EXISTS idx_products_created
+        ON products(created_at);
     `);
   }
 

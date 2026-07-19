@@ -33,6 +33,9 @@ import { ClientService } from "./clients/ClientService";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
+import { ProductRepository } from "./engineering/ProductRepository";
+import { createProductRouter } from "./engineering/ProductRouter";
+import { ProductService } from "./engineering/ProductService";
 import { HostingAccountRepository } from "./hosting/HostingAccountRepository";
 import { HostingAccountService } from "./hosting/HostingAccountService";
 import { createHostingRouter } from "./hosting/HostingRouter";
@@ -192,6 +195,15 @@ export function createApp(
       programRepository,
     );
 
+  const productRepository =
+    new ProductRepository(database);
+
+  const productService =
+    new ProductService(
+      clientService,
+      productRepository,
+    );
+
   const hostingRepository =
     new HostingAccountRepository(
       database,
@@ -337,6 +349,9 @@ export function createApp(
         programs:
           "/api/v1/programs",
 
+        products:
+          "/api/v1/products",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -421,6 +436,12 @@ export function createApp(
         true,
 
       persistentMinistryStorage:
+        Boolean(database),
+
+      engineeringManagementAvailable:
+        true,
+
+      persistentEngineeringStorage:
         Boolean(database),
 
       hostingManagementAvailable:
@@ -536,6 +557,13 @@ export function createApp(
     "/api/v1/programs",
     createProgramRouter(
       programService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/products",
+    createProductRouter(
+      productService,
     ),
   );
 

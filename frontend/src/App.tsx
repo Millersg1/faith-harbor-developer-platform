@@ -14,6 +14,7 @@ import AIWorkspacePage from "./pages/AIWorkspacePage";
 import ClientsPage from "./pages/ClientsPage";
 import DashboardPage from "./pages/DashboardPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
+import EngineeringPage from "./pages/EngineeringPage";
 import HostingPage from "./pages/HostingPage";
 import MarketingPage from "./pages/MarketingPage";
 import MinistryPage from "./pages/MinistryPage";
@@ -99,6 +100,11 @@ const navigationGroups: readonly NavigationGroup[] = [
         label: "Hosting",
         path: "/hosting",
         eyebrow: "Hosting Operations",
+      },
+      {
+        label: "Engineering",
+        path: "/engineering",
+        eyebrow: "Engineering",
       },
     ],
   },
@@ -228,6 +234,11 @@ function App() {
             <Route
               path="/hosting"
               element={<HostingPage />}
+            />
+
+            <Route
+              path="/engineering"
+              element={<EngineeringPage />}
             />
 
             <Route
