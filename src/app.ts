@@ -202,17 +202,6 @@ export function createApp(
       invoiceRepository,
     );
 
-  // The scanner is the periodic side of automation: it finds
-  // time-based work (today, overdue invoices) and asks the engine to
-  // prepare reminder drafts. The scheduler that runs it lives in the
-  // server entry point so tests never start timers.
-  const automationScanner =
-    new AutomationScanner(
-      invoiceService,
-      clientService,
-      automationService,
-    );
-
   const ticketRepository =
     new TicketRepository(database);
 
@@ -242,6 +231,26 @@ export function createApp(
         automationService.onLeadCreated(
           lead,
         ),
+    );
+
+  // The scanner is the periodic side of automation: it finds
+  // time-based work — overdue invoices, quiet leads, stalled
+  // projects — and asks the engine to prepare drafts for review. The
+  // scheduler that runs it lives in the server entry point so tests
+  // never start timers.
+  const automationScanner =
+    new AutomationScanner(
+      invoiceService,
+      clientService,
+      automationService,
+      {
+        leads: leadService,
+        projects: projectService,
+        leadQuietDays:
+          config.AUTOMATION_LEAD_QUIET_DAYS,
+        projectStalledDays:
+          config.AUTOMATION_PROJECT_STALLED_DAYS,
+      },
     );
 
   const campaignRepository =

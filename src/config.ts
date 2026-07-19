@@ -142,6 +142,24 @@ const schema = z.object({
     .min(0)
     .max(1440)
     .default(360),
+
+  // Days without an update before an open lead is treated as quiet
+  // and a follow-up draft is prepared.
+  AUTOMATION_LEAD_QUIET_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(7),
+
+  // Days without an update before an active project is treated as
+  // stalled and a check-in draft is prepared.
+  AUTOMATION_PROJECT_STALLED_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(14),
 });
 
 export const config = schema.parse(process.env);

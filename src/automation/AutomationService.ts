@@ -9,7 +9,9 @@ import type { LeadRecord } from "../sales/LeadRecord";
 import { AutomationRepository } from "./AutomationRepository";
 import {
   buildInvoiceReminderDraft,
+  buildLeadFollowUpDraft,
   buildLeadWelcomeDraft,
+  buildProjectCheckInDraft,
   buildProjectOnboardingDraft,
 } from "./AutomationRules";
 import type {
@@ -131,6 +133,84 @@ export class AutomationService {
       "invoice.overdue",
       "invoice",
       invoice.id,
+      content.title,
+      content.to,
+      content.subject,
+      content.body,
+      content.clientId,
+    );
+  }
+
+  /**
+   * Reacts to a lead that has gone quiet by drafting a follow-up.
+   *
+   * Called by the scanner. At most one follow-up draft is prepared
+   * per lead; if one already exists this returns null.
+   */
+  onLeadQuiet(
+    lead: LeadRecord,
+  ): AutomationDraft | null {
+    if (
+      this.hasDraftFor(
+        "lead.quiet",
+        lead.id,
+      )
+    ) {
+      return null;
+    }
+
+    const content =
+      buildLeadFollowUpDraft(lead);
+
+    if (!content) {
+      return null;
+    }
+
+    return this.record(
+      "lead.quiet",
+      "lead",
+      lead.id,
+      content.title,
+      content.to,
+      content.subject,
+      content.body,
+      content.clientId,
+    );
+  }
+
+  /**
+   * Reacts to a project that has stalled by drafting a check-in.
+   *
+   * Called by the scanner. At most one check-in draft is prepared per
+   * project; if one already exists this returns null.
+   */
+  onProjectStalled(
+    project: ProjectRecord,
+    client: ClientRecord,
+  ): AutomationDraft | null {
+    if (
+      this.hasDraftFor(
+        "project.stalled",
+        project.id,
+      )
+    ) {
+      return null;
+    }
+
+    const content =
+      buildProjectCheckInDraft(
+        project,
+        client,
+      );
+
+    if (!content) {
+      return null;
+    }
+
+    return this.record(
+      "project.stalled",
+      "project",
+      project.id,
       content.title,
       content.to,
       content.subject,

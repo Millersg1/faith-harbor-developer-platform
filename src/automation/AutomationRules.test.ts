@@ -11,7 +11,9 @@ import type { LeadRecord } from "../sales/LeadRecord";
 
 import {
   buildInvoiceReminderDraft,
+  buildLeadFollowUpDraft,
   buildLeadWelcomeDraft,
+  buildProjectCheckInDraft,
   buildProjectOnboardingDraft,
 } from "./AutomationRules";
 
@@ -223,6 +225,65 @@ describe("buildInvoiceReminderDraft", () => {
     expect(
       buildInvoiceReminderDraft(
         makeInvoice(),
+        makeClient({
+          email: undefined,
+        }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("buildLeadFollowUpDraft", () => {
+  it("drafts a follow-up to the lead", () => {
+    const draft =
+      buildLeadFollowUpDraft(
+        makeLead({
+          serviceInterest:
+            "a new website",
+        }),
+      );
+
+    expect(draft).not.toBeNull();
+    expect(draft?.to)
+      .toBe("jane@example.com");
+    expect(draft?.title)
+      .toContain("Follow-up");
+    expect(draft?.body)
+      .toContain("a new website");
+  });
+
+  it("returns null when the lead has no email", () => {
+    expect(
+      buildLeadFollowUpDraft(
+        makeLead({ email: undefined }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("buildProjectCheckInDraft", () => {
+  it("drafts a check-in to the client", () => {
+    const draft =
+      buildProjectCheckInDraft(
+        makeProject(),
+        makeClient(),
+      );
+
+    expect(draft).not.toBeNull();
+    expect(draft?.to)
+      .toBe("john@gracechapel.example");
+    expect(draft?.subject)
+      .toContain(
+        "Church Website Rebuild",
+      );
+    expect(draft?.title)
+      .toContain("Check-in");
+  });
+
+  it("returns null when the client has no email", () => {
+    expect(
+      buildProjectCheckInDraft(
+        makeProject(),
         makeClient({
           email: undefined,
         }),

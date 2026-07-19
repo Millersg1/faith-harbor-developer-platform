@@ -46,6 +46,9 @@ const triggerLabels: Record<
   "project.created": "New project",
   "invoice.overdue":
     "Overdue invoice",
+  "lead.quiet": "Quiet lead",
+  "project.stalled":
+    "Stalled project",
 };
 
 function getErrorMessage(

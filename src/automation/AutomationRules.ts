@@ -184,3 +184,93 @@ export function buildInvoiceReminderDraft(
     clientId: client.id,
   };
 }
+
+/**
+ * Builds a follow-up email draft for a lead that has gone quiet.
+ *
+ * Prepared when an open lead has not been touched for a while, to
+ * gently re-open the conversation. Returns null when the lead has no
+ * email address on file.
+ */
+export function buildLeadFollowUpDraft(
+  lead: LeadRecord,
+): DraftContent | null {
+  const to = lead.email?.trim();
+
+  if (!to) {
+    return null;
+  }
+
+  const audience =
+    lead.company?.trim() ||
+    lead.name.trim();
+
+  const greetingName =
+    lead.name.trim() || audience;
+
+  const interest =
+    lead.serviceInterest?.trim();
+
+  const interestLine = interest
+    ? `We had talked about ${interest}, and I did not want it to slip through the cracks.`
+    : "I wanted to follow up and see if we can help with anything.";
+
+  const body =
+    `Hi ${greetingName},\n\n` +
+    "I hope you are doing well. " +
+    interestLine +
+    "\n\n" +
+    "There is no rush and no pressure at all — if the timing is not right, just let me know and I will check back later. " +
+    "If you do have any questions, simply reply to this email and I am glad to help.\n\n" +
+    signature;
+
+  return {
+    title: `Follow-up email to ${audience}`,
+    to,
+    subject:
+      "Just checking in from Faith Harbor",
+    body,
+    clientId: lead.clientId,
+  };
+}
+
+/**
+ * Builds a check-in email draft for a project that has stalled.
+ *
+ * Prepared when an active project has not been updated for a while,
+ * to reassure the client and keep the relationship warm. Returns null
+ * when the client has no email address on file.
+ */
+export function buildProjectCheckInDraft(
+  project: ProjectRecord,
+  client: ClientRecord,
+): DraftContent | null {
+  const to = client.email?.trim();
+
+  if (!to) {
+    return null;
+  }
+
+  const greetingName =
+    client.primaryContact?.trim() ||
+    client.companyName.trim();
+
+  const projectName =
+    project.name.trim();
+
+  const body =
+    `Hi ${greetingName},\n\n` +
+    `I wanted to give you a quick check-in on ${projectName}. ` +
+    "We have not connected in a little while, and I want to make sure you feel taken care of.\n\n" +
+    "If there is anything you need from us, or any question on your mind, just reply to this email. " +
+    "We are grateful for the chance to serve you and want to keep things moving well.\n\n" +
+    signature;
+
+  return {
+    title: `Check-in email for ${projectName}`,
+    to,
+    subject: `Checking in on ${projectName}`,
+    body,
+    clientId: client.id,
+  };
+}
