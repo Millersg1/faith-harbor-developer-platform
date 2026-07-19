@@ -173,6 +173,18 @@ const schema = z.object({
         : value === "true",
     ),
 
+  // Verify the mail server's TLS certificate. Defaults to true. Set
+  // to "false" only for a self-signed or otherwise unverifiable
+  // certificate (e.g. a local mail server), accepting the tradeoff.
+  SMTP_REJECT_UNAUTHORIZED: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) =>
+      value === undefined
+        ? undefined
+        : value === "true",
+    ),
+
   // How often the automation scheduler scans for time-based work
   // (for example overdue invoices). Set to 0 to disable scheduling.
   AUTOMATION_SCAN_INTERVAL_MINUTES: z.coerce

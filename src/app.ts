@@ -154,6 +154,8 @@ export function createApp(
               config.SMTP_PASSWORD,
             secure:
               config.SMTP_SECURE,
+            rejectUnauthorized:
+              config.SMTP_REJECT_UNAUTHORIZED,
           })
         : config.EMAIL_API_URL &&
             config.EMAIL_API_KEY

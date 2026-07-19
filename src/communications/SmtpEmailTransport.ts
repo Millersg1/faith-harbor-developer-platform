@@ -35,6 +35,15 @@ export interface SmtpConfig {
    * Name sent in the EHLO greeting. Defaults to "faith-harbor-os".
    */
   clientName?: string;
+
+  /**
+   * Verify the server's TLS certificate. Defaults to true. Set to
+   * false only when the mail server presents a self-signed or
+   * otherwise unverifiable certificate (for example connecting to a
+   * local mail server on the same box), accepting the reduced
+   * protection that implies.
+   */
+  rejectUnauthorized?: boolean;
 }
 
 /**
@@ -276,9 +285,13 @@ export class SmtpEmailTransport
 
   private readonly secure: boolean;
 
+  private readonly rejectUnauthorized: boolean;
+
+  private readonly connectFn: SmtpConnectionFactory;
+
   constructor(
     private readonly config: SmtpConfig,
-    private readonly connectFn: SmtpConnectionFactory = defaultConnect,
+    connectFn?: SmtpConnectionFactory,
   ) {
     this.timeoutMs =
       config.timeoutMs ?? 20_000;
@@ -290,7 +303,51 @@ export class SmtpEmailTransport
     this.secure =
       config.secure ??
       config.port === 465;
+
+    this.rejectUnauthorized =
+      config.rejectUnauthorized ??
+      true;
+
+    this.connectFn =
+      connectFn ??
+      this.defaultConnect;
   }
+
+  /**
+   * Opens a real SMTP connection, using implicit TLS when secure and
+   * honoring the certificate-verification setting.
+   */
+  private defaultConnect: SmtpConnectionFactory =
+    (host, port, secure) =>
+      new Promise<Duplex>(
+        (resolve, reject) => {
+          const socket = secure
+            ? tlsConnect({
+                host,
+                port,
+                servername: host,
+                rejectUnauthorized:
+                  this.rejectUnauthorized,
+              })
+            : netConnect({
+                host,
+                port,
+              });
+
+          const event = secure
+            ? "secureConnect"
+            : "connect";
+
+          socket.once(event, () =>
+            resolve(socket),
+          );
+
+          socket.once(
+            "error",
+            reject,
+          );
+        },
+      );
 
   async send(
     message: EmailMessage,
@@ -393,6 +450,7 @@ export class SmtpEmailTransport
         await upgradeToTls(
           socket,
           this.config.host,
+          this.rejectUnauthorized,
         );
 
       session = new SmtpSession(
@@ -487,44 +545,12 @@ export class SmtpEmailTransport
 }
 
 /**
- * Opens a real SMTP connection, using implicit TLS when secure.
- */
-const defaultConnect: SmtpConnectionFactory =
-  (host, port, secure) =>
-    new Promise<Duplex>(
-      (resolve, reject) => {
-        const socket = secure
-          ? tlsConnect({
-              host,
-              port,
-              servername: host,
-            })
-          : netConnect({
-              host,
-              port,
-            });
-
-        const event = secure
-          ? "secureConnect"
-          : "connect";
-
-        socket.once(event, () =>
-          resolve(socket),
-        );
-
-        socket.once(
-          "error",
-          reject,
-        );
-      },
-    );
-
-/**
  * Upgrades an established plain socket to TLS (for STARTTLS).
  */
 function upgradeToTls(
   socket: Duplex,
   host: string,
+  rejectUnauthorized: boolean,
 ): Promise<Duplex> {
   return new Promise<Duplex>(
     (resolve, reject) => {
@@ -533,6 +559,7 @@ function upgradeToTls(
           socket:
             socket as never,
           servername: host,
+          rejectUnauthorized,
         },
         () => resolve(secured),
       );
