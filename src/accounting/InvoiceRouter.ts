@@ -89,6 +89,28 @@ const invoiceRequestSchema = z.object({
 const invoiceUpdateSchema =
   invoiceRequestSchema.partial();
 
+const fromProjectSchema = z.object({
+  projectId: z
+    .string()
+    .trim()
+    .min(1),
+
+  clientId: z
+    .string()
+    .trim()
+    .min(1),
+
+  projectName: z
+    .string()
+    .trim()
+    .optional(),
+
+  amount: z
+    .number()
+    .nonnegative()
+    .optional(),
+});
+
 /**
  * Creates the invoice management routes.
  */
@@ -146,6 +168,71 @@ export function createInvoiceRouter(
                 : "Invoice not found.",
           },
         });
+      }
+    },
+  );
+
+  /**
+   * Drafts an invoice from a delivered project.
+   */
+  router.post(
+    "/from-project",
+    (req, res, next) => {
+      try {
+        const parsed =
+          fromProjectSchema.safeParse(
+            req.body,
+          );
+
+        if (!parsed.success) {
+          res.status(400).json({
+            error: {
+              code:
+                "INVALID_INVOICE_REQUEST",
+              message:
+                "Invoice from project validation failed.",
+              details:
+                parsed.error.flatten(),
+            },
+          });
+
+          return;
+        }
+
+        const invoice =
+          invoiceService.createFromProject(
+            parsed.data,
+          );
+
+        res.status(201).json({
+          success: true,
+          status: invoice.status,
+          invoice,
+        });
+      } catch (error) {
+        // The project or client reference no longer exists.
+        if (
+          error instanceof Error &&
+          (error.message.includes(
+            "FOREIGN KEY",
+          ) ||
+            error.message.includes(
+              "constraint",
+            ))
+        ) {
+          res.status(400).json({
+            error: {
+              code:
+                "PROJECT_LINK_FAILED",
+              message:
+                "The invoice could not be linked to that project. It may no longer exist.",
+            },
+          });
+
+          return;
+        }
+
+        next(error);
       }
     },
   );

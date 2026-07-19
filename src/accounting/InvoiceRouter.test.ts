@@ -452,6 +452,73 @@ describe("InvoiceRouter", () => {
     ).toBeDefined();
   });
 
+  it("drafts an invoice from a project", async () => {
+    const app = createApp();
+
+    const client =
+      await createClient(app);
+
+    const response =
+      await request(app)
+        .post(
+          "/api/v1/invoices/from-project",
+        )
+        .send({
+          projectId:
+            "project-9",
+          clientId: client.id,
+          projectName:
+            "Website Redesign",
+          amount: 2500,
+        });
+
+    expect(response.status)
+      .toBe(201);
+
+    expect(response.body.success)
+      .toBe(true);
+
+    expect(response.body.invoice)
+      .toMatchObject({
+        clientId: client.id,
+        projectId:
+          "project-9",
+        status: "draft",
+        amount: 2500,
+      });
+
+    expect(
+      response.body.invoice
+        .lineItems[0]
+        .description,
+    ).toBe(
+      "Website Redesign — services",
+    );
+  });
+
+  it("rejects an invalid from-project request", async () => {
+    const app = createApp();
+
+    const response =
+      await request(app)
+        .post(
+          "/api/v1/invoices/from-project",
+        )
+        .send({
+          projectId: "",
+          clientId: "",
+        });
+
+    expect(response.status)
+      .toBe(400);
+
+    expect(
+      response.body.error.code,
+    ).toBe(
+      "INVALID_INVOICE_REQUEST",
+    );
+  });
+
   it("returns an internal error when creating an invoice for a missing client", async () => {
     const app = createApp();
 

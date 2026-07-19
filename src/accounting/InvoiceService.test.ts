@@ -431,4 +431,95 @@ describe("InvoiceService", () => {
     expect(service.list())
       .toHaveLength(0);
   });
+
+  it("drafts an invoice from a project", () => {
+    const {
+      service,
+      clients,
+    } = createInvoiceService();
+
+    const client =
+      createClient(clients);
+
+    const invoice =
+      service.createFromProject({
+        projectId:
+          "project-9",
+        clientId: client.id,
+        projectName:
+          "Website Redesign",
+        amount: 2500,
+      });
+
+    expect(invoice.clientId)
+      .toBe(client.id);
+
+    expect(invoice.projectId)
+      .toBe("project-9");
+
+    expect(invoice.status)
+      .toBe("draft");
+
+    expect(invoice.amount)
+      .toBe(2500);
+
+    expect(
+      invoice.lineItems[0]
+        ?.description,
+    ).toBe(
+      "Website Redesign — services",
+    );
+
+    expect(
+      invoice.metadata
+        ?.fromProjectId,
+    ).toBe("project-9");
+
+    expect(invoice.number)
+      .toBe("INV-0001");
+  });
+
+  it("drafts a zero-amount invoice when no amount is given", () => {
+    const {
+      service,
+      clients,
+    } = createInvoiceService();
+
+    const client =
+      createClient(clients);
+
+    const invoice =
+      service.createFromProject({
+        projectId: "project-1",
+        clientId: client.id,
+        projectName: "Support",
+      });
+
+    expect(invoice.amount)
+      .toBe(0);
+
+    expect(
+      invoice.lineItems[0]
+        ?.unitPrice,
+    ).toBe(0);
+  });
+
+  it("rejects drafting from a project for a missing client", () => {
+    const {
+      service,
+    } = createInvoiceService();
+
+    expect(() =>
+      service.createFromProject({
+        projectId: "project-1",
+        clientId:
+          "missing-client",
+      }),
+    ).toThrow(
+      'Client "missing-client" was not found.',
+    );
+
+    expect(service.list())
+      .toHaveLength(0);
+  });
 });

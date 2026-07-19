@@ -8,6 +8,16 @@ import { InvoiceRepository } from "./InvoiceRepository";
 import type { InvoiceRequest } from "./InvoiceRequest";
 
 /**
+ * The project details needed to draft an invoice.
+ */
+export interface ProjectToInvoice {
+  projectId: string;
+  clientId: string;
+  projectName?: string;
+  amount?: number;
+}
+
+/**
  * Creates and manages client invoices.
  */
 export class InvoiceService {
@@ -84,6 +94,44 @@ export class InvoiceService {
     return this.repository.create(
       invoice,
     );
+  }
+
+  /**
+   * Drafts an invoice for a delivered project, linking the two.
+   *
+   * This connects delivery (projects) to billing (accounting) so
+   * completed work flows straight into a draft invoice for review.
+   */
+  createFromProject(
+    input: ProjectToInvoice,
+  ): InvoiceRecord {
+    const description =
+      input.projectName?.trim()
+        ? `${input.projectName.trim()} — services`
+        : "Project services";
+
+    return this.create({
+      clientId: input.clientId,
+
+      projectId:
+        input.projectId,
+
+      status: "draft",
+
+      lineItems: [
+        {
+          description,
+          quantity: 1,
+          unitPrice:
+            input.amount ?? 0,
+        },
+      ],
+
+      metadata: {
+        fromProjectId:
+          input.projectId,
+      },
+    });
   }
 
   /**

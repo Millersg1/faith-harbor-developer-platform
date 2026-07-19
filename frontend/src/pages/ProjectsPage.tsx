@@ -294,6 +294,87 @@ export default function ProjectsPage() {
     setUpdatingProject,
   ] = useState(false);
 
+  const [
+    creatingInvoice,
+    setCreatingInvoice,
+  ] = useState(false);
+
+  const [invoiceAmount, setInvoiceAmount] =
+    useState("");
+
+  async function createInvoiceFromProject(
+    project: Project,
+  ): Promise<void> {
+    const amount =
+      invoiceAmount.trim()
+        ? Number(invoiceAmount)
+        : 0;
+
+    if (
+      Number.isNaN(amount) ||
+      amount < 0
+    ) {
+      setStatus({
+        message:
+          "Enter a valid, non-negative amount.",
+        type: "error",
+      });
+
+      return;
+    }
+
+    setCreatingInvoice(true);
+
+    setStatus({
+      message:
+        "Drafting an invoice for this project...",
+      type: "working",
+    });
+
+    try {
+      const response = await fetch(
+        "/api/v1/invoices/from-project",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            projectId: project.id,
+            clientId:
+              project.clientId,
+            projectName:
+              project.name,
+            amount,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          "The invoice could not be created.",
+        );
+      }
+
+      setInvoiceAmount("");
+
+      setStatus({
+        message:
+          "Draft invoice created. Review it in Accounting.",
+        type: "success",
+      });
+    } catch {
+      setStatus({
+        message:
+          "The invoice could not be created from this project.",
+        type: "error",
+      });
+    } finally {
+      setCreatingInvoice(false);
+    }
+  }
+
   useEffect(() => {
     let requestCancelled = false;
 
@@ -1384,6 +1465,54 @@ export default function ProjectsPage() {
                 }
               </div>
             )}
+
+            <div className="convert-panel">
+              <div>
+                <strong>
+                  Ready to bill?
+                </strong>
+
+                <span>
+                  Draft an invoice in
+                  Accounting for this
+                  project.
+                </span>
+              </div>
+
+              <div className="convert-actions">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="Amount"
+                  aria-label="Invoice amount"
+                  value={invoiceAmount}
+                  onChange={(event) =>
+                    setInvoiceAmount(
+                      event.target
+                        .value,
+                    )
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={
+                    creatingInvoice
+                  }
+                  onClick={() =>
+                    void createInvoiceFromProject(
+                      selectedProject,
+                    )
+                  }
+                >
+                  {creatingInvoice
+                    ? "Creating..."
+                    : "Create Invoice"}
+                </button>
+              </div>
+            </div>
 
             <div className="section-divider" />
 

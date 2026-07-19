@@ -1264,6 +1264,17 @@ pre {
     margin-top: 0;
 }
 
+.convert-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.convert-actions input {
+    width: 130px;
+}
+
 /* Marketing */
 .campaign-status {
     display: inline-block;
