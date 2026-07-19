@@ -6,6 +6,8 @@ import type {
   SyntheticEvent,
 } from "react";
 
+import SystemAdministration from "../components/SystemAdministration";
+
 type AIProvider =
   | "auto"
   | "ollama"
@@ -310,6 +312,8 @@ export default function SettingsPage() {
             : "Refresh Status"}
         </button>
       </div>
+
+      <SystemAdministration />
 
       {status && (
         <div

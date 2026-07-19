@@ -1302,6 +1302,45 @@ pre {
     box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
 }
 
+/* Reports / Analytics */
+.report-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            auto-fill,
+            minmax(160px, 1fr)
+        );
+    gap: 14px;
+    margin-top: 18px;
+}
+
+.report-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+    border: 1px solid #20364d;
+    border-radius: 10px;
+    background: #091927;
+}
+
+.report-stat-label {
+    color: #91a5bb;
+    font-size: 0.78rem;
+    font-weight: 650;
+    text-transform: uppercase;
+}
+
+.report-stat-value {
+    font-size: 1.8rem;
+    line-height: 1;
+}
+
+.report-stat-detail {
+    color: #7f94aa;
+    font-size: 0.8rem;
+}
+
 /* Marketing */
 .campaign-status {
     display: inline-block;

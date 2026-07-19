@@ -77,16 +77,16 @@ const departmentCatalog: readonly CatalogDepartment[] = [
     name: "Analytics",
     description:
       "Review operational reporting, business activity, and performance information.",
-    status: "foundation",
-    statusLabel: "Foundation Ready",
+    status: "active",
+    statusLabel: "Active",
     path: "/reports",
   },
   {
     name: "Administration",
     description:
       "Manage Faith Harbor OS preferences, providers, system information, and configuration.",
-    status: "foundation",
-    statusLabel: "Foundation Ready",
+    status: "active",
+    statusLabel: "Active",
     path: "/settings",
   },
   {

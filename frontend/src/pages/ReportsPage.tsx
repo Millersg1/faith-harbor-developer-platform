@@ -3,6 +3,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import BusinessReports from "../components/BusinessReports";
 import DocumentExportButtons from "../components/DocumentExportButtons";
 import type {
   ExportDocumentData,
@@ -665,6 +666,8 @@ export default function ReportsPage() {
             : "Refresh Reports"}
         </button>
       </div>
+
+      <BusinessReports />
 
       <section className="card">
         <div className="card-heading">
