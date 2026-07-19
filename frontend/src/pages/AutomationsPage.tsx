@@ -43,6 +43,7 @@ const triggerLabels: Record<
   string
 > = {
   "lead.created": "New lead",
+  "project.created": "New project",
 };
 
 function getErrorMessage(

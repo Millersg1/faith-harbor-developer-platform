@@ -6,7 +6,8 @@
  * person is always in the loop before anything leaves Faith Harbor.
  */
 export type AutomationTrigger =
-  | "lead.created";
+  | "lead.created"
+  | "project.created";
 
 /**
  * Where an automation draft is in its life cycle.

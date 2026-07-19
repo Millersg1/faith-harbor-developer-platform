@@ -180,6 +180,51 @@ describe("AutomationRouter", () => {
       .toBe("DRAFT_NOT_PENDING");
   });
 
+  it("prepares an onboarding draft when a project is created", async () => {
+    const app = createApp();
+
+    const client =
+      await request(app)
+        .post("/api/v1/clients")
+        .send({
+          companyName:
+            "Grace Chapel",
+          primaryContact:
+            "Pastor John",
+          email:
+            "john@gracechapel.example",
+        });
+
+    await request(app)
+      .post("/api/v1/projects")
+      .send({
+        clientId: client.body.id,
+        name: "Church Website Rebuild",
+      });
+
+    const response =
+      await request(app)
+        .get("/api/v1/automations");
+
+    const onboarding =
+      response.body.drafts.find(
+        (draft: {
+          trigger: string;
+        }) =>
+          draft.trigger ===
+          "project.created",
+      );
+
+    expect(onboarding)
+      .toBeDefined();
+    expect(onboarding.to)
+      .toBe(
+        "john@gracechapel.example",
+      );
+    expect(onboarding.status)
+      .toBe("pending");
+  });
+
   it("does not draft when a lead has no email", async () => {
     const app = createApp();
 

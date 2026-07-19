@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { ClientService } from "../clients/ClientService";
+import type { ClientRecord } from "../clients/ClientTypes";
 
 import type { ProjectRecord } from "./ProjectRecord";
 import { ProjectRepository } from "./ProjectRepository";
@@ -18,6 +19,18 @@ export interface ProposalToProject {
 }
 
 /**
+ * Notified after a project is created, with the owning client.
+ *
+ * The automation engine uses this to prepare an onboarding-email
+ * draft. It is optional so the projects module has no hard dependency
+ * on automation, and failures here never block project creation.
+ */
+export type ProjectCreatedHook = (
+  project: ProjectRecord,
+  client: ClientRecord,
+) => void;
+
+/**
  * Creates and manages client projects.
  */
 export class ProjectService {
@@ -25,6 +38,7 @@ export class ProjectService {
     private readonly clients: ClientService,
     private readonly repository =
       new ProjectRepository(),
+    private readonly onProjectCreated?: ProjectCreatedHook,
   ) {}
 
   /**
@@ -34,7 +48,10 @@ export class ProjectService {
     request: ProjectRequest,
   ): ProjectRecord {
     // Ensure the client exists.
-    this.clients.get(request.clientId);
+    const client =
+      this.clients.get(
+        request.clientId,
+      );
 
     const now =
       new Date().toISOString();
@@ -76,9 +93,25 @@ export class ProjectService {
       updatedAt: now,
     };
 
-    return this.repository.create(
-      project,
-    );
+    const created =
+      this.repository.create(
+        project,
+      );
+
+    // Best-effort: notify the automation engine. A drafting failure
+    // must never prevent the project itself from being saved.
+    if (this.onProjectCreated) {
+      try {
+        this.onProjectCreated(
+          created,
+          client,
+        );
+      } catch {
+        // Intentionally ignored; the project is already stored.
+      }
+    }
+
+    return created;
   }
 
   /**

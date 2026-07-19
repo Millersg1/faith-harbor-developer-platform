@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
 
+import type { ClientRecord } from "../clients/ClientTypes";
 import type { EmailService } from "../communications/EmailService";
+import type { ProjectRecord } from "../projects/ProjectRecord";
 import type { LeadRecord } from "../sales/LeadRecord";
 
 import { AutomationRepository } from "./AutomationRepository";
-import { buildLeadWelcomeDraft } from "./AutomationRules";
+import {
+  buildLeadWelcomeDraft,
+  buildProjectOnboardingDraft,
+} from "./AutomationRules";
 import type {
   AutomationDraft,
   AutomationTrigger,
@@ -47,6 +52,40 @@ export class AutomationService {
       "lead.created",
       "lead",
       lead.id,
+      content.title,
+      content.to,
+      content.subject,
+      content.body,
+      content.clientId,
+    );
+  }
+
+  /**
+   * Reacts to a newly created project by drafting an onboarding email
+   * to the client.
+   *
+   * Called by the projects module after a project is stored, whether
+   * it was created directly or from an accepted proposal. The client
+   * is passed in so this stays independent of client lookups.
+   */
+  onProjectCreated(
+    project: ProjectRecord,
+    client: ClientRecord,
+  ): AutomationDraft | null {
+    const content =
+      buildProjectOnboardingDraft(
+        project,
+        client,
+      );
+
+    if (!content) {
+      return null;
+    }
+
+    return this.record(
+      "project.created",
+      "project",
+      project.id,
       content.title,
       content.to,
       content.subject,

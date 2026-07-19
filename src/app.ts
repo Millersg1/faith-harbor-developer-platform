@@ -131,54 +131,6 @@ export function createApp(
   const clientService =
     new ClientService(database);
 
-  const proposalRepository =
-    new ProposalRepository(database);
-
-  const proposalService =
-    aiService
-      ? new ProposalService(
-          aiService,
-          clientService,
-          proposalRepository,
-        )
-      : undefined;
-
-  const projectRepository =
-    new ProjectRepository(database);
-
-  const projectService =
-    new ProjectService(
-      clientService,
-      projectRepository,
-    );
-
-  const invoiceRepository =
-    new InvoiceRepository(database);
-
-  const invoiceService =
-    new InvoiceService(
-      clientService,
-      invoiceRepository,
-    );
-
-  const ticketRepository =
-    new TicketRepository(database);
-
-  const ticketService =
-    new TicketService(
-      clientService,
-      ticketRepository,
-    );
-
-  const bookRepository =
-    new BookRepository(database);
-
-  const bookService =
-    new BookService(
-      clientService,
-      bookRepository,
-    );
-
   // Email is safe by default: when no provider is configured the
   // logging transport records messages to the outbox without
   // sending. Set EMAIL_API_URL + EMAIL_API_KEY to deliver for real.
@@ -212,6 +164,59 @@ export function createApp(
       new AutomationRepository(
         database,
       ),
+    );
+
+  const proposalRepository =
+    new ProposalRepository(database);
+
+  const proposalService =
+    aiService
+      ? new ProposalService(
+          aiService,
+          clientService,
+          proposalRepository,
+        )
+      : undefined;
+
+  const projectRepository =
+    new ProjectRepository(database);
+
+  const projectService =
+    new ProjectService(
+      clientService,
+      projectRepository,
+      (project, client) =>
+        automationService.onProjectCreated(
+          project,
+          client,
+        ),
+    );
+
+  const invoiceRepository =
+    new InvoiceRepository(database);
+
+  const invoiceService =
+    new InvoiceService(
+      clientService,
+      invoiceRepository,
+    );
+
+  const ticketRepository =
+    new TicketRepository(database);
+
+  const ticketService =
+    new TicketService(
+      clientService,
+      ticketRepository,
+    );
+
+  const bookRepository =
+    new BookRepository(database);
+
+  const bookService =
+    new BookService(
+      clientService,
+      bookRepository,
     );
 
   const leadRepository =

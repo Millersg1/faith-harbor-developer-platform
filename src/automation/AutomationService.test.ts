@@ -4,6 +4,7 @@ import {
   it,
 } from "vitest";
 
+import type { ClientRecord } from "../clients/ClientTypes";
 import { EmailRepository } from "../communications/EmailRepository";
 import { EmailService } from "../communications/EmailService";
 import type { EmailTransport } from "../communications/EmailTransport";
@@ -11,6 +12,7 @@ import type {
   EmailMessage,
   EmailResult,
 } from "../communications/EmailTypes";
+import type { ProjectRecord } from "../projects/ProjectRecord";
 import type { LeadRecord } from "../sales/LeadRecord";
 
 import { AutomationRepository } from "./AutomationRepository";
@@ -93,6 +95,50 @@ describe("AutomationService", () => {
 
     expect(service.listPending())
       .toHaveLength(1);
+  });
+
+  it("prepares an onboarding draft when a project is created", () => {
+    const { service } =
+      createService();
+
+    const project: ProjectRecord = {
+      id: "project-1",
+      clientId: "client-1",
+      name: "Church Website Rebuild",
+      status: "planned",
+      createdAt:
+        "2026-01-01T00:00:00.000Z",
+      updatedAt:
+        "2026-01-01T00:00:00.000Z",
+    };
+
+    const client: ClientRecord = {
+      id: "client-1",
+      companyName: "Grace Chapel",
+      primaryContact: "Pastor John",
+      email:
+        "john@gracechapel.example",
+      createdAt:
+        "2026-01-01T00:00:00.000Z",
+      updatedAt:
+        "2026-01-01T00:00:00.000Z",
+    };
+
+    const draft =
+      service.onProjectCreated(
+        project,
+        client,
+      );
+
+    expect(draft).not.toBeNull();
+    expect(draft?.status)
+      .toBe("pending");
+    expect(draft?.trigger)
+      .toBe("project.created");
+    expect(draft?.to)
+      .toBe(
+        "john@gracechapel.example",
+      );
   });
 
   it("does not draft when the lead has no email", () => {

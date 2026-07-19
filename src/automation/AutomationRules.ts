@@ -1,3 +1,5 @@
+import type { ClientRecord } from "../clients/ClientTypes";
+import type { ProjectRecord } from "../projects/ProjectRecord";
 import type { LeadRecord } from "../sales/LeadRecord";
 
 /**
@@ -69,5 +71,52 @@ export function buildLeadWelcomeDraft(
       "Welcome to Faith Harbor Web Solutions",
     body,
     clientId: lead.clientId,
+  };
+}
+
+/**
+ * Builds a project kickoff (onboarding) email draft.
+ *
+ * Prepared when a project starts — whether created directly or from
+ * an accepted proposal — to welcome the client into delivery and set
+ * expectations for what happens next.
+ *
+ * Returns null when the client has no email address on file.
+ */
+export function buildProjectOnboardingDraft(
+  project: ProjectRecord,
+  client: ClientRecord,
+): DraftContent | null {
+  const to = client.email?.trim();
+
+  if (!to) {
+    return null;
+  }
+
+  const greetingName =
+    client.primaryContact?.trim() ||
+    client.companyName.trim();
+
+  const projectName =
+    project.name.trim();
+
+  const body =
+    `Hi ${greetingName},\n\n` +
+    `We are excited to get started on ${projectName}. ` +
+    "Thank you for trusting Faith Harbor Web Solutions with this work.\n\n" +
+    "Here is what happens next:\n" +
+    "  1. We will confirm the details and timeline with you.\n" +
+    "  2. You will have a single point of contact for the whole project.\n" +
+    "  3. We will keep you updated at every step and invite your feedback.\n\n" +
+    "If you have any questions in the meantime, just reply to this email. " +
+    "We are honored to serve you.\n\n" +
+    signature;
+
+  return {
+    title: `Onboarding email for ${projectName}`,
+    to,
+    subject: `Getting started on ${projectName}`,
+    body,
+    clientId: client.id,
   };
 }

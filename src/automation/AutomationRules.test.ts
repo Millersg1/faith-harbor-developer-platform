@@ -4,9 +4,14 @@ import {
   it,
 } from "vitest";
 
+import type { ClientRecord } from "../clients/ClientTypes";
+import type { ProjectRecord } from "../projects/ProjectRecord";
 import type { LeadRecord } from "../sales/LeadRecord";
 
-import { buildLeadWelcomeDraft } from "./AutomationRules";
+import {
+  buildLeadWelcomeDraft,
+  buildProjectOnboardingDraft,
+} from "./AutomationRules";
 
 function makeLead(
   overrides: Partial<LeadRecord> = {},
@@ -90,5 +95,79 @@ describe("buildLeadWelcomeDraft", () => {
 
     expect(draft?.title)
       .toContain("Jane Doe");
+  });
+});
+
+function makeProject(
+  overrides: Partial<ProjectRecord> = {},
+): ProjectRecord {
+  return {
+    id: "project-1",
+    clientId: "client-1",
+    name: "Church Website Rebuild",
+    status: "planned",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeClient(
+  overrides: Partial<ClientRecord> = {},
+): ClientRecord {
+  return {
+    id: "client-1",
+    companyName: "Grace Chapel",
+    primaryContact: "Pastor John",
+    email: "john@gracechapel.example",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("buildProjectOnboardingDraft", () => {
+  it("drafts an onboarding email to the client", () => {
+    const draft =
+      buildProjectOnboardingDraft(
+        makeProject(),
+        makeClient(),
+      );
+
+    expect(draft).not.toBeNull();
+    expect(draft?.to)
+      .toBe("john@gracechapel.example");
+    expect(draft?.subject)
+      .toContain(
+        "Church Website Rebuild",
+      );
+    expect(draft?.body)
+      .toContain("Pastor John");
+    expect(draft?.clientId)
+      .toBe("client-1");
+  });
+
+  it("returns null when the client has no email", () => {
+    expect(
+      buildProjectOnboardingDraft(
+        makeProject(),
+        makeClient({
+          email: undefined,
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("greets by company when there is no contact name", () => {
+    const draft =
+      buildProjectOnboardingDraft(
+        makeProject(),
+        makeClient({
+          primaryContact: "   ",
+        }),
+      );
+
+    expect(draft?.body)
+      .toContain("Grace Chapel");
   });
 });
