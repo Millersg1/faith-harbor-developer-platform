@@ -119,7 +119,7 @@ export const defaultDepartments: Department[] = [
     permissions: [],
     successMetrics: ["Approved ministry resources"],
     health: {
-      status: "unknown",
+      status: "healthy",
       activeWorkflows: 0,
       pendingApprovals: 0,
       lastCheckedAt: checkedAt,

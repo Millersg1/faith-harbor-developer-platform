@@ -101,8 +101,9 @@ const departmentCatalog: readonly CatalogDepartment[] = [
     name: "Ministry",
     description:
       "Organize ministry programs, pastoral resources, outreach, prayer needs, and care.",
-    status: "planned",
-    statusLabel: "Planned",
+    status: "active",
+    statusLabel: "Active",
+    path: "/ministry",
   },
   {
     name: "Engineering",

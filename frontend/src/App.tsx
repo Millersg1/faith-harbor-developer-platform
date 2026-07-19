@@ -16,6 +16,7 @@ import DashboardPage from "./pages/DashboardPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import HostingPage from "./pages/HostingPage";
 import MarketingPage from "./pages/MarketingPage";
+import MinistryPage from "./pages/MinistryPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProposalsPage from "./pages/ProposalsPage";
 import PublishingPage from "./pages/PublishingPage";
@@ -118,6 +119,16 @@ const navigationGroups: readonly NavigationGroup[] = [
         label: "Campaigns",
         path: "/marketing",
         eyebrow: "Marketing & Social",
+      },
+    ],
+  },
+  {
+    label: "Ministry",
+    items: [
+      {
+        label: "Programs",
+        path: "/ministry",
+        eyebrow: "Faith Harbor Ministry",
       },
     ],
   },
@@ -227,6 +238,11 @@ function App() {
             <Route
               path="/marketing"
               element={<MarketingPage />}
+            />
+
+            <Route
+              path="/ministry"
+              element={<MinistryPage />}
             />
 
             <Route

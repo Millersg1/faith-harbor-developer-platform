@@ -13,6 +13,9 @@ import { createAuthRouter } from "./auth/AuthRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
 import { createCampaignRouter } from "./marketing/CampaignRouter";
 import { CampaignService } from "./marketing/CampaignService";
+import { ProgramRepository } from "./ministry/ProgramRepository";
+import { createProgramRouter } from "./ministry/ProgramRouter";
+import { ProgramService } from "./ministry/ProgramService";
 import { AuthService } from "./auth/AuthService";
 import { requireAuth } from "./auth/requireAuth";
 import type { AIService } from "./ai/AIService";
@@ -180,6 +183,15 @@ export function createApp(
       campaignRepository,
     );
 
+  const programRepository =
+    new ProgramRepository(database);
+
+  const programService =
+    new ProgramService(
+      clientService,
+      programRepository,
+    );
+
   const hostingRepository =
     new HostingAccountRepository(
       database,
@@ -322,6 +334,9 @@ export function createApp(
         campaigns:
           "/api/v1/campaigns",
 
+        programs:
+          "/api/v1/programs",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -400,6 +415,12 @@ export function createApp(
         true,
 
       persistentMarketingStorage:
+        Boolean(database),
+
+      ministryManagementAvailable:
+        true,
+
+      persistentMinistryStorage:
         Boolean(database),
 
       hostingManagementAvailable:
@@ -508,6 +529,13 @@ export function createApp(
     "/api/v1/campaigns",
     createCampaignRouter(
       campaignService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/programs",
+    createProgramRouter(
+      programService,
     ),
   );
 
