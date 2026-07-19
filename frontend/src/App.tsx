@@ -11,6 +11,7 @@ import AuthGate, {
 } from "./components/AuthGate";
 import AccountingPage from "./pages/AccountingPage";
 import AIWorkspacePage from "./pages/AIWorkspacePage";
+import AutomationsPage from "./pages/AutomationsPage";
 import ClientsPage from "./pages/ClientsPage";
 import CommunicationsPage from "./pages/CommunicationsPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -51,6 +52,11 @@ const navigationGroups: readonly NavigationGroup[] = [
         label: "Departments",
         path: "/departments",
         eyebrow: "Faith Harbor LLC",
+      },
+      {
+        label: "Automations",
+        path: "/automations",
+        eyebrow: "Automation Engine",
       },
     ],
   },
@@ -205,6 +211,11 @@ function App() {
             <Route
               path="/departments"
               element={<DepartmentsPage />}
+            />
+
+            <Route
+              path="/automations"
+              element={<AutomationsPage />}
             />
 
             <Route

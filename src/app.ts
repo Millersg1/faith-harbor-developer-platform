@@ -9,6 +9,9 @@ import type { DatabaseSync } from "node:sqlite";
 import { InvoiceRepository } from "./accounting/InvoiceRepository";
 import { createInvoiceRouter } from "./accounting/InvoiceRouter";
 import { InvoiceService } from "./accounting/InvoiceService";
+import { AutomationRepository } from "./automation/AutomationRepository";
+import { createAutomationRouter } from "./automation/AutomationRouter";
+import { AutomationService } from "./automation/AutomationService";
 import { createAuthRouter } from "./auth/AuthRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
 import { createCampaignRouter } from "./marketing/CampaignRouter";
@@ -176,6 +179,41 @@ export function createApp(
       bookRepository,
     );
 
+  // Email is safe by default: when no provider is configured the
+  // logging transport records messages to the outbox without
+  // sending. Set EMAIL_API_URL + EMAIL_API_KEY to deliver for real.
+  const emailTransport:
+    EmailTransport =
+    config.EMAIL_API_URL &&
+    config.EMAIL_API_KEY
+      ? new HttpEmailTransport({
+          apiUrl:
+            config.EMAIL_API_URL,
+          apiKey:
+            config.EMAIL_API_KEY,
+        })
+      : new LoggingEmailTransport();
+
+  const emailService =
+    new EmailService(
+      emailTransport,
+      config.EMAIL_FROM ??
+        config.ADMIN_EMAIL ??
+        "Faith Harbor OS",
+      new EmailRepository(database),
+    );
+
+  // The automation engine prepares proposed actions (today, email
+  // drafts) in response to business events and holds them for human
+  // approval. It never sends anything without an explicit approval.
+  const automationService =
+    new AutomationService(
+      emailService,
+      new AutomationRepository(
+        database,
+      ),
+    );
+
   const leadRepository =
     new LeadRepository(database);
 
@@ -183,6 +221,10 @@ export function createApp(
     new LeadService(
       clientService,
       leadRepository,
+      (lead) =>
+        automationService.onLeadCreated(
+          lead,
+        ),
     );
 
   const campaignRepository =
@@ -210,30 +252,6 @@ export function createApp(
     new ProductService(
       clientService,
       productRepository,
-    );
-
-  // Email is safe by default: when no provider is configured the
-  // logging transport records messages to the outbox without
-  // sending. Set EMAIL_API_URL + EMAIL_API_KEY to deliver for real.
-  const emailTransport:
-    EmailTransport =
-    config.EMAIL_API_URL &&
-    config.EMAIL_API_KEY
-      ? new HttpEmailTransport({
-          apiUrl:
-            config.EMAIL_API_URL,
-          apiKey:
-            config.EMAIL_API_KEY,
-        })
-      : new LoggingEmailTransport();
-
-  const emailService =
-    new EmailService(
-      emailTransport,
-      config.EMAIL_FROM ??
-        config.ADMIN_EMAIL ??
-        "Faith Harbor OS",
-      new EmailRepository(database),
     );
 
   const hostingRepository =
@@ -387,6 +405,9 @@ export function createApp(
         emails:
           "/api/v1/emails",
 
+        automations:
+          "/api/v1/automations",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -487,6 +508,12 @@ export function createApp(
           config.EMAIL_API_URL &&
             config.EMAIL_API_KEY,
         ),
+
+      automationAvailable:
+        true,
+
+      persistentAutomationStorage:
+        Boolean(database),
 
       hostingManagementAvailable:
         true,
@@ -615,6 +642,13 @@ export function createApp(
     "/api/v1/emails",
     createEmailRouter(
       emailService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/automations",
+    createAutomationRouter(
+      automationService,
     ),
   );
 

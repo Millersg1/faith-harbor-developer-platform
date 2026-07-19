@@ -1366,6 +1366,99 @@ pre {
     background: rgba(239, 68, 68, 0.15);
 }
 
+/* Automation engine */
+.automation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.automation-card {
+    border: 1px solid rgba(127, 148, 170, 0.18);
+    border-radius: 12px;
+    padding: 16px;
+    background: rgba(127, 148, 170, 0.05);
+}
+
+.automation-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.automation-trigger {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    color: #a7c7ff;
+    background: rgba(59, 130, 246, 0.15);
+}
+
+.automation-title {
+    margin: 0 0 4px;
+    font-size: 0.98rem;
+}
+
+.automation-meta {
+    margin: 0 0 8px;
+    font-size: 0.82rem;
+    color: #9fb2c6;
+}
+
+.automation-subject {
+    margin: 0 0 8px;
+    font-weight: 600;
+}
+
+.automation-body {
+    margin: 0 0 14px;
+    padding: 12px;
+    border-radius: 10px;
+    background: rgba(9, 14, 22, 0.35);
+    font-family: inherit;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.automation-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.automation-status {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 650;
+    text-transform: uppercase;
+}
+
+.automation-status-approved {
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.15);
+}
+
+.automation-status-dismissed {
+    color: #9fb2c6;
+    background: rgba(127, 148, 170, 0.15);
+}
+
+.automation-status-pending {
+    color: #fcd34d;
+    background: rgba(234, 179, 8, 0.15);
+}
+
 /* Marketing */
 .campaign-status {
     display: inline-block;
