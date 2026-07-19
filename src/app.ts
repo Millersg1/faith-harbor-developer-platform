@@ -13,6 +13,7 @@ import { AutomationRepository } from "./automation/AutomationRepository";
 import { createAutomationRouter } from "./automation/AutomationRouter";
 import { AutomationScanner } from "./automation/AutomationScanner";
 import { AutomationService } from "./automation/AutomationService";
+import { AiDraftPersonalizer } from "./automation/DraftPersonalizer";
 import { createAuthRouter } from "./auth/AuthRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
 import { createCampaignRouter } from "./marketing/CampaignRouter";
@@ -179,12 +180,22 @@ export function createApp(
   // The automation engine prepares proposed actions (today, email
   // drafts) in response to business events and holds them for human
   // approval. It never sends anything without an explicit approval.
+  // When AI is configured, drafts are personalized after creation
+  // (with a template fallback); otherwise the templates are used.
+  const draftPersonalizer =
+    aiService
+      ? new AiDraftPersonalizer(
+          aiService,
+        )
+      : undefined;
+
   const automationService =
     new AutomationService(
       emailService,
       new AutomationRepository(
         database,
       ),
+      draftPersonalizer,
     );
 
   const proposalRepository =

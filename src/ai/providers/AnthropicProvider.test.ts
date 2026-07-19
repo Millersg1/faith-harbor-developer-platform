@@ -74,4 +74,43 @@ describe("AnthropicProvider", () => {
       model: "claude-sonnet-4",
     });
   });
+
+  it("captures token usage when the API reports it", async () => {
+    const client = createClient();
+
+    vi.spyOn(
+      client.messages,
+      "create",
+    ).mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text: "Hi",
+        },
+      ],
+      usage: {
+        input_tokens: 200,
+        output_tokens: 60,
+      },
+    } as never);
+
+    const provider =
+      new AnthropicProvider(
+        client,
+        "claude-sonnet-4",
+      );
+
+    const response =
+      await provider.generate({
+        capability: "writing",
+        prompt: "Hi",
+      });
+
+    expect(response.inputTokens)
+      .toBe(200);
+    expect(response.outputTokens)
+      .toBe(60);
+    expect(response.tokensUsed)
+      .toBe(260);
+  });
 });

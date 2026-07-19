@@ -14,6 +14,7 @@ import {
   buildProjectCheckInDraft,
   buildProjectOnboardingDraft,
 } from "./AutomationRules";
+import type { DraftPersonalizer } from "./DraftPersonalizer";
 import type {
   AutomationDraft,
   AutomationTrigger,
@@ -29,11 +30,30 @@ import type {
  * keeps a person in control of everything that leaves Faith Harbor.
  */
 export class AutomationService {
+  /**
+   * In-flight AI personalization promises, tracked so tests can wait
+   * for enhancement to settle. Enhancement is otherwise fire-and-
+   * forget: the draft exists immediately with its template body.
+   */
+  private readonly enhancements =
+    new Set<Promise<void>>();
+
   constructor(
     private readonly emails: EmailService,
     private readonly repository =
       new AutomationRepository(),
+    private readonly personalizer?: DraftPersonalizer,
   ) {}
+
+  /**
+   * Waits for any in-flight AI personalization to finish. Intended
+   * for tests; production never needs to block on it.
+   */
+  async settle(): Promise<void> {
+    await Promise.allSettled(
+      this.enhancements,
+    );
+  }
 
   /**
    * Reacts to a newly created lead by drafting a welcome email.
@@ -266,9 +286,55 @@ export class AutomationService {
         new Date().toISOString(),
     };
 
-    return this.repository.create(
-      draft,
-    );
+    const created =
+      this.repository.create(draft);
+
+    // The draft exists immediately with its reliable template body.
+    // If AI is configured, personalize it in the background before a
+    // human reviews it; any failure simply keeps the template.
+    if (this.personalizer) {
+      const promise = this.enhance(
+        created,
+      ).finally(() => {
+        this.enhancements.delete(
+          promise,
+        );
+      });
+
+      this.enhancements.add(promise);
+    }
+
+    return created;
+  }
+
+  /**
+   * Replaces a draft's body with an AI-personalized version, if the
+   * personalizer returns one. Best-effort: errors are swallowed and
+   * the template body is left in place.
+   */
+  private async enhance(
+    draft: AutomationDraft,
+  ): Promise<void> {
+    try {
+      const body =
+        await this.personalizer?.personalize(
+          {
+            to: draft.to,
+            subject: draft.subject,
+            body: draft.body,
+            trigger: draft.trigger,
+          },
+        );
+
+      if (body && body !== draft.body) {
+        this.repository.updateBody(
+          draft.id,
+          body,
+        );
+      }
+    } catch {
+      // Keep the template body.
+    }
   }
 
   /**

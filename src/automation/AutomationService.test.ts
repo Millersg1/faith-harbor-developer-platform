@@ -260,6 +260,92 @@ describe("AutomationService", () => {
     );
   });
 
+  it("personalizes a draft body when a personalizer is provided", async () => {
+    const transport =
+      new RecordingTransport();
+
+    const emailService =
+      new EmailService(
+        transport,
+        "Faith Harbor OS",
+        new EmailRepository(),
+      );
+
+    const service =
+      new AutomationService(
+        emailService,
+        new AutomationRepository(),
+        {
+          personalize: async () =>
+            "PERSONALIZED BODY",
+        },
+      );
+
+    const draft =
+      service.onLeadCreated(
+        makeLead(),
+      );
+
+    // The draft exists immediately with the template body.
+    expect(draft?.body)
+      .not.toBe("PERSONALIZED BODY");
+
+    // After enhancement settles, the stored body is upgraded.
+    await service.settle();
+
+    const stored =
+      service
+        .list()
+        .find(
+          (d) => d.id === draft?.id,
+        );
+
+    expect(stored?.body)
+      .toBe("PERSONALIZED BODY");
+  });
+
+  it("keeps the template body when the personalizer returns null", async () => {
+    const transport =
+      new RecordingTransport();
+
+    const emailService =
+      new EmailService(
+        transport,
+        "Faith Harbor OS",
+        new EmailRepository(),
+      );
+
+    const service =
+      new AutomationService(
+        emailService,
+        new AutomationRepository(),
+        {
+          personalize: async () =>
+            null,
+        },
+      );
+
+    const draft =
+      service.onLeadCreated(
+        makeLead(),
+      );
+
+    const templateBody =
+      draft?.body;
+
+    await service.settle();
+
+    const stored =
+      service
+        .list()
+        .find(
+          (d) => d.id === draft?.id,
+        );
+
+    expect(stored?.body)
+      .toBe(templateBody);
+  });
+
   it("drafts at most one overdue reminder per invoice", () => {
     const { service } =
       createService();

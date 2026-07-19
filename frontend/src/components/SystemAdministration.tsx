@@ -27,9 +27,30 @@ interface WhmResponse {
   configured?: boolean;
 }
 
+interface ProviderScorecard {
+  providerId: string;
+  providerName: string;
+  statistics: {
+    requests: number;
+    averageTokens: number;
+    estimatedCost: number;
+  };
+}
+
+interface MetricsResponse {
+  scorecards?: ProviderScorecard[];
+  summary?: {
+    totalEstimatedCost: number;
+    totalRequests: number;
+    totalTokens: number;
+    currency: string;
+  };
+}
+
 interface AdminState {
   health: HealthResponse;
   ai: AIResponse;
+  metrics: MetricsResponse;
   whmConfigured: boolean;
 }
 
@@ -48,6 +69,34 @@ async function getJson<T>(
   } catch {
     return null;
   }
+}
+
+function formatUsd(
+  value: number,
+): string {
+  // Show more precision for small amounts so fractions of a cent
+  // (typical for a single AI call) are not rounded away to $0.00.
+  const fractionDigits =
+    value > 0 && value < 1 ? 4 : 2;
+
+  return new Intl.NumberFormat(
+    "en-US",
+    {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits:
+        fractionDigits,
+    },
+  ).format(value);
+}
+
+function formatNumber(
+  value: number,
+): string {
+  return new Intl.NumberFormat(
+    "en-US",
+  ).format(value);
 }
 
 function yesNo(
@@ -75,12 +124,20 @@ export default function SystemAdministration() {
       getJson<AIResponse>(
         "/api/v1/ai",
       ),
+      getJson<MetricsResponse>(
+        "/api/v1/ai/metrics",
+      ),
       getJson<WhmResponse>(
         "/api/v1/hosting/whm",
       ),
     ])
       .then(
-        ([health, ai, whm]) => {
+        ([
+          health,
+          ai,
+          metrics,
+          whm,
+        ]) => {
           if (cancelled) {
             return;
           }
@@ -88,6 +145,7 @@ export default function SystemAdministration() {
           setState({
             health: health ?? {},
             ai: ai ?? {},
+            metrics: metrics ?? {},
             whmConfigured: Boolean(
               whm?.configured,
             ),
@@ -119,11 +177,17 @@ export default function SystemAdministration() {
   const {
     health,
     ai,
+    metrics,
     whmConfigured,
   } = state;
 
   const providers =
     ai.registeredProviders ?? [];
+
+  const scorecards =
+    metrics.scorecards ?? [];
+
+  const spend = metrics.summary;
 
   const orchestration =
     ai.orchestration ?? [];
@@ -265,6 +329,110 @@ export default function SystemAdministration() {
           managed through the server
           environment. See the cPanel
           deployment guide.
+        </p>
+      </div>
+
+      <div className="card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">
+              Artificial Intelligence
+            </p>
+
+            <h3>AI Spend</h3>
+          </div>
+        </div>
+
+        <div className="metrics-grid">
+          <article className="metric-card">
+            <span className="metric-label">
+              Estimated Cost
+            </span>
+
+            <strong className="metric-value metric-word">
+              {formatUsd(
+                spend?.totalEstimatedCost ??
+                  0,
+              )}
+            </strong>
+
+            <span className="metric-detail">
+              Since first use
+            </span>
+          </article>
+
+          <article className="metric-card">
+            <span className="metric-label">
+              AI Requests
+            </span>
+
+            <strong className="metric-value">
+              {formatNumber(
+                spend?.totalRequests ??
+                  0,
+              )}
+            </strong>
+
+            <span className="metric-detail">
+              Total calls
+            </span>
+          </article>
+
+          <article className="metric-card">
+            <span className="metric-label">
+              Tokens
+            </span>
+
+            <strong className="metric-value">
+              {formatNumber(
+                spend?.totalTokens ??
+                  0,
+              )}
+            </strong>
+
+            <span className="metric-detail">
+              Input + output
+            </span>
+          </article>
+        </div>
+
+        {scorecards.length > 0 && (
+          <div className="record-list">
+            {scorecards.map(
+              (card) => (
+                <div
+                  className="line-item-summary"
+                  key={card.providerId}
+                >
+                  <span>
+                    {card.providerName}
+                  </span>
+
+                  <span>
+                    {formatUsd(
+                      card.statistics
+                        .estimatedCost,
+                    )}{" "}
+                    ·{" "}
+                    {formatNumber(
+                      card.statistics
+                        .requests,
+                    )}{" "}
+                    calls
+                  </span>
+                </div>
+              ),
+            )}
+          </div>
+        )}
+
+        <p className="help-text">
+          Costs are estimates from an
+          editable per-model price list
+          (src/ai/metrics/AiPricing.ts).
+          Local models are free. Adjust
+          the rates to match your
+          provider plan.
         </p>
       </div>
     </>

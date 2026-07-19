@@ -82,4 +82,38 @@ describe("OpenAIProvider", () => {
       model: "gpt-5-mini",
     });
   });
+
+  it("captures token usage when the API reports it", async () => {
+    const client = createClient();
+
+    vi.spyOn(
+      client.responses,
+      "create",
+    ).mockResolvedValue({
+      output_text: "Hello",
+      usage: {
+        input_tokens: 120,
+        output_tokens: 45,
+        total_tokens: 165,
+      },
+    } as never);
+
+    const provider = new OpenAIProvider(
+      client,
+      "gpt-5.5",
+    );
+
+    const response =
+      await provider.generate({
+        capability: "writing",
+        prompt: "Hi",
+      });
+
+    expect(response.inputTokens)
+      .toBe(120);
+    expect(response.outputTokens)
+      .toBe(45);
+    expect(response.tokensUsed)
+      .toBe(165);
+  });
 });

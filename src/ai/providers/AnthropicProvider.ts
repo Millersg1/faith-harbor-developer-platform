@@ -8,6 +8,7 @@ import type {
   ProviderMetadata,
 } from "../AIProvider";
 import type { AICapability } from "../Capability";
+import { sumTokens } from "./tokenUsage";
 
 /**
  * Faith Harbor OS adapter for Anthropic.
@@ -65,11 +66,23 @@ export class AnthropicProvider implements AIProvider {
         .map((item) => item.text)
         .join("");
 
+    const inputTokens =
+      response.usage?.input_tokens;
+
+    const outputTokens =
+      response.usage?.output_tokens;
+
     return {
       provider: this.id,
       capability: request.capability,
       content,
       model: this.model,
+      inputTokens,
+      outputTokens,
+      tokensUsed: sumTokens(
+        inputTokens,
+        outputTokens,
+      ),
     };
   }
 

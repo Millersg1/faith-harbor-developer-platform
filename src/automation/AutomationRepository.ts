@@ -208,6 +208,36 @@ export class AutomationRepository {
     return draft;
   }
 
+  /**
+   * Updates only the body of a draft (used when AI personalizes it
+   * after creation). Leaves status and all other fields untouched.
+   */
+  updateBody(
+    id: string,
+    body: string,
+  ): void {
+    if (this.database) {
+      this.database
+        .prepare(`
+          UPDATE automation_drafts
+          SET body = ?
+          WHERE id = ?
+        `)
+        .run(body, id);
+
+      return;
+    }
+
+    const draft = this.drafts.get(id);
+
+    if (draft) {
+      this.drafts.set(id, {
+        ...draft,
+        body,
+      });
+    }
+  }
+
   private mapRow(
     row: AutomationRow,
   ): AutomationDraft {
