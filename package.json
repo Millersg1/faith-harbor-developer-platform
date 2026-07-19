@@ -1,37 +1,49 @@
 {
   "name": "faith-harbor-os",
-  "version": "4.1.0",
+  "version": "4.4.0",
   "private": true,
   "description": "The governed operating platform for Faith Harbor LLC.",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "build:frontend": "npm --prefix frontend install && npm --prefix frontend run build",
+    "build:all": "npm run build && npm run build:frontend",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "hash-password": "node scripts/hash-password.mjs",
     "validate": "npm run typecheck && npm test && npm run build"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "@tanstack/react-query": "^5.101.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
     "openai": "^6.46.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@types/supertest": "^6.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
     "supertest": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
   }
 }

@@ -1,14 +1,35 @@
+import type { ClientWorkRequest } from "./ClientWorkRequest";
+import { ClientWorkRequestFactory } from "./ClientWorkRequestFactory";
 import type { WorkflowState } from "./WorkflowState";
-import type { WorkflowDefinition, WorkflowRecord } from "./WorkflowTypes";
+import type {
+  WorkflowDefinition,
+  WorkflowRecord,
+} from "./WorkflowTypes";
 import { WorkflowAudit } from "./WorkflowAudit";
 import { WorkflowRegistry } from "./WorkflowRegistry";
 
-const allowedTransitions: Record<WorkflowState, WorkflowState[]> = {
+const allowedTransitions: Record<
+  WorkflowState,
+  WorkflowState[]
+> = {
   draft: ["ready", "cancelled"],
   ready: ["running", "cancelled"],
-  running: ["waiting_for_approval", "completed", "failed", "cancelled"],
-  waiting_for_approval: ["approved", "rejected", "cancelled"],
-  approved: ["completed", "failed", "cancelled"],
+  running: [
+    "waiting_for_approval",
+    "completed",
+    "failed",
+    "cancelled",
+  ],
+  waiting_for_approval: [
+    "approved",
+    "rejected",
+    "cancelled",
+  ],
+  approved: [
+    "completed",
+    "failed",
+    "cancelled",
+  ],
   rejected: ["archived"],
   completed: ["archived"],
   failed: ["archived"],
@@ -17,12 +38,20 @@ const allowedTransitions: Record<WorkflowState, WorkflowState[]> = {
 };
 
 export class WorkflowEngine {
+  private readonly clientRequestFactory =
+    new ClientWorkRequestFactory();
+
   constructor(
-    private readonly registry = new WorkflowRegistry(),
-    private readonly audit = new WorkflowAudit(),
+    private readonly registry =
+      new WorkflowRegistry(),
+    private readonly audit =
+      new WorkflowAudit(),
   ) {}
 
-  create(definition: WorkflowDefinition, actor = "system"): WorkflowRecord {
+  create(
+    definition: WorkflowDefinition,
+    actor = "system",
+  ): WorkflowRecord {
     const now = new Date().toISOString();
 
     const workflow: WorkflowRecord = {
@@ -30,10 +59,12 @@ export class WorkflowEngine {
       state: "draft",
       createdAt: now,
       updatedAt: now,
-      metadata: definition.metadata ?? {},
+      metadata:
+        definition.metadata ?? {},
     };
 
     this.registry.create(workflow);
+
     this.audit.record({
       workflowId: workflow.id,
       action: "workflow.created",
@@ -44,40 +75,71 @@ export class WorkflowEngine {
     return workflow;
   }
 
+  /**
+   * Creates a workflow from a client work request.
+   */
+  createClientRequest(
+    request: ClientWorkRequest,
+    actor = "system",
+  ): WorkflowRecord {
+    return this.create(
+      this.clientRequestFactory.create(
+        request,
+      ),
+      actor,
+    );
+  }
+
   list(): WorkflowRecord[] {
     return this.registry.list();
   }
 
   get(id: string): WorkflowRecord {
-    const workflow = this.registry.get(id);
+    const workflow =
+      this.registry.get(id);
 
     if (!workflow) {
-      throw new Error(`Workflow '${id}' was not found.`);
+      throw new Error(
+        `Workflow '${id}' was not found.`,
+      );
     }
 
     return workflow;
   }
 
-  transition(id: string, toState: WorkflowState, actor: string): WorkflowRecord {
+  transition(
+    id: string,
+    toState: WorkflowState,
+    actor: string,
+  ): WorkflowRecord {
     const workflow = this.get(id);
 
-    if (!allowedTransitions[workflow.state].includes(toState)) {
+    if (
+      !allowedTransitions[
+        workflow.state
+      ].includes(toState)
+    ) {
       throw new Error(
         `Invalid workflow transition from '${workflow.state}' to '${toState}'.`,
       );
     }
 
-    const fromState = workflow.state;
+    const fromState =
+      workflow.state;
+
     const updated: WorkflowRecord = {
       ...workflow,
       state: toState,
-      updatedAt: new Date().toISOString(),
+      updatedAt:
+        new Date().toISOString(),
     };
 
     this.registry.update(updated);
+
     this.audit.record({
       workflowId: id,
-      action: "workflow.transitioned",
+      action:
+        "workflow.transitioned",
       actor,
       fromState,
       toState,
@@ -86,34 +148,125 @@ export class WorkflowEngine {
     return updated;
   }
 
-  submit(id: string, actor: string): WorkflowRecord {
-    return this.transition(id, "ready", actor);
+  submit(
+    id: string,
+    actor: string,
+  ): WorkflowRecord {
+    return this.transition(
+      id,
+      "ready",
+      actor,
+    );
   }
 
-  start(id: string, actor: string): WorkflowRecord {
-    const workflow = this.transition(id, "running", actor);
+  start(
+    id: string,
+    actor: string,
+  ): WorkflowRecord {
+    const workflow =
+      this.transition(
+        id,
+        "running",
+        actor,
+      );
 
-    if (workflow.requiresApproval) {
-      return this.transition(id, "waiting_for_approval", actor);
+    if (
+      workflow.requiresApproval
+    ) {
+      return this.transition(
+        id,
+        "waiting_for_approval",
+        actor,
+      );
     }
 
     return workflow;
   }
 
-  approve(id: string, actor: string): WorkflowRecord {
-    return this.transition(id, "approved", actor);
+  approve(
+    id: string,
+    actor: string,
+  ): WorkflowRecord {
+    return this.transition(
+      id,
+      "approved",
+      actor,
+    );
   }
 
-  reject(id: string, actor: string): WorkflowRecord {
-    return this.transition(id, "rejected", actor);
+  reject(
+    id: string,
+    actor: string,
+  ): WorkflowRecord {
+    return this.transition(
+      id,
+      "rejected",
+      actor,
+    );
   }
 
-  complete(id: string, actor: string): WorkflowRecord {
-    return this.transition(id, "completed", actor);
+  complete(
+    id: string,
+    actor: string,
+  ): WorkflowRecord {
+    return this.transition(
+      id,
+      "completed",
+      actor,
+    );
+  }
+
+  /**
+   * Advances a workflow through every safe automatic
+   * transition available from its current state.
+   *
+   * Workflows requiring approval stop in
+   * "waiting_for_approval". Approved workflows continue
+   * to completion.
+   */
+  advance(
+    id: string,
+    actor = "automation",
+  ): WorkflowRecord {
+    let workflow = this.get(id);
+
+    if (workflow.state === "draft") {
+      workflow = this.submit(
+        id,
+        actor,
+      );
+    }
+
+    if (workflow.state === "ready") {
+      workflow = this.start(
+        id,
+        actor,
+      );
+    }
+
+    if (
+      workflow.state === "running" &&
+      !workflow.requiresApproval
+    ) {
+      workflow = this.complete(
+        id,
+        actor,
+      );
+    }
+
+    if (workflow.state === "approved") {
+      workflow = this.complete(
+        id,
+        actor,
+      );
+    }
+
+    return workflow;
   }
 
   history(id: string) {
     this.get(id);
+
     return this.audit.list(id);
   }
 }

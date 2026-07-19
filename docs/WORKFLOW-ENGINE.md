@@ -34,7 +34,8 @@ Alternative terminal states include `rejected`, `failed`, and `cancelled`.
 
 ## Approval
 
-High-impact workflows must pause in `waiting_for_approval` until an authorized human approves or rejects them.
+High-impact workflows must pause in `waiting_for_approval` until an authorized
+human approves or rejects them.
 
 ## Audit
 

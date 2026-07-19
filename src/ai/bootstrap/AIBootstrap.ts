@@ -1,36 +1,91 @@
 import { AIService } from "../AIService";
-import { OpenAIClientFactory } from "../config/OpenAIClientFactory";
-import type { OpenAIConfiguration } from "../config/OpenAIConfiguration";
+import {
+  AIDecisionLog,
+  type DecisionLogDatabase,
+} from "../director/AIDecisionLog";
+import { ProviderSelectionPolicy } from "../director/ProviderSelectionPolicy";
+import type { AIProviderInstaller } from "../installers/AIProviderInstaller";
+import { DefaultProviderScoringPolicy } from "../metrics/DefaultProviderScoringPolicy";
+import {
+  ProviderMetricsRegistry,
+  type ProviderMetricsDatabase,
+} from "../metrics/ProviderMetricsRegistry";
 import { ProviderManager } from "../ProviderManager";
 import { ProviderRegistry } from "../ProviderRegistry";
-import { OpenAIProvider } from "../providers/OpenAIProvider";
+import { RuntimeSessionManager } from "../runtime/RuntimeSessionManager";
+import { AIWorkerRegistry } from "../workers/AIWorkerRegistry";
+import { BuiltinWorkerInstaller } from "../workers/installers/BuiltinWorkerInstaller";
+
+export interface AIOperationsDatabase
+  extends DecisionLogDatabase,
+    ProviderMetricsDatabase {}
 
 /**
- * Bootstraps the Faith Harbor AI framework.
+ * Creates the configured AI operations environment.
  */
 export class AIBootstrap {
   /**
-   * Creates a fully configured AIService.
+   * Installs providers and workers, configures the runtime,
+   * and creates the AI service.
+   *
+   * When a database connection is supplied, provider metrics
+   * and Director decisions are loaded and persisted.
    */
-  static create(
-    configuration: OpenAIConfiguration,
-  ): AIService {
+  static async create(
+    installers: readonly AIProviderInstaller[],
+    database?: AIOperationsDatabase,
+  ): Promise<AIService> {
     const registry = new ProviderRegistry();
 
-    const client =
-      OpenAIClientFactory.create(configuration);
+    for (const installer of installers) {
+      await installer.install(registry);
+    }
 
-    const provider =
-      new OpenAIProvider(client);
+    if (registry.size === 0) {
+      throw new Error(
+        "At least one AI provider installer is required.",
+      );
+    }
 
-    registry.register(provider);
+    const metrics =
+      new ProviderMetricsRegistry(
+        new DefaultProviderScoringPolicy(),
+        database,
+      );
 
-    const manager =
-      new ProviderManager(registry);
+    for (const provider of registry.getAll()) {
+      metrics.register(
+        provider.id,
+        provider.name,
+      );
+    }
+
+    const decisionLog =
+      new AIDecisionLog(database);
+
+    const manager = new ProviderManager(
+      registry,
+      ProviderSelectionPolicy.METRICS_DRIVEN,
+      metrics,
+      decisionLog,
+    );
+
+    const runtime =
+      new RuntimeSessionManager();
+
+    const workers =
+      new AIWorkerRegistry();
+
+    const workerInstaller =
+      new BuiltinWorkerInstaller();
+
+    await workerInstaller.install(workers);
 
     return new AIService(
       registry,
       manager,
+      runtime,
+      workers,
     );
   }
 }

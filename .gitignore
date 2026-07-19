@@ -4,3 +4,4 @@ dist/
 coverage/
 *.log
 v4.0-temp/
+data/

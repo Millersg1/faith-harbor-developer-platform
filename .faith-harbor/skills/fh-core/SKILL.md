@@ -1,6 +1,8 @@
 ---
 name: fh-core
-description: Apply universal Faith Harbor priorities, truthfulness, accessibility, safety, maintainability, and completion standards to any task.
+description: >-
+  Apply universal Faith Harbor priorities, truthfulness, accessibility, safety,
+  maintainability, and completion standards to any task.
 ---
 
 # Faith Harbor Core
@@ -22,7 +24,8 @@ Apply these standards to every Faith Harbor task.
 
 - Inspect existing work before changing it.
 - Preserve working functionality.
-- Do not invent facts, claims, testimonials, statistics, credentials, awards, endorsements, pricing, or customer counts.
+- Do not invent facts, claims, testimonials, statistics, credentials, awards,
+  endorsements, pricing, or customer counts.
 - Keep secrets out of source control.
 - Do not claim tests passed unless they were run.
 - State assumptions and limitations.

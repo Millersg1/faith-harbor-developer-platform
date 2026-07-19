@@ -10,4 +10,5 @@ Read in this order:
 4. Platform architecture
 5. Release roadmap
 
-This repository contains executable platform code. Standards and governance remain authoritative in the `faith-harbor-ai-standards` repository.
+This repository contains executable platform code. Standards and governance
+remain authoritative in the `faith-harbor-ai-standards` repository.

@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Faith Harbor OS</title>
+
+    <link
+        rel="stylesheet"
+        href="css/app.css"
+    >
+</head>
+
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <p class="eyebrow">
+                    Faith Harbor LLC
+                </p>
+
+                <h1>Faith Harbor OS</h1>
+
+                <p class="brand-mission">
+                    Technology is our tool.
+                    People are our purpose.
+                    Christ is our foundation.
+                </p>
+            </div>
+
+            <nav
+                class="navigation"
+                aria-label="Faith Harbor OS navigation"
+            >
+                <button
+                    class="nav-button active"
+                    type="button"
+                    data-workspace="dashboard-workspace"
+                >
+                    Dashboard
+                </button>
+
+                <button
+                    class="nav-button"
+                    type="button"
+                    data-workspace="clients-workspace"
+                >
+                    Clients
+                </button>
+
+                <button
+                    class="nav-button"
+                    type="button"
+                    data-workspace="proposals-workspace"
+                >
+                    Proposals
+                </button>
+
+                <button
+                    class="nav-button"
+                    type="button"
+                    data-workspace="projects-workspace"
+                >
+                    Projects
+                </button>
+
+                <button
+                    class="nav-button"
+                    type="button"
+                    data-workspace="ai-workspace"
+                >
+                    AI Workspace
+                </button>
+
+                <button
+                    class="nav-button"
+                    type="button"
+                    data-workspace="reports-workspace"
+                >
+                    Reports
+                </button>
+
+                <button
+                    class="nav-button"
+                    type="button"
+                    data-workspace="settings-workspace"
+                >
+                    Settings
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <span class="connection-dot"></span>
+
+                <span>Faith Harbor OS Online</span>
+            </div>
+        </aside>
+
+        <div class="application">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow" id="workspace-eyebrow">
+                        Command Center
+                    </p>
+
+                    <h2 id="workspace-title">
+                        Dashboard
+                    </h2>
+                </div>
+
+                <div class="user-summary">
+                    <span>Shawn Miller</span>
+
+                    <span class="user-role">
+                        Founder and Director
+                    </span>
+                </div>
+            </header>
+
+            <main class="workspace-container">
+                <section
+                    class="workspace active"
+                    id="dashboard-workspace"
+                >
+                    <div class="welcome-panel">
+                        <div>
+                            <p class="eyebrow">
+                                Faith Harbor Workspace
+                            </p>
+
+                            <h3>Welcome back, Shawn.</h3>
+
+                            <p>
+                                Review your clients, proposals,
+                                and AI activity from one place.
+                            </p>
+                        </div>
+
+                        <button
+                            class="primary-button"
+                            id="dashboard-new-proposal"
+                            type="button"
+                        >
+                            Generate Proposal
+                        </button>
+                    </div>
+
+                    <div class="metrics-grid">
+                        <article class="metric-card">
+                            <span class="metric-label">
+                                Clients
+                            </span>
+
+                            <strong
+                                class="metric-value"
+                                id="dashboard-client-count"
+                            >
+                                0
+                            </strong>
+
+                            <span class="metric-detail">
+                                Active client records
+                            </span>
+                        </article>
+
+                        <article class="metric-card">
+                            <span class="metric-label">
+                                Proposals
+                            </span>
+
+                            <strong
+                                class="metric-value"
+                                id="dashboard-proposal-count"
+                            >
+                                0
+                            </strong>
+
+                            <span class="metric-detail">
+                                Saved proposal records
+                            </span>
+                        </article>
+
+                        <article class="metric-card">
+                            <span class="metric-label">
+                                Drafts
+                            </span>
+
+                            <strong
+                                class="metric-value"
+                                id="dashboard-draft-count"
+                            >
+                                0
+                            </strong>
+
+                            <span class="metric-detail">
+                                Awaiting human review
+                            </span>
+                        </article>
+
+                        <article class="metric-card">
+                            <span class="metric-label">
+                                Storage
+                            </span>
+
+                            <strong class="metric-value metric-word">
+                                SQLite
+                            </strong>
+
+                            <span class="metric-detail">
+                                Persistent business records
+                            </span>
+                        </article>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <section class="card">
+                            <div class="card-heading">
+                                <div>
+                                    <p class="eyebrow">
+                                        Recent Activity
+                                    </p>
+
+                                    <h3>Latest Proposals</h3>
+                                </div>
+
+                                <button
+                                    class="secondary-button"
+                                    id="dashboard-view-proposals"
+                                    type="button"
+                                >
+                                    View All
+                                </button>
+                            </div>
+
+                            <div
+                                class="record-list"
+                                id="dashboard-recent-proposals"
+                            >
+                                Loading recent proposals...
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <p class="eyebrow">
+                                Quick Actions
+                            </p>
+
+                            <h3>Start Work</h3>
+
+                            <div class="quick-actions">
+                                <button
+                                    class="quick-action"
+                                    id="dashboard-add-client"
+                                    type="button"
+                                >
+                                    <strong>New Client</strong>
+
+                                    <span>
+                                        Create a client record
+                                    </span>
+                                </button>
+
+                                <button
+                                    class="quick-action"
+                                    id="dashboard-open-ai"
+                                    type="button"
+                                >
+                                    <strong>AI Workspace</strong>
+
+                                    <span>
+                                        Ask Faith Harbor OS
+                                    </span>
+                                </button>
+
+                                <button
+                                    class="quick-action"
+                                    id="dashboard-open-clients"
+                                    type="button"
+                                >
+                                    <strong>Client Directory</strong>
+
+                                    <span>
+                                        Review client history
+                                    </span>
+                                </button>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+
+                <section
+                    class="workspace"
+                    id="clients-workspace"
+                >
+                    <div class="workspace-header">
+                        <div>
+                            <p class="eyebrow">
+                                Relationship Management
+                            </p>
+
+                            <h3>Clients</h3>
+
+                            <p class="help-text">
+                                Create client records and open
+                                their complete workspace.
+                            </p>
+                        </div>
+
+                        <button
+                            class="secondary-button"
+                            id="refresh-clients"
+                            type="button"
+                        >
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div class="two-column-layout">
+                        <section class="card">
+                            <p class="eyebrow">
+                                New Relationship
+                            </p>
+
+                            <h3>Add Client</h3>
+
+                            <form id="client-form">
+                                <div class="form-group">
+                                    <label for="client-company-name">
+                                        Company name
+                                    </label>
+
+                                    <input
+                                        id="client-company-name"
+                                        type="text"
+                                        required
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="client-primary-contact">
+                                        Primary contact
+                                    </label>
+
+                                    <input
+                                        id="client-primary-contact"
+                                        type="text"
+                                        required
+                                    >
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="client-email">
+                                            Email
+                                        </label>
+
+                                        <input
+                                            id="client-email"
+                                            type="email"
+                                        >
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="client-phone">
+                                            Phone
+                                        </label>
+
+                                        <input
+                                            id="client-phone"
+                                            type="text"
+                                        >
+                                    </div>
+                                </div>
+
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="client-website">
+                                            Website
+                                        </label>
+
+                                        <input
+                                            id="client-website"
+                                            type="url"
+                                            placeholder="https://example.com"
+                                        >
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="client-industry">
+                                            Industry
+                                        </label>
+
+                                        <input
+                                            id="client-industry"
+                                            type="text"
+                                        >
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="client-notes">
+                                        Notes
+                                    </label>
+
+                                    <textarea
+                                        id="client-notes"
+                                        rows="5"
+                                    ></textarea>
+                                </div>
+
+                                <button
+                                    class="primary-button"
+                                    id="create-client"
+                                    type="submit"
+                                >
+                                    Create Client
+                                </button>
+                            </form>
+
+                            <div
+                                class="status-message hidden"
+                                id="client-status"
+                            ></div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-heading">
+                                <div>
+                                    <p class="eyebrow">
+                                        Directory
+                                    </p>
+
+                                    <h3>Client Records</h3>
+                                </div>
+                            </div>
+
+                            <div
+                                class="record-list"
+                                id="client-list"
+                            >
+                                Loading clients...
+                            </div>
+                        </section>
+                    </div>
+
+                    <section
+                        class="card hidden"
+                        id="client-workspace-card"
+                    >
+                        <div class="card-heading">
+                            <div>
+                                <p class="eyebrow">
+                                    Client Workspace
+                                </p>
+
+                                <h3 id="client-workspace-name">
+                                    Client
+                                </h3>
+                            </div>
+
+                            <button
+                                class="secondary-button"
+                                id="client-workspace-new-proposal"
+                                type="button"
+                            >
+                                New Proposal
+                            </button>
+                        </div>
+
+                        <div
+                            class="client-overview"
+                            id="client-overview"
+                        ></div>
+
+                        <div class="section-divider"></div>
+
+                        <h4>Client Proposals</h4>
+
+                        <div
+                            class="record-list"
+                            id="client-proposal-list"
+                        ></div>
+                    </section>
+                </section>
+
+                <section
+                    class="workspace"
+                    id="proposals-workspace"
+                >
+                    <div class="workspace-header">
+                        <div>
+                            <p class="eyebrow">
+                                Client Delivery
+                            </p>
+
+                            <h3>Proposals</h3>
+
+                            <p class="help-text">
+                                Generate, save, reopen, and review
+                                client proposal drafts.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="proposal-layout">
+                        <section class="card">
+                            <p class="eyebrow">
+                                Proposal Generator
+                            </p>
+
+                            <h3>Generate a Proposal</h3>
+
+                            <form id="proposal-form">
+                                <div class="form-group">
+                                    <label for="service">
+                                        Service
+                                    </label>
+
+                                    <select id="service" required>
+                                        <option value="">
+                                            Select a service
+                                        </option>
+
+                                        <option value="Managed IT Services">
+                                            Managed IT Services
+                                        </option>
+
+                                        <option value="Website Development">
+                                            Website Development
+                                        </option>
+
+                                        <option value="AI Consulting">
+                                            AI Consulting
+                                        </option>
+
+                                        <option value="Business Automation">
+                                            Business Automation
+                                        </option>
+
+                                        <option value="Proposal Writing">
+                                            Proposal Writing
+                                        </option>
+
+                                        <option value="Book Publishing">
+                                            Book Publishing
+                                        </option>
+
+                                        <option value="Marketing Services">
+                                            Marketing Services
+                                        </option>
+
+                                        <option value="Custom Service">
+                                            Custom Service
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <div
+                                    class="form-group hidden"
+                                    id="custom-service-group"
+                                >
+                                    <label for="custom-service">
+                                        Custom service name
+                                    </label>
+
+                                    <input
+                                        id="custom-service"
+                                        type="text"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="client-name">
+                                        Client name
+                                    </label>
+
+                                    <input
+                                        id="client-name"
+                                        type="text"
+                                        required
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="requested-outcome">
+                                        Requested outcome
+                                    </label>
+
+                                    <input
+                                        id="requested-outcome"
+                                        type="text"
+                                        required
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="requirements">
+                                        Requirements and discovery notes
+                                    </label>
+
+                                    <textarea
+                                        id="requirements"
+                                        rows="10"
+                                        required
+                                    ></textarea>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="due-date">
+                                        Requested delivery date
+                                    </label>
+
+                                    <input
+                                        id="due-date"
+                                        type="date"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="additional-notes">
+                                        Additional notes
+                                    </label>
+
+                                    <textarea
+                                        id="additional-notes"
+                                        rows="4"
+                                    ></textarea>
+                                </div>
+
+                                <button
+                                    class="primary-button"
+                                    id="generate-proposal"
+                                    type="submit"
+                                >
+                                    Generate Proposal
+                                </button>
+                            </form>
+                        </section>
+
+                        <section class="card proposal-preview">
+                            <div class="card-heading">
+                                <div>
+                                    <p class="eyebrow">
+                                        Draft Deliverable
+                                    </p>
+
+                                    <h3>Proposal Preview</h3>
+                                </div>
+
+                                <button
+                                    class="secondary-button"
+                                    id="copy-proposal"
+                                    type="button"
+                                    disabled
+                                >
+                                    Copy
+                                </button>
+                            </div>
+
+                            <div
+                                class="status-message"
+                                id="proposal-status"
+                            >
+                                Complete the form to generate a proposal.
+                            </div>
+
+                            <div
+                                class="status-message hidden"
+                                id="proposal-details"
+                            ></div>
+
+                            <pre id="proposal-output"></pre>
+                        </section>
+                    </div>
+
+                    <section class="card">
+                        <div class="card-heading">
+                            <div>
+                                <p class="eyebrow">
+                                    Proposal Management
+                                </p>
+
+                                <h3>Saved Proposals</h3>
+                            </div>
+
+                            <button
+                                class="secondary-button"
+                                id="refresh-proposals"
+                                type="button"
+                            >
+                                Refresh
+                            </button>
+                        </div>
+
+                        <div
+                            class="record-list"
+                            id="saved-proposals"
+                        >
+                            Loading saved proposals...
+                        </div>
+                    </section>
+                </section>
+
+                <section
+                    class="workspace"
+                    id="projects-workspace"
+                >
+                    <section class="empty-state">
+                        <p class="eyebrow">
+                            Delivery Management
+                        </p>
+
+                        <h3>Projects</h3>
+
+                        <p>
+                            Accepted proposals will become managed
+                            projects in this workspace.
+                        </p>
+
+                        <span>Coming next</span>
+                    </section>
+                </section>
+
+                <section
+                    class="workspace"
+                    id="ai-workspace"
+                >
+                    <div class="two-column-layout">
+                        <section class="card">
+                            <p class="eyebrow">
+                                Faith Harbor Intelligence
+                            </p>
+
+                            <h3>AI Workspace</h3>
+
+                            <div class="form-group">
+                                <label for="provider">
+                                    Provider
+                                </label>
+
+                                <select id="provider">
+                                    <option value="auto">
+                                        Auto
+                                    </option>
+
+                                    <option value="ollama">
+                                        Ollama
+                                    </option>
+
+                                    <option value="openai">
+                                        OpenAI
+                                    </option>
+
+                                    <option value="blackbox">
+                                        Blackbox
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="prompt">
+                                    Prompt
+                                </label>
+
+                                <textarea
+                                    id="prompt"
+                                    rows="14"
+                                    placeholder="Ask Faith Harbor OS something..."
+                                ></textarea>
+                            </div>
+
+                            <button
+                                class="primary-button"
+                                id="generate"
+                                type="button"
+                            >
+                                Generate
+                            </button>
+                        </section>
+
+                        <section class="card proposal-preview">
+                            <p class="eyebrow">
+                                AI Response
+                            </p>
+
+                            <h3>Response</h3>
+
+                            <pre id="response">Waiting for your first prompt...</pre>
+                        </section>
+                    </div>
+                </section>
+
+                <section
+                    class="workspace"
+                    id="reports-workspace"
+                >
+                    <section class="empty-state">
+                        <p class="eyebrow">
+                            Business Intelligence
+                        </p>
+
+                        <h3>Reports</h3>
+
+                        <p>
+                            Proposal pipeline, AI usage, provider
+                            costs, and client activity will appear here.
+                        </p>
+
+                        <span>Coming soon</span>
+                    </section>
+                </section>
+
+                <section
+                    class="workspace"
+                    id="settings-workspace"
+                >
+                    <section class="card">
+                        <p class="eyebrow">
+                            Administration
+                        </p>
+
+                        <h3>Settings</h3>
+
+                        <div class="settings-list">
+                            <div>
+                                <strong>AI Runtime</strong>
+                                <span>Ollama and configured cloud providers</span>
+                            </div>
+
+                            <div>
+                                <strong>Persistent Storage</strong>
+                                <span>SQLite connected</span>
+                            </div>
+
+                            <div>
+                                <strong>Human Authority</strong>
+                                <span>Required for final client delivery</span>
+                            </div>
+                        </div>
+                    </section>
+                </section>
+            </main>
+
+            <footer class="statusbar">
+                <span>Ollama Connected</span>
+                <span>Hermes 3</span>
+                <span>SQLite Connected</span>
+                <span>Human Approval Required</span>
+            </footer>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
