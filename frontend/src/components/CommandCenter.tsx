@@ -1,9 +1,12 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
 import { Link } from "react-router-dom";
+
+const REFRESH_INTERVAL_MS = 60000;
 
 interface Lead {
   status: string;
@@ -124,68 +127,74 @@ export default function CommandCenter() {
   const [loading, setLoading] =
     useState(true);
 
+  const load =
+    useCallback(async () => {
+      const [
+        leads,
+        invoices,
+        tickets,
+        projects,
+        campaigns,
+        accounts,
+      ] = await Promise.all([
+        fetchList<Lead>(
+          "/api/v1/leads",
+          "leads",
+        ),
+        fetchList<Invoice>(
+          "/api/v1/invoices",
+          "invoices",
+        ),
+        fetchList<Ticket>(
+          "/api/v1/tickets",
+          "tickets",
+        ),
+        fetchList<Project>(
+          "/api/v1/projects",
+          "projects",
+        ),
+        fetchList<Campaign>(
+          "/api/v1/campaigns",
+          "campaigns",
+        ),
+        fetchList<HostingAccount>(
+          "/api/v1/hosting/accounts",
+          "accounts",
+        ),
+      ]);
+
+      setData({
+        leads,
+        invoices,
+        tickets,
+        projects,
+        campaigns,
+        accounts,
+      });
+    }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      fetchList<Lead>(
-        "/api/v1/leads",
-        "leads",
-      ),
-      fetchList<Invoice>(
-        "/api/v1/invoices",
-        "invoices",
-      ),
-      fetchList<Ticket>(
-        "/api/v1/tickets",
-        "tickets",
-      ),
-      fetchList<Project>(
-        "/api/v1/projects",
-        "projects",
-      ),
-      fetchList<Campaign>(
-        "/api/v1/campaigns",
-        "campaigns",
-      ),
-      fetchList<HostingAccount>(
-        "/api/v1/hosting/accounts",
-        "accounts",
-      ),
-    ])
-      .then(
-        ([
-          leads,
-          invoices,
-          tickets,
-          projects,
-          campaigns,
-          accounts,
-        ]) => {
-          if (cancelled) {
-            return;
-          }
+    load().finally(() => {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    });
 
-          setData({
-            leads,
-            invoices,
-            tickets,
-            projects,
-            campaigns,
-            accounts,
-          });
-        },
-      )
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
+    // Auto-refresh so the dashboard works as a live wall display.
+    const timer = setInterval(() => {
+      load().catch(() => {
+        // Transient errors are ignored;
+        // the next tick tries again.
       });
+    }, REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
-  }, []);
+  }, [load]);
 
   const metrics = useMemo(() => {
     if (!data) {
