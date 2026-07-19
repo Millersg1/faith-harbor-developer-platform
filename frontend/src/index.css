@@ -1275,6 +1275,33 @@ pre {
     width: 130px;
 }
 
+/* Command Center */
+.command-center {
+    margin-bottom: 22px;
+}
+
+.command-center .metrics-grid {
+    margin-bottom: 18px;
+}
+
+.attention-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+.attention-dot-critical {
+    background: #f87171;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.attention-dot-warning {
+    background: #fbbf24;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
+}
+
 /* Marketing */
 .campaign-status {
     display: inline-block;

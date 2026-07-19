@@ -6,6 +6,8 @@ import {
   NavLink,
 } from "react-router-dom";
 
+import CommandCenter from "../components/CommandCenter";
+
 type ProjectStatus =
   | "planned"
   | "active"
@@ -458,6 +460,8 @@ export default function DashboardPage() {
           {error}
         </div>
       )}
+
+      <CommandCenter />
 
       <div className="metrics-grid">
         <MetricCard
