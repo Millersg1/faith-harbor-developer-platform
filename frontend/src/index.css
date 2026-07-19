@@ -1238,6 +1238,32 @@ pre {
     background: rgba(239, 68, 68, 0.15);
 }
 
+.convert-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid #245473;
+    border-radius: 10px;
+    background: rgba(56, 189, 248, 0.06);
+}
+
+.convert-panel strong {
+    display: block;
+}
+
+.convert-panel span {
+    color: #8fa4ba;
+    font-size: 0.85rem;
+}
+
+.convert-panel .primary-button {
+    margin-top: 0;
+}
+
 /* Marketing */
 .campaign-status {
     display: inline-block;

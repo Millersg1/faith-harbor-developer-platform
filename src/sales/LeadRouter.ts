@@ -180,6 +180,66 @@ export function createLeadRouter(
   );
 
   /**
+   * Converts a lead into a client (Sales -> Client Services).
+   */
+  router.post(
+    "/:leadId/convert",
+    (req, res, next) => {
+      try {
+        const result =
+          leadService.convertToClient(
+            req.params.leadId,
+          );
+
+        res.status(201).json({
+          success: true,
+          client: result.client,
+          lead: result.lead,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "The lead could not be converted.";
+
+        if (
+          message.includes(
+            "was not found",
+          )
+        ) {
+          res.status(404).json({
+            error: {
+              code:
+                "LEAD_NOT_FOUND",
+              message,
+            },
+          });
+
+          return;
+        }
+
+        if (
+          message.includes(
+            "already linked",
+          )
+        ) {
+          res.status(409).json({
+            error: {
+              code:
+                "LEAD_ALREADY_CONVERTED",
+              message,
+            },
+          });
+
+          return;
+        }
+
+        next(error);
+      }
+    },
+  );
+
+  /**
    * Updates a lead.
    */
   router.patch(

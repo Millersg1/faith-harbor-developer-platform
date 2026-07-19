@@ -233,4 +233,112 @@ describe("LeadService", () => {
     expect(service.list())
       .toHaveLength(0);
   });
+
+  it("converts a won lead into a client", () => {
+    const {
+      service,
+      clients,
+    } = createLeadService();
+
+    const lead =
+      service.create({
+        name: "Jordan Smith",
+        company: "Acme Co",
+        email: "jordan@acme.example",
+        phone: "555-0100",
+        source: "Referral",
+        serviceInterest:
+          "Website Development",
+        estimatedValue: 5000,
+      });
+
+    const result =
+      service.convertToClient(
+        lead.id,
+      );
+
+    // A client is created from the lead.
+    expect(result.client.companyName)
+      .toBe("Acme Co");
+
+    expect(
+      result.client.primaryContact,
+    ).toBe("Jordan Smith");
+
+    expect(result.client.email)
+      .toBe("jordan@acme.example");
+
+    expect(
+      result.client.metadata
+        ?.convertedFromLeadId,
+    ).toBe(lead.id);
+
+    // The lead is linked and marked won.
+    expect(result.lead.clientId)
+      .toBe(result.client.id);
+
+    expect(result.lead.status)
+      .toBe("won");
+
+    // The client is persisted.
+    expect(
+      clients.get(
+        result.client.id,
+      ).companyName,
+    ).toBe("Acme Co");
+  });
+
+  it("uses the lead name when no company is set", () => {
+    const {
+      service,
+    } = createLeadService();
+
+    const lead =
+      service.create({
+        name: "Solo Founder",
+      });
+
+    const result =
+      service.convertToClient(
+        lead.id,
+      );
+
+    expect(result.client.companyName)
+      .toBe("Solo Founder");
+  });
+
+  it("rejects converting an already-linked lead", () => {
+    const {
+      service,
+    } = createLeadService();
+
+    const lead =
+      service.create({
+        name: "Repeat Buyer",
+      });
+
+    service.convertToClient(lead.id);
+
+    expect(() =>
+      service.convertToClient(
+        lead.id,
+      ),
+    ).toThrow(
+      "Lead is already linked to a client.",
+    );
+  });
+
+  it("throws when converting a missing lead", () => {
+    const {
+      service,
+    } = createLeadService();
+
+    expect(() =>
+      service.convertToClient(
+        "missing",
+      ),
+    ).toThrow(
+      'Lead "missing" was not found.',
+    );
+  });
 });

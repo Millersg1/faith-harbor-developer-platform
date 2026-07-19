@@ -309,4 +309,104 @@ describe("LeadRouter", () => {
       "INVALID_LEAD_REQUEST",
     );
   });
+
+  it("converts a lead into a client", async () => {
+    const app = createApp();
+
+    const createResponse =
+      await request(app)
+        .post("/api/v1/leads")
+        .send({
+          name: "Jordan Smith",
+          company: "Acme Co",
+          email:
+            "jordan@acme.example",
+        });
+
+    const lead =
+      createResponse.body.lead;
+
+    const response =
+      await request(app)
+        .post(
+          `/api/v1/leads/${lead.id}/convert`,
+        );
+
+    expect(response.status)
+      .toBe(201);
+
+    expect(response.body.success)
+      .toBe(true);
+
+    expect(
+      response.body.client
+        .companyName,
+    ).toBe("Acme Co");
+
+    expect(
+      response.body.lead.clientId,
+    ).toBe(
+      response.body.client.id,
+    );
+
+    expect(response.body.lead.status)
+      .toBe("won");
+
+    // The created client is now listed.
+    const clientsResponse =
+      await request(app)
+        .get("/api/v1/clients");
+
+    expect(clientsResponse.body.count)
+      .toBe(1);
+  });
+
+  it("returns 409 when converting an already-linked lead", async () => {
+    const app = createApp();
+
+    const createResponse =
+      await request(app)
+        .post("/api/v1/leads")
+        .send({ name: "Repeat" });
+
+    const lead =
+      createResponse.body.lead;
+
+    await request(app)
+      .post(
+        `/api/v1/leads/${lead.id}/convert`,
+      );
+
+    const response =
+      await request(app)
+        .post(
+          `/api/v1/leads/${lead.id}/convert`,
+        );
+
+    expect(response.status)
+      .toBe(409);
+
+    expect(
+      response.body.error.code,
+    ).toBe(
+      "LEAD_ALREADY_CONVERTED",
+    );
+  });
+
+  it("returns 404 when converting a missing lead", async () => {
+    const app = createApp();
+
+    const response =
+      await request(app)
+        .post(
+          "/api/v1/leads/missing/convert",
+        );
+
+    expect(response.status)
+      .toBe(404);
+
+    expect(
+      response.body.error.code,
+    ).toBe("LEAD_NOT_FOUND");
+  });
 });

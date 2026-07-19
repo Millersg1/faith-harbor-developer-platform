@@ -248,6 +248,9 @@ export default function SalesPage() {
   const [creating, setCreating] =
     useState(false);
 
+  const [converting, setConverting] =
+    useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -528,6 +531,77 @@ export default function SalesPage() {
           ),
         type: "error",
       });
+    }
+  }
+
+  async function handleConvert(
+    lead: Lead,
+  ): Promise<void> {
+    setConverting(true);
+
+    setStatus({
+      message:
+        "Converting lead to a client...",
+      type: "working",
+    });
+
+    try {
+      const response = await fetch(
+        `/api/v1/leads/${lead.id}/convert`,
+        {
+          method: "POST",
+        },
+      );
+
+      const result =
+        await getResponseData<{
+          client: {
+            id: string;
+            companyName: string;
+          };
+          lead: Lead;
+        }>(
+          response,
+          "The lead could not be converted.",
+        );
+
+      // Refresh leads and clients so the new
+      // client name resolves in the detail.
+      await reloadLeads();
+
+      try {
+        const clientsResult =
+          await getResponseData<ClientsResponse>(
+            await fetch(
+              "/api/v1/clients",
+            ),
+            "Clients could not be loaded.",
+          );
+
+        setClients(
+          clientsResult.clients,
+        );
+      } catch {
+        // Non-fatal; the lead is still converted.
+      }
+
+      setSelectedLead(result.lead);
+
+      setStatus({
+        message: `${result.client.companyName} is now a client. Find it in Client Services.`,
+        type: "success",
+      });
+    } catch (error) {
+      setStatus({
+        message:
+          getErrorMessage(
+            error,
+            "The lead could not be converted.",
+          ),
+        type: "error",
+      });
+    } finally {
+      setConverting(false);
     }
   }
 
@@ -1068,6 +1142,37 @@ export default function SalesPage() {
             <p className="client-notes">
               {selectedLead.notes}
             </p>
+          )}
+
+          {!selectedLead.clientId && (
+            <div className="convert-panel">
+              <div>
+                <strong>
+                  Won this opportunity?
+                </strong>
+
+                <span>
+                  Create a client record
+                  from this lead in one
+                  step.
+                </span>
+              </div>
+
+              <button
+                type="button"
+                className="primary-button"
+                disabled={converting}
+                onClick={() =>
+                  void handleConvert(
+                    selectedLead,
+                  )
+                }
+              >
+                {converting
+                  ? "Converting..."
+                  : "Convert to Client"}
+              </button>
+            </div>
           )}
 
           <div className="section-divider" />
