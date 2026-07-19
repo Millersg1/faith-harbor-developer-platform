@@ -355,6 +355,32 @@ export class SQLiteDatabase {
           ON DELETE SET NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS review_profiles (
+        client_id TEXT PRIMARY KEY,
+        business_name TEXT NOT NULL,
+        review_url TEXT NOT NULL,
+        google_place_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE CASCADE
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS google_reviews (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        author TEXT NOT NULL,
+        rating INTEGER NOT NULL,
+        comment TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        replied INTEGER NOT NULL DEFAULT 0,
+        reply_text TEXT,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE CASCADE
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 

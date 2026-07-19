@@ -49,6 +49,8 @@ const triggerLabels: Record<
   "lead.quiet": "Quiet lead",
   "project.stalled":
     "Stalled project",
+  "review.requested":
+    "Review request",
 };
 
 function getErrorMessage(

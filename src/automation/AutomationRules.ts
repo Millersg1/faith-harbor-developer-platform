@@ -274,3 +274,62 @@ export function buildProjectCheckInDraft(
     clientId: client.id,
   };
 }
+
+/**
+ * The details needed to draft a Google review request.
+ */
+export interface ReviewRequestContent {
+  customerName: string;
+  customerEmail: string;
+  businessName: string;
+  reviewUrl: string;
+  clientId?: string;
+}
+
+/**
+ * Builds a Google review-request email draft.
+ *
+ * The email is branded for the client's business (not Faith Harbor),
+ * since it is sent to that business's own customer. It asks every
+ * customer the same way — no sentiment screening or "review gating,"
+ * which Google prohibits. Returns null without a recipient or link.
+ */
+export function buildReviewRequestDraft(
+  input: ReviewRequestContent,
+): DraftContent | null {
+  const to =
+    input.customerEmail?.trim();
+
+  const reviewUrl =
+    input.reviewUrl?.trim();
+
+  if (!to || !reviewUrl) {
+    return null;
+  }
+
+  const business =
+    input.businessName.trim() ||
+    "our business";
+
+  const name =
+    input.customerName.trim() ||
+    "there";
+
+  const body =
+    `Hi ${name},\n\n` +
+    `Thank you for choosing ${business}! We hope you had a great experience.\n\n` +
+    "Would you take a moment to share your experience in a quick Google review? " +
+    "It genuinely helps us and makes it easier for others to find us.\n\n" +
+    `Leave a review here: ${reviewUrl}\n\n` +
+    "Thank you so much for your time and your trust.\n\n" +
+    `Warm regards,\n` +
+    `The ${business} Team`;
+
+  return {
+    title: `Review request to ${name} (${business})`,
+    to,
+    subject: `How did we do, ${name}?`,
+    body,
+    clientId: input.clientId,
+  };
+}

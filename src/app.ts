@@ -63,6 +63,9 @@ import { ProjectService } from "./projects/ProjectService";
 import { ProposalRepository } from "./proposals/ProposalRepository";
 import { createProposalRouter } from "./proposals/ProposalRouter";
 import { ProposalService } from "./proposals/ProposalService";
+import { ReviewRepository } from "./reviews/ReviewRepository";
+import { createReviewRouter } from "./reviews/ReviewRouter";
+import { ReviewService } from "./reviews/ReviewService";
 import { BookRepository } from "./publishing/BookRepository";
 import { createBookRouter } from "./publishing/BookRouter";
 import { BookService } from "./publishing/BookService";
@@ -196,6 +199,19 @@ export function createApp(
         database,
       ),
       draftPersonalizer,
+    );
+
+  // Reviews: request Google reviews from clients' customers (via the
+  // automation engine, human-approved), plus monitoring and AI-drafted
+  // replies that activate once the Google Business Profile API is
+  // connected. The default integration is "disconnected" until then.
+  const reviewService =
+    new ReviewService(
+      clientService,
+      automationService,
+      new ReviewRepository(database),
+      undefined,
+      aiService,
     );
 
   const proposalRepository =
@@ -465,6 +481,9 @@ export function createApp(
         automations:
           "/api/v1/automations",
 
+        reviews:
+          "/api/v1/reviews",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -574,6 +593,14 @@ export function createApp(
 
       persistentAutomationStorage:
         Boolean(database),
+
+      reviewsAvailable:
+        true,
+
+      reviewMonitoringConnected:
+        reviewService
+          .integrationStatus()
+          .googleConnected,
 
       hostingManagementAvailable:
         true,
@@ -710,6 +737,13 @@ export function createApp(
     createAutomationRouter(
       automationService,
       automationScanner,
+    ),
+  );
+
+  app.use(
+    "/api/v1/reviews",
+    createReviewRouter(
+      reviewService,
     ),
   );
 
