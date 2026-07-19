@@ -8,6 +8,7 @@ import { AIDecisionLog } from "./director/AIDecisionLog";
 import { AIRequestDirector } from "./director/AIRequestDirector";
 import { ProviderSelectionPolicy } from "./director/ProviderSelectionPolicy";
 import type { AIExecutionPlan } from "./execution/AIExecutionPlan";
+import { estimateCost } from "./metrics/AiPricing";
 import { ProviderMetricsRegistry } from "./metrics/ProviderMetricsRegistry";
 import { ProviderRegistry } from "./ProviderRegistry";
 
@@ -96,6 +97,11 @@ export class ProviderManager {
           responseTime:
             Date.now() - startedAt,
           tokensUsed: response.tokensUsed,
+          estimatedCost: estimateCost(
+            response.model,
+            response.inputTokens,
+            response.outputTokens,
+          ),
         },
       );
 

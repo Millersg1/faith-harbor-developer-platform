@@ -10,7 +10,24 @@ export interface AIResponse {
   provider: string;
   capability: AICapability;
   content: string;
+
+  /**
+   * Total tokens (input + output) consumed by the request, when the
+   * provider reports them.
+   */
   tokensUsed?: number;
+
+  /**
+   * Input (prompt) tokens, when reported. Used for cost estimation,
+   * since input and output are usually priced differently.
+   */
+  inputTokens?: number;
+
+  /**
+   * Output (completion) tokens, when reported.
+   */
+  outputTokens?: number;
+
   model?: string;
 }
 

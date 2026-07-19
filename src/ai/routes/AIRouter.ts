@@ -50,11 +50,48 @@ export function createAIRouter(
       return;
     }
 
+    const scorecards =
+      aiService.getProviderScorecards();
+
+    const summary = scorecards.reduce(
+      (totals, card) => {
+        const stats = card.statistics;
+
+        return {
+          totalEstimatedCost:
+            totals.totalEstimatedCost +
+            stats.estimatedCost,
+          totalRequests:
+            totals.totalRequests +
+            stats.requests,
+          totalTokens:
+            totals.totalTokens +
+            Math.round(
+              stats.averageTokens *
+                stats.requests,
+            ),
+        };
+      },
+      {
+        totalEstimatedCost: 0,
+        totalRequests: 0,
+        totalTokens: 0,
+      },
+    );
+
     res.json({
-      count:
-        aiService.getProviderScorecards().length,
-      scorecards:
-        aiService.getProviderScorecards(),
+      count: scorecards.length,
+      scorecards,
+      summary: {
+        ...summary,
+        totalEstimatedCost:
+          Math.round(
+            summary.totalEstimatedCost *
+              1_000_000,
+          ) / 1_000_000,
+        // Costs are estimates from the editable pricing table.
+        currency: "USD",
+      },
     });
   });
 
