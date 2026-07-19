@@ -1,6 +1,7 @@
 import { createConfiguredApp } from "./app";
 import type { AutomationScanner } from "./automation/AutomationScanner";
 import { AutomationScheduler } from "./automation/AutomationScheduler";
+import type { BackupService } from "./backup/BackupService";
 import { config } from "./config";
 import type { SQLiteDatabase } from "./persistence/SQLiteDatabase";
 
@@ -33,6 +34,52 @@ async function startServer(): Promise<void> {
 
   scheduler?.start();
 
+  // Automatic database backups: one at startup, then on an interval.
+  // A consistent snapshot is safe to take while the app is serving.
+  const backupService =
+    app.locals.backupService as
+      | BackupService
+      | undefined;
+
+  let backupTimer:
+    | ReturnType<typeof setInterval>
+    | undefined;
+
+  if (
+    backupService &&
+    config.BACKUP_INTERVAL_HOURS > 0
+  ) {
+    const runBackup = () => {
+      try {
+        const info =
+          backupService.runBackup();
+
+        console.log(
+          `Backup written: ${info.file} (${info.sizeBytes} bytes)`,
+        );
+      } catch (error) {
+        console.error(
+          "Backup failed.",
+          error,
+        );
+      }
+    };
+
+    runBackup();
+
+    backupTimer = setInterval(
+      runBackup,
+      config.BACKUP_INTERVAL_HOURS *
+        60 *
+        60 *
+        1000,
+    );
+
+    if (backupTimer.unref) {
+      backupTimer.unref();
+    }
+  }
+
   let shuttingDown = false;
 
   const server = app.listen(
@@ -56,6 +103,10 @@ async function startServer(): Promise<void> {
     );
 
     scheduler?.stop();
+
+    if (backupTimer) {
+      clearInterval(backupTimer);
+    }
 
     server.close((error) => {
       try {

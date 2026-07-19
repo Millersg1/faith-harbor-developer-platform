@@ -26,6 +26,8 @@ import { AutomationScanner } from "./automation/AutomationScanner";
 import { AutomationService } from "./automation/AutomationService";
 import { AiDraftPersonalizer } from "./automation/DraftPersonalizer";
 import { createAuthRouter } from "./auth/AuthRouter";
+import { BackupService } from "./backup/BackupService";
+import { createBackupRouter } from "./backup/BackupRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
 import { createCampaignRouter } from "./marketing/CampaignRouter";
 import { CampaignService } from "./marketing/CampaignService";
@@ -141,6 +143,15 @@ export function createApp(
 
   const workflowEngine =
     new WorkflowEngine();
+
+  // Database backups (consistent SQLite snapshots). Available only
+  // with a real database; scheduling lives in the server entry point.
+  const backupService = database
+    ? new BackupService(database, {
+        directory: config.BACKUP_DIR,
+        retain: config.BACKUP_RETAIN,
+      })
+    : undefined;
 
   const departmentService =
     new DepartmentService();
@@ -658,6 +669,9 @@ export function createApp(
           .integrationStatus()
           .connected,
 
+      backupsAvailable:
+        Boolean(backupService),
+
       hostingManagementAvailable:
         true,
 
@@ -809,6 +823,17 @@ export function createApp(
       paymentService,
     ),
   );
+
+  app.use(
+    "/api/v1/system",
+    createBackupRouter(
+      backupService,
+    ),
+  );
+
+  // Exposed so the server entry point can schedule periodic backups.
+  app.locals.backupService =
+    backupService;
 
   // Exposed so the server entry point can run periodic scans.
   app.locals.automationScanner =

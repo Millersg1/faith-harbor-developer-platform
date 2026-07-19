@@ -107,12 +107,81 @@ function yesNo(
     : "Not configured";
 }
 
+interface BackupEntry {
+  name: string;
+  createdAt: string;
+  sizeBytes: number;
+}
+
+function formatBytes(
+  bytes: number,
+): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(0)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function SystemAdministration() {
   const [state, setState] =
     useState<AdminState | null>(null);
 
   const [loading, setLoading] =
     useState(true);
+
+  const [backups, setBackups] =
+    useState<BackupEntry[]>([]);
+
+  const [
+    backupsAvailable,
+    setBackupsAvailable,
+  ] = useState(false);
+
+  const [backingUp, setBackingUp] =
+    useState(false);
+
+  const loadBackups =
+    async (): Promise<void> => {
+      const data = await getJson<{
+        available?: boolean;
+        backups?: BackupEntry[];
+      }>(
+        "/api/v1/system/backups",
+      );
+
+      setBackupsAvailable(
+        Boolean(data?.available),
+      );
+      setBackups(
+        data?.backups ?? [],
+      );
+    };
+
+  useEffect(() => {
+    void loadBackups();
+  }, []);
+
+  async function runBackup(): Promise<void> {
+    setBackingUp(true);
+
+    try {
+      await fetch(
+        "/api/v1/system/backups",
+        { method: "POST" },
+      );
+
+      await loadBackups();
+    } catch {
+      // Ignored; the list simply won't update.
+    } finally {
+      setBackingUp(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -433,6 +502,106 @@ export default function SystemAdministration() {
           Local models are free. Adjust
           the rates to match your
           provider plan.
+        </p>
+      </div>
+
+      <div className="card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">
+              Data Protection
+            </p>
+
+            <h3>Backups</h3>
+          </div>
+
+          {backupsAvailable && (
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={backingUp}
+              onClick={() =>
+                void runBackup()
+              }
+            >
+              {backingUp
+                ? "Backing up..."
+                : "Back Up Now"}
+            </button>
+          )}
+        </div>
+
+        {!backupsAvailable ? (
+          <p className="help-text">
+            Backups run against the
+            database. They are active
+            on the server.
+          </p>
+        ) : backups.length === 0 ? (
+          <p className="help-text">
+            No backups yet. One is taken
+            automatically at startup and
+            daily.
+          </p>
+        ) : (
+          <>
+            <div className="client-overview">
+              <div className="client-overview-item">
+                <span>
+                  Latest backup
+                </span>
+
+                <strong>
+                  {new Date(
+                    backups[0].createdAt,
+                  ).toLocaleString()}
+                </strong>
+              </div>
+
+              <div className="client-overview-item">
+                <span>Kept</span>
+
+                <strong>
+                  {backups.length}{" "}
+                  snapshot
+                  {backups.length ===
+                  1
+                    ? ""
+                    : "s"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="record-list">
+              {backups
+                .slice(0, 5)
+                .map((backup) => (
+                  <div
+                    className="line-item-summary"
+                    key={backup.name}
+                  >
+                    <span>
+                      {new Date(
+                        backup.createdAt,
+                      ).toLocaleString()}
+                    </span>
+
+                    <span>
+                      {formatBytes(
+                        backup.sizeBytes,
+                      )}
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </>
+        )}
+
+        <p className="help-text">
+          Each backup is a complete,
+          consistent copy of the
+          database. Automatic daily;
+          the most recent are kept.
         </p>
       </div>
     </>
