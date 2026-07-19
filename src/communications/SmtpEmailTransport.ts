@@ -295,6 +295,15 @@ export class SmtpEmailTransport
   async send(
     message: EmailMessage,
   ): Promise<EmailResult> {
+    // Reject header/command injection before opening a connection.
+    // to/subject can carry lead- or client-supplied text, so a CR/LF
+    // must never be allowed to smuggle in an extra header or command.
+    try {
+      validateMessage(message);
+    } catch (error) {
+      return this.failure(error);
+    }
+
     let socket: Duplex;
 
     try {
@@ -534,6 +543,75 @@ function upgradeToTls(
       );
     },
   );
+}
+
+/**
+ * Rejects a message whose fields could inject email headers or SMTP
+ * commands. A carriage return, line feed, or NUL in any header field
+ * (or in either address) is treated as an attack and refused.
+ */
+function validateMessage(
+  message: EmailMessage,
+): void {
+  assertHeaderSafe(
+    message.from,
+    "sender",
+  );
+
+  assertHeaderSafe(
+    message.to,
+    "recipient",
+  );
+
+  assertHeaderSafe(
+    message.subject,
+    "subject",
+  );
+
+  assertMailbox(
+    extractAddress(message.from),
+    "sender",
+  );
+
+  assertMailbox(
+    extractAddress(message.to),
+    "recipient",
+  );
+}
+
+/**
+ * Throws when a header value contains a line break or NUL.
+ */
+function assertHeaderSafe(
+  value: string,
+  field: string,
+): void {
+  if (/[\r\n\0]/.test(value)) {
+    throw new Error(
+      `The email ${field} contains an illegal line break.`,
+    );
+  }
+}
+
+/**
+ * Throws unless the value is a single, well-formed mailbox address:
+ * no whitespace, angle brackets, control characters, and exactly one
+ * "@" with text on both sides.
+ */
+function assertMailbox(
+  address: string,
+  field: string,
+): void {
+  const valid =
+    address.length > 0 &&
+    !/[\s<>\r\n\0]/.test(address) &&
+    /^[^@]+@[^@]+$/.test(address);
+
+  if (!valid) {
+    throw new Error(
+      `The email ${field} is not a valid address.`,
+    );
+  }
 }
 
 /**

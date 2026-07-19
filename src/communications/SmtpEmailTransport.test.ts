@@ -422,6 +422,73 @@ describe("SmtpEmailTransport", () => {
       .toContain("535");
   });
 
+  it("rejects a subject containing a header-injection line break", async () => {
+    fake =
+      await startFakeSmtp();
+
+    const transport =
+      new SmtpEmailTransport(
+        {
+          host: "smtp.example",
+          port: 465,
+          user: "hello@example.com",
+          password: "secret",
+          secure: false,
+        },
+        connectToFake(fake.port),
+      );
+
+    const result =
+      await transport.send({
+        from: "hello@example.com",
+        to: "client@example.org",
+        subject:
+          "Hi\r\nBcc: evil@attacker.example",
+        body: "Body.",
+      });
+
+    expect(result.status)
+      .toBe("failed");
+    expect(result.error)
+      .toContain("subject");
+
+    // The server was never handed the injected header.
+    expect(fake.captured.data)
+      .toBeUndefined();
+    expect(fake.captured.mailFrom)
+      .toBeUndefined();
+  });
+
+  it("rejects a recipient containing a line break", async () => {
+    fake =
+      await startFakeSmtp();
+
+    const transport =
+      new SmtpEmailTransport(
+        {
+          host: "smtp.example",
+          port: 465,
+          user: "hello@example.com",
+          password: "secret",
+          secure: false,
+        },
+        connectToFake(fake.port),
+      );
+
+    const result =
+      await transport.send({
+        from: "hello@example.com",
+        to: "client@example.org\r\nRCPT TO:<evil@attacker.example>",
+        subject: "Hi",
+        body: "Body.",
+      });
+
+    expect(result.status)
+      .toBe("failed");
+    expect(fake.captured.rcptTo)
+      .toBeUndefined();
+  });
+
   it("reports failure when the connection cannot be opened", async () => {
     const transport =
       new SmtpEmailTransport(
