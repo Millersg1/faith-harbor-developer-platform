@@ -12,6 +12,7 @@ import AuthGate, {
 import AccountingPage from "./pages/AccountingPage";
 import AIWorkspacePage from "./pages/AIWorkspacePage";
 import ClientsPage from "./pages/ClientsPage";
+import CommunicationsPage from "./pages/CommunicationsPage";
 import DashboardPage from "./pages/DashboardPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import EngineeringPage from "./pages/EngineeringPage";
@@ -80,6 +81,11 @@ const navigationGroups: readonly NavigationGroup[] = [
         label: "Support",
         path: "/support",
         eyebrow: "Client Services",
+      },
+      {
+        label: "Communications",
+        path: "/communications",
+        eyebrow: "Communications",
       },
     ],
   },
@@ -229,6 +235,11 @@ function App() {
             <Route
               path="/support"
               element={<SupportPage />}
+            />
+
+            <Route
+              path="/communications"
+              element={<CommunicationsPage />}
             />
 
             <Route

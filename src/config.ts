@@ -115,6 +115,24 @@ const schema = z.object({
     .trim()
     .optional()
     .transform((value) => value || undefined),
+
+  EMAIL_FROM: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  EMAIL_API_URL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  EMAIL_API_KEY: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
 });
 
 export const config = schema.parse(process.env);

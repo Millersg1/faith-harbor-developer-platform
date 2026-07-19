@@ -1341,6 +1341,31 @@ pre {
     font-size: 0.8rem;
 }
 
+/* Communications */
+.email-status {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 650;
+    text-transform: uppercase;
+}
+
+.email-status-sent {
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.15);
+}
+
+.email-status-logged {
+    color: #9fb2c6;
+    background: rgba(127, 148, 170, 0.15);
+}
+
+.email-status-failed {
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.15);
+}
+
 /* Marketing */
 .campaign-status {
     display: inline-block;

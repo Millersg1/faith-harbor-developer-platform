@@ -30,6 +30,14 @@ import { OpenAIProviderInstaller } from "./ai/installers/OpenAIProviderInstaller
 import { createAIRouter } from "./ai/routes/AIRouter";
 import { createClientRouter } from "./clients/ClientRouter";
 import { ClientService } from "./clients/ClientService";
+import { EmailRepository } from "./communications/EmailRepository";
+import { createEmailRouter } from "./communications/EmailRouter";
+import { EmailService } from "./communications/EmailService";
+import {
+  HttpEmailTransport,
+  LoggingEmailTransport,
+  type EmailTransport,
+} from "./communications/EmailTransport";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
@@ -204,6 +212,30 @@ export function createApp(
       productRepository,
     );
 
+  // Email is safe by default: when no provider is configured the
+  // logging transport records messages to the outbox without
+  // sending. Set EMAIL_API_URL + EMAIL_API_KEY to deliver for real.
+  const emailTransport:
+    EmailTransport =
+    config.EMAIL_API_URL &&
+    config.EMAIL_API_KEY
+      ? new HttpEmailTransport({
+          apiUrl:
+            config.EMAIL_API_URL,
+          apiKey:
+            config.EMAIL_API_KEY,
+        })
+      : new LoggingEmailTransport();
+
+  const emailService =
+    new EmailService(
+      emailTransport,
+      config.EMAIL_FROM ??
+        config.ADMIN_EMAIL ??
+        "Faith Harbor OS",
+      new EmailRepository(database),
+    );
+
   const hostingRepository =
     new HostingAccountRepository(
       database,
@@ -352,6 +384,9 @@ export function createApp(
         products:
           "/api/v1/products",
 
+        emails:
+          "/api/v1/emails",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -443,6 +478,15 @@ export function createApp(
 
       persistentEngineeringStorage:
         Boolean(database),
+
+      emailAvailable:
+        true,
+
+      emailDeliveryConfigured:
+        Boolean(
+          config.EMAIL_API_URL &&
+            config.EMAIL_API_KEY,
+        ),
 
       hostingManagementAvailable:
         true,
@@ -564,6 +608,13 @@ export function createApp(
     "/api/v1/products",
     createProductRouter(
       productService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/emails",
+    createEmailRouter(
+      emailService,
     ),
   );
 
