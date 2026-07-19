@@ -19,6 +19,7 @@ import ProjectsPage from "./pages/ProjectsPage";
 import ProposalsPage from "./pages/ProposalsPage";
 import PublishingPage from "./pages/PublishingPage";
 import ReportsPage from "./pages/ReportsPage";
+import SalesPage from "./pages/SalesPage";
 import SettingsPage from "./pages/SettingsPage";
 import SupportPage from "./pages/SupportPage";
 
@@ -52,6 +53,11 @@ const navigationGroups: readonly NavigationGroup[] = [
   {
     label: "Client Services",
     items: [
+      {
+        label: "Sales",
+        path: "/sales",
+        eyebrow: "Sales Pipeline",
+      },
       {
         label: "Clients",
         path: "/clients",
@@ -165,6 +171,11 @@ function App() {
             <Route
               path="/departments"
               element={<DepartmentsPage />}
+            />
+
+            <Route
+              path="/sales"
+              element={<SalesPage />}
             />
 
             <Route

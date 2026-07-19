@@ -43,6 +43,9 @@ import { ProposalService } from "./proposals/ProposalService";
 import { BookRepository } from "./publishing/BookRepository";
 import { createBookRouter } from "./publishing/BookRouter";
 import { BookService } from "./publishing/BookService";
+import { LeadRepository } from "./sales/LeadRepository";
+import { createLeadRouter } from "./sales/LeadRouter";
+import { LeadService } from "./sales/LeadService";
 import { TicketRepository } from "./support/TicketRepository";
 import { createTicketRouter } from "./support/TicketRouter";
 import { TicketService } from "./support/TicketService";
@@ -154,6 +157,15 @@ export function createApp(
     new BookService(
       clientService,
       bookRepository,
+    );
+
+  const leadRepository =
+    new LeadRepository(database);
+
+  const leadService =
+    new LeadService(
+      clientService,
+      leadRepository,
     );
 
   const hostingRepository =
@@ -292,6 +304,9 @@ export function createApp(
         books:
           "/api/v1/books",
 
+        leads:
+          "/api/v1/leads",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -358,6 +373,12 @@ export function createApp(
         true,
 
       persistentPublishingStorage:
+        Boolean(database),
+
+      salesManagementAvailable:
+        true,
+
+      persistentSalesStorage:
         Boolean(database),
 
       hostingManagementAvailable:
@@ -452,6 +473,13 @@ export function createApp(
     "/api/v1/books",
     createBookRouter(
       bookService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/leads",
+    createLeadRouter(
+      leadService,
     ),
   );
 

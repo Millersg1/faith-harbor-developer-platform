@@ -234,6 +234,27 @@ export class SQLiteDatabase {
           ON DELETE SET NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS leads (
+        id TEXT PRIMARY KEY,
+        client_id TEXT,
+        name TEXT NOT NULL,
+        company TEXT,
+        email TEXT,
+        phone TEXT,
+        source TEXT,
+        service_interest TEXT,
+        estimated_value REAL,
+        status TEXT NOT NULL DEFAULT 'new',
+        owner TEXT,
+        notes TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
@@ -308,6 +329,15 @@ export class SQLiteDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_books_created
         ON books(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_leads_client
+        ON leads(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_leads_status
+        ON leads(status);
+
+      CREATE INDEX IF NOT EXISTS idx_leads_created
+        ON leads(created_at);
     `);
   }
 

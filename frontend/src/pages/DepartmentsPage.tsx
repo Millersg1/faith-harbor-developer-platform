@@ -130,8 +130,9 @@ const departmentCatalog: readonly CatalogDepartment[] = [
     name: "Sales",
     description:
       "Manage opportunities, leads, consultations, follow-up, and new business development.",
-    status: "planned",
-    statusLabel: "Planned",
+    status: "active",
+    statusLabel: "Active",
+    path: "/sales",
   },
   {
     name: "Support",
