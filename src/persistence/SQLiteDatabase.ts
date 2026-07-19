@@ -255,6 +255,28 @@ export class SQLiteDatabase {
           ON DELETE SET NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS campaigns (
+        id TEXT PRIMARY KEY,
+        client_id TEXT,
+        name TEXT NOT NULL,
+        channel TEXT,
+        status TEXT NOT NULL DEFAULT 'planned',
+        audience TEXT,
+        budget REAL,
+        spend REAL,
+        leads INTEGER,
+        start_date TEXT,
+        end_date TEXT,
+        owner TEXT,
+        notes TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE SET NULL
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
@@ -338,6 +360,15 @@ export class SQLiteDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_leads_created
         ON leads(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_campaigns_client
+        ON campaigns(client_id);
+
+      CREATE INDEX IF NOT EXISTS idx_campaigns_status
+        ON campaigns(status);
+
+      CREATE INDEX IF NOT EXISTS idx_campaigns_created
+        ON campaigns(created_at);
     `);
   }
 

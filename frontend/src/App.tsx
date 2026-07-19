@@ -15,6 +15,7 @@ import ClientsPage from "./pages/ClientsPage";
 import DashboardPage from "./pages/DashboardPage";
 import DepartmentsPage from "./pages/DepartmentsPage";
 import HostingPage from "./pages/HostingPage";
+import MarketingPage from "./pages/MarketingPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProposalsPage from "./pages/ProposalsPage";
 import PublishingPage from "./pages/PublishingPage";
@@ -107,6 +108,16 @@ const navigationGroups: readonly NavigationGroup[] = [
         label: "Books",
         path: "/publishing",
         eyebrow: "Faith Harbor Publishing",
+      },
+    ],
+  },
+  {
+    label: "Marketing",
+    items: [
+      {
+        label: "Campaigns",
+        path: "/marketing",
+        eyebrow: "Marketing & Social",
       },
     ],
   },
@@ -211,6 +222,11 @@ function App() {
             <Route
               path="/publishing"
               element={<PublishingPage />}
+            />
+
+            <Route
+              path="/marketing"
+              element={<MarketingPage />}
             />
 
             <Route

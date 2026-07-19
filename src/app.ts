@@ -10,6 +10,9 @@ import { InvoiceRepository } from "./accounting/InvoiceRepository";
 import { createInvoiceRouter } from "./accounting/InvoiceRouter";
 import { InvoiceService } from "./accounting/InvoiceService";
 import { createAuthRouter } from "./auth/AuthRouter";
+import { CampaignRepository } from "./marketing/CampaignRepository";
+import { createCampaignRouter } from "./marketing/CampaignRouter";
+import { CampaignService } from "./marketing/CampaignService";
 import { AuthService } from "./auth/AuthService";
 import { requireAuth } from "./auth/requireAuth";
 import type { AIService } from "./ai/AIService";
@@ -168,6 +171,15 @@ export function createApp(
       leadRepository,
     );
 
+  const campaignRepository =
+    new CampaignRepository(database);
+
+  const campaignService =
+    new CampaignService(
+      clientService,
+      campaignRepository,
+    );
+
   const hostingRepository =
     new HostingAccountRepository(
       database,
@@ -307,6 +319,9 @@ export function createApp(
         leads:
           "/api/v1/leads",
 
+        campaigns:
+          "/api/v1/campaigns",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -379,6 +394,12 @@ export function createApp(
         true,
 
       persistentSalesStorage:
+        Boolean(database),
+
+      marketingManagementAvailable:
+        true,
+
+      persistentMarketingStorage:
         Boolean(database),
 
       hostingManagementAvailable:
@@ -480,6 +501,13 @@ export function createApp(
     "/api/v1/leads",
     createLeadRouter(
       leadService,
+    ),
+  );
+
+  app.use(
+    "/api/v1/campaigns",
+    createCampaignRouter(
+      campaignService,
     ),
   );
 
