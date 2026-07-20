@@ -317,6 +317,111 @@ export class WHMClient {
   }
 
   /**
+   * Returns the names of the WHM packages defined on the server.
+   */
+  async listPackages():
+  Promise<string[]> {
+    const envelope =
+      await this.call("listpkgs");
+
+    const data =
+      envelope.data as
+        | { pkg?: unknown[] }
+        | undefined;
+
+    const packages =
+      Array.isArray(data?.pkg)
+        ? data.pkg
+        : [];
+
+    return packages
+      .map((entry) => {
+        const record =
+          entry as Record<
+            string,
+            unknown
+          >;
+
+        return record.name
+          ? String(record.name)
+          : "";
+      })
+      .filter(Boolean);
+  }
+
+  /**
+   * Creates a WHM package (addpkg) from a plan's resource limits, so
+   * accounts can be provisioned against it. Idempotent at the caller:
+   * check listPackages first. -1 maps to "unlimited".
+   */
+  async createPackage(request: {
+    name: string;
+    quotaMb?: number;
+    bandwidthMb?: number;
+    maxAddonDomains?: number;
+    maxEmailAccounts?: number;
+    maxDatabases?: number;
+  }): Promise<void> {
+    const limit = (
+      value: number,
+    ): string =>
+      value < 0
+        ? "unlimited"
+        : String(value);
+
+    const params: Record<string, string> =
+      { name: request.name };
+
+    if (
+      request.quotaMb !== undefined
+    ) {
+      params.quota = limit(
+        request.quotaMb,
+      );
+    }
+
+    if (
+      request.bandwidthMb !== undefined
+    ) {
+      params.bwlimit = limit(
+        request.bandwidthMb,
+      );
+    }
+
+    if (
+      request.maxAddonDomains !==
+      undefined
+    ) {
+      params.maxaddon = limit(
+        request.maxAddonDomains,
+      );
+    }
+
+    if (
+      request.maxEmailAccounts !==
+      undefined
+    ) {
+      params.maxpop = limit(
+        request.maxEmailAccounts,
+      );
+    }
+
+    if (
+      request.maxDatabases !== undefined
+    ) {
+      params.maxsql = limit(
+        request.maxDatabases,
+      );
+    }
+
+    await this.call(
+      "addpkg",
+      params,
+      "POST",
+    );
+  }
+
+  /**
    * Returns the current server load average from WHM.
    */
   async serverStatus():

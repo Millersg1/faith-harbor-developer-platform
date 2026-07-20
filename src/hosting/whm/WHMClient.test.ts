@@ -243,6 +243,80 @@ describe("WHMClient", () => {
     );
   });
 
+  it("lists package names", async () => {
+    const client = new WHMClient(
+      config,
+      stubFetch(
+        {
+          metadata: { result: 1 },
+          data: {
+            pkg: [
+              { name: "Starter_NVMe" },
+              { name: "Business_NVMe" },
+            ],
+          },
+        },
+        {},
+      ),
+    );
+
+    const names =
+      await client.listPackages();
+
+    expect(names).toEqual([
+      "Starter_NVMe",
+      "Business_NVMe",
+    ]);
+  });
+
+  it("creates a package via addpkg with mapped limits", async () => {
+    const captured: {
+      url?: string;
+      method?: string;
+      body?: string;
+    } = {};
+
+    const client = new WHMClient(
+      config,
+      async (url, init) => {
+        captured.url = url;
+        captured.method = init?.method;
+        captured.body = init?.body;
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            metadata: { result: 1 },
+          }),
+        };
+      },
+    );
+
+    await client.createPackage({
+      name: "Business_NVMe",
+      quotaMb: 25600,
+      bandwidthMb: 256000,
+      maxAddonDomains: 4,
+      maxEmailAccounts: 25,
+      maxDatabases: 10,
+    });
+
+    expect(captured.method).toBe("POST");
+    expect(captured.url).toContain(
+      "/json-api/addpkg",
+    );
+    expect(captured.body).toContain(
+      "name=Business_NVMe",
+    );
+    expect(captured.body).toContain(
+      "quota=25600",
+    );
+    expect(captured.body).toContain(
+      "maxpop=25",
+    );
+  });
+
   it("throws when account creation is rejected by WHM", async () => {
     const client = new WHMClient(
       config,

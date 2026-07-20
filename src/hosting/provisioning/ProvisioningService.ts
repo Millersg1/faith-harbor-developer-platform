@@ -155,34 +155,43 @@ export class ProvisioningService {
 
     const specs = plan.specs;
 
+    const limits = {
+      quotaMb: specs.storageMb,
+      bandwidthMb:
+        specs.bandwidthGb < 0
+          ? -1
+          : specs.bandwidthGb * 1024,
+      // The primary domain counts as one website, so addon domains are
+      // the remainder.
+      maxAddonDomains:
+        specs.websites < 0
+          ? -1
+          : Math.max(
+              0,
+              specs.websites - 1,
+            ),
+      maxEmailAccounts:
+        specs.emailAccounts,
+      maxDatabases:
+        specs.mysqlDatabases,
+    };
+
+    // WHM requires a package; the OS keeps one package per plan in sync
+    // from the plan's specs, creating it on first use.
+    const packageName =
+      await this.ensurePackage(
+        plan.whmPackage ?? plan.name,
+        limits,
+      );
+
     const created =
       await this.whm.createAccount({
         username,
         domain,
         password,
         contactEmail,
-        // Provision from the plan's own specs (no WHM package needed).
-        limits: {
-          quotaMb: specs.storageMb,
-          bandwidthMb:
-            specs.bandwidthGb < 0
-              ? -1
-              : specs.bandwidthGb *
-                1024,
-          // The primary domain counts as one website, so addon
-          // domains are the remainder.
-          maxAddonDomains:
-            specs.websites < 0
-              ? -1
-              : Math.max(
-                  0,
-                  specs.websites - 1,
-                ),
-          maxEmailAccounts:
-            specs.emailAccounts,
-          maxDatabases:
-            specs.mysqlDatabases,
-        },
+        plan: packageName,
+        limits,
       });
 
     const account =
@@ -211,6 +220,68 @@ export class ProvisioningService {
       username,
       temporaryPassword: password,
     };
+  }
+
+  /**
+   * Ensures a WHM package exists for the plan (creating it from the
+   * plan's limits when missing) and returns its WHM-safe name. Since
+   * WHM requires a package to create an account, the OS keeps one
+   * package per plan.
+   */
+  private async ensurePackage(
+    rawName: string,
+    limits: {
+      quotaMb: number;
+      bandwidthMb: number;
+      maxAddonDomains: number;
+      maxEmailAccounts: number;
+      maxDatabases: number;
+    },
+  ): Promise<string> {
+    const whm = this.whm;
+
+    if (!whm) {
+      throw new Error(
+        "Provisioning is unavailable: WHM is not configured.",
+      );
+    }
+
+    const name =
+      sanitizePackageName(rawName);
+
+    let existing: string[] = [];
+
+    try {
+      existing =
+        await whm.listPackages();
+    } catch {
+      // If listing fails, still attempt creation; a duplicate is
+      // tolerated below.
+    }
+
+    if (!existing.includes(name)) {
+      try {
+        await whm.createPackage({
+          name,
+          ...limits,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message.toLowerCase()
+            : "";
+
+        // Tolerate a package that already exists (race or name-prefix
+        // difference); anything else is a real failure.
+        if (
+          !message.includes("exist")
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    return name;
   }
 
   private resolveContactEmail(
@@ -274,6 +345,21 @@ export class ProvisioningService {
       clientId,
     });
   }
+}
+
+/**
+ * Turns a plan name into a WHM-safe package name (letters, digits, and
+ * underscores). "Starter NVMe" -> "Starter_NVMe".
+ */
+export function sanitizePackageName(
+  name: string,
+): string {
+  const clean = name
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return clean || "fh_plan";
 }
 
 /**

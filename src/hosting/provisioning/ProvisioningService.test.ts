@@ -24,10 +24,29 @@ import {
 function stubWhm(
   captured: {
     request?: WHMCreateAccountRequest;
+    createdPackage?: {
+      name: string;
+      quotaMb?: number;
+      maxEmailAccounts?: number;
+    };
   },
-  result: Partial<WHMCreatedAccount> = {},
+  options: {
+    result?: Partial<WHMCreatedAccount>;
+    existingPackages?: string[];
+  } = {},
 ): WHMClient {
   return {
+    async listPackages() {
+      return options.existingPackages ??
+        [];
+    },
+    async createPackage(pkg: {
+      name: string;
+      quotaMb?: number;
+      maxEmailAccounts?: number;
+    }) {
+      captured.createdPackage = pkg;
+    },
     async createAccount(
       request: WHMCreateAccountRequest,
     ) {
@@ -37,7 +56,7 @@ function stubWhm(
         username: request.username,
         domain: request.domain,
         ipAddress: "203.0.113.50",
-        ...result,
+        ...options.result,
       };
     },
   } as unknown as WHMClient;
@@ -94,6 +113,11 @@ describe("ProvisioningService", () => {
   it("provisions an account, records it, and emails the login", async () => {
     const captured: {
       request?: WHMCreateAccountRequest;
+      createdPackage?: {
+        name: string;
+        quotaMb?: number;
+        maxEmailAccounts?: number;
+      };
     } = {};
 
     const { service, plans, emails, brands } =
@@ -120,10 +144,22 @@ describe("ProvisioningService", () => {
           "pastor@gracechapel.org",
       });
 
-    // WHM received the plan's specs as explicit limits (no package).
+    // A WHM package was created from the plan's limits...
+    expect(
+      captured.createdPackage?.name,
+    ).toBe("Starter_NVMe");
+    expect(
+      captured.createdPackage?.quotaMb,
+    ).toBe(10240);
+    expect(
+      captured.createdPackage
+        ?.maxEmailAccounts,
+    ).toBe(10);
+
+    // ...and the account was created against that package + limits.
     expect(
       captured.request?.plan,
-    ).toBeUndefined();
+    ).toBe("Starter_NVMe");
     expect(
       captured.request?.limits
         ?.quotaMb,
