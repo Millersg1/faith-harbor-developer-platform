@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { Router } from "express";
 import { z } from "zod";
 
@@ -10,8 +12,33 @@ const createSchema = z.object({
     .trim()
     .min(1),
   email: z.string().trim().min(1),
-  password: z.string().min(8),
+  // Optional: when omitted, the server generates a strong password
+  // with a CSPRNG and returns it once.
+  password: z
+    .string()
+    .min(8)
+    .optional(),
 });
+
+/**
+ * Generates a strong temporary password with a cryptographically
+ * secure RNG (unambiguous alphabet, no look-alike characters).
+ */
+function generatePassword(): string {
+  const alphabet =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+  const bytes = randomBytes(18);
+
+  return (
+    "FH-" +
+    Array.from(
+      bytes,
+      (b) =>
+        alphabet[b % alphabet.length],
+    ).join("")
+  );
+}
 
 /**
  * Administrator routes to manage client portal logins. Mounted behind
@@ -74,15 +101,36 @@ export function createClientUserAdminRouter(
         return;
       }
 
+      // The server mints the password when the admin doesn't supply
+      // one, so credentials are never generated in the browser.
+      const generated =
+        !parsed.data.password;
+
+      const password =
+        parsed.data.password ??
+        generatePassword();
+
       try {
         const user =
-          clientUsers.createUser(
-            parsed.data,
-          );
+          clientUsers.createUser({
+            clientId:
+              parsed.data.clientId,
+            email:
+              parsed.data.email,
+            password,
+          });
 
-        res.status(201).json(
-          toPublicClientUser(user),
-        );
+        res.status(201).json({
+          ...toPublicClientUser(
+            user,
+          ),
+          ...(generated
+            ? {
+                temporaryPassword:
+                  password,
+              }
+            : {}),
+        });
       } catch (error) {
         const message =
           error instanceof Error
