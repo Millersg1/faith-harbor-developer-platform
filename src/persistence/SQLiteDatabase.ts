@@ -385,6 +385,7 @@ export class SQLiteDatabase {
         id TEXT PRIMARY KEY,
         invoice_id TEXT NOT NULL,
         client_id TEXT NOT NULL,
+        provider TEXT,
         amount REAL NOT NULL,
         currency TEXT NOT NULL,
         status TEXT NOT NULL,
@@ -534,6 +535,7 @@ export class SQLiteDatabase {
         "ALTER TABLE hosting_accounts ADD COLUMN brand TEXT",
         "ALTER TABLE leads ADD COLUMN campaign_id TEXT",
         "ALTER TABLE support_tickets ADD COLUMN hosting_account_id TEXT",
+        "ALTER TABLE payments ADD COLUMN provider TEXT",
       ];
 
     for (

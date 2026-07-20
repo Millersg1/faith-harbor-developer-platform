@@ -36,13 +36,21 @@ export function createPaymentRouter(
   router.post(
     "/invoices/:invoiceId/checkout",
     (req, res, next) => {
+      const provider =
+        readProvider(req);
+
       paymentService
         .createCheckout(
-          req.params.invoiceId,
+          String(
+            req.params.invoiceId,
+          ),
+          provider,
         )
         .then((payment) => {
           res.status(201).json({
             success: true,
+            provider:
+              payment.provider,
             checkoutUrl:
               payment.checkoutUrl,
             payment,
@@ -59,6 +67,80 @@ export function createPaymentRouter(
   );
 
   return router;
+}
+
+/**
+ * Reads the requested provider from the query or body, defaulting to
+ * Stripe. Any value other than "paypal" is treated as Stripe.
+ */
+export function readProvider(
+  req: import("express").Request,
+): "stripe" | "paypal" {
+  const raw =
+    (typeof req.query.provider ===
+    "string"
+      ? req.query.provider
+      : undefined) ??
+    (typeof (
+      req.body as {
+        provider?: unknown;
+      }
+    )?.provider === "string"
+      ? (
+          req.body as {
+            provider: string;
+          }
+        ).provider
+      : undefined);
+
+  return raw === "paypal"
+    ? "paypal"
+    : "stripe";
+}
+
+/**
+ * Handles the PayPal payer return: captures the order and redirects
+ * back to the app. Public (PayPal redirects the browser here).
+ */
+export function handlePayPalReturn(
+  paymentService: PaymentService,
+  baseUrl: string,
+) {
+  return (
+    req: Request,
+    res: Response,
+  ): void => {
+    const orderId =
+      typeof req.query.token ===
+      "string"
+        ? req.query.token
+        : "";
+
+    const home = baseUrl || "/";
+
+    if (!orderId) {
+      res.redirect(
+        `${home}/?payment=failed`,
+      );
+
+      return;
+    }
+
+    paymentService
+      .capturePayPalReturn(orderId)
+      .then((outcome) => {
+        res.redirect(
+          outcome.completed
+            ? `${home}/?payment=success`
+            : `${home}/?payment=failed`,
+        );
+      })
+      .catch(() => {
+        res.redirect(
+          `${home}/?payment=failed`,
+        );
+      });
+  };
 }
 
 /**

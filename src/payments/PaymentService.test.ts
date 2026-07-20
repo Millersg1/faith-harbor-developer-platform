@@ -209,3 +209,174 @@ describe("PaymentService", () => {
     ).toBe(false);
   });
 });
+
+describe("PaymentService (PayPal)", () => {
+  it("creates a PayPal checkout and marks the invoice paid on capture", async () => {
+    const clients =
+      new ClientService();
+    const invoices =
+      new InvoiceService(clients);
+    const client = clients.create({
+      companyName: "Grace Chapel",
+      primaryContact: "Pastor John",
+    });
+    const invoice =
+      invoices.create({
+        clientId: client.id,
+        status: "sent",
+        lineItems: [
+          {
+            description: "Work",
+            quantity: 1,
+            unitPrice: 250,
+          },
+        ],
+      });
+
+    const paypal = {
+      isConnected: () => true,
+      createCheckout: async () => ({
+        id: "ORDER-1",
+        url: "https://paypal/checkout/ORDER-1",
+      }),
+      captureOrder: async () => ({
+        completed: true,
+        invoiceId: invoice.id,
+        status: "COMPLETED",
+      }),
+    };
+
+    const payments =
+      new PaymentService(
+        invoices,
+        new FakeGateway(false),
+        new PaymentRepository(),
+        "https://app.example",
+        paypal,
+      );
+
+    const record =
+      await payments.createCheckout(
+        invoice.id,
+        "paypal",
+      );
+
+    expect(record.provider).toBe(
+      "paypal",
+    );
+    expect(record.checkoutUrl)
+      .toContain("paypal");
+
+    const outcome =
+      await payments.capturePayPalReturn(
+        "ORDER-1",
+      );
+
+    expect(outcome.completed).toBe(
+      true,
+    );
+    expect(
+      invoices.get(invoice.id)
+        .status,
+    ).toBe("paid");
+  });
+
+  it("does not mark paid when capture is not completed", async () => {
+    const clients =
+      new ClientService();
+    const invoices =
+      new InvoiceService(clients);
+    const client = clients.create({
+      companyName: "Grace Chapel",
+      primaryContact: "Pastor John",
+    });
+    const invoice =
+      invoices.create({
+        clientId: client.id,
+        status: "sent",
+        lineItems: [
+          {
+            description: "Work",
+            quantity: 1,
+            unitPrice: 250,
+          },
+        ],
+      });
+
+    const paypal = {
+      isConnected: () => true,
+      createCheckout: async () => ({
+        id: "ORDER-2",
+        url: "https://paypal/checkout/ORDER-2",
+      }),
+      captureOrder: async () => ({
+        completed: false,
+        status: "PENDING",
+      }),
+    };
+
+    const payments =
+      new PaymentService(
+        invoices,
+        new FakeGateway(false),
+        new PaymentRepository(),
+        "https://app.example",
+        paypal,
+      );
+
+    await payments.createCheckout(
+      invoice.id,
+      "paypal",
+    );
+
+    const outcome =
+      await payments.capturePayPalReturn(
+        "ORDER-2",
+      );
+
+    expect(outcome.completed).toBe(
+      false,
+    );
+    expect(
+      invoices.get(invoice.id)
+        .status,
+    ).toBe("sent");
+  });
+
+  it("shows both providers in status", () => {
+    const clients =
+      new ClientService();
+    const invoices =
+      new InvoiceService(clients);
+
+    const payments =
+      new PaymentService(
+        invoices,
+        new FakeGateway(true),
+        new PaymentRepository(),
+        "https://app.example",
+        {
+          isConnected: () => true,
+          createCheckout:
+            async () => ({
+              id: "x",
+              url: "u",
+            }),
+          captureOrder:
+            async () => ({
+              completed: false,
+              status: "x",
+            }),
+        },
+      );
+
+    const status =
+      payments.integrationStatus();
+
+    expect(status.stripe).toBe(true);
+    expect(status.paypal).toBe(true);
+    expect(status.connected).toBe(
+      true,
+    );
+  });
+});

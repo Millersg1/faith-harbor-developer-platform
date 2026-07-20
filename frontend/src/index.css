@@ -1665,3 +1665,10 @@ pre {
     text-transform: uppercase;
     letter-spacing: 0.04em;
 }
+
+.button-row {
+    display: inline-flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}

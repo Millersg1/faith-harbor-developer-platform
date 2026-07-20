@@ -12,9 +12,15 @@ import { InvoiceService } from "./accounting/InvoiceService";
 import { PaymentRepository } from "./payments/PaymentRepository";
 import {
   createPaymentRouter,
+  handlePayPalReturn,
   handleStripeWebhook,
 } from "./payments/PaymentRouter";
 import { PaymentService } from "./payments/PaymentService";
+import {
+  DisconnectedPayPalGateway,
+  HttpPayPalGateway,
+  type PayPalGateway,
+} from "./payments/PayPalGateway";
 import { ClientUserRepository } from "./portal/ClientUserRepository";
 import { ClientUserService } from "./portal/ClientUserService";
 import { createClientUserAdminRouter } from "./portal/ClientUserAdminRouter";
@@ -290,12 +296,29 @@ export function createApp(
         })
       : new DisconnectedStripeGateway();
 
+  const paypalGateway:
+    PayPalGateway =
+    config.PAYPAL_CLIENT_ID &&
+    config.PAYPAL_SECRET
+      ? new HttpPayPalGateway({
+          clientId:
+            config.PAYPAL_CLIENT_ID,
+          secret:
+            config.PAYPAL_SECRET,
+          environment:
+            config.PAYPAL_ENV,
+          payeeEmail:
+            config.PAYPAL_PAYEE_EMAIL,
+        })
+      : new DisconnectedPayPalGateway();
+
   const paymentService =
     new PaymentService(
       invoiceService,
       stripeGateway,
       new PaymentRepository(database),
       config.APP_URL ?? "",
+      paypalGateway,
     );
 
   // Client portal: separate multi-user auth so each client can sign
@@ -470,6 +493,15 @@ export function createApp(
     express.raw({ type: "*/*" }),
     handleStripeWebhook(
       paymentService,
+    ),
+  );
+
+  // Public PayPal payer-return: captures the order and redirects.
+  app.get(
+    "/payments/paypal/return",
+    handlePayPalReturn(
+      paymentService,
+      config.APP_URL ?? "",
     ),
   );
 
@@ -695,6 +727,16 @@ export function createApp(
         paymentService
           .integrationStatus()
           .connected,
+
+      stripeConnected:
+        paymentService
+          .integrationStatus()
+          .stripe,
+
+      paypalConnected:
+        paymentService
+          .integrationStatus()
+          .paypal,
 
       backupsAvailable:
         Boolean(backupService),
