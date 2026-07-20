@@ -181,6 +181,13 @@ describe("WHMClient", () => {
         plan: "Starter",
         contactEmail:
           "pastor@gracechapel.org",
+        limits: {
+          quotaMb: 10240,
+          bandwidthMb: 102400,
+          maxAddonDomains: 4,
+          maxEmailAccounts: 25,
+          maxDatabases: 10,
+        },
       });
 
     expect(created).toEqual({
@@ -216,6 +223,23 @@ describe("WHMClient", () => {
     );
     expect(captured.body).toContain(
       "contactemail=pastor",
+    );
+
+    // Resource limits map to WHM's createacct parameters.
+    expect(captured.body).toContain(
+      "quota=10240",
+    );
+    expect(captured.body).toContain(
+      "bwlimit=102400",
+    );
+    expect(captured.body).toContain(
+      "maxaddon=4",
+    );
+    expect(captured.body).toContain(
+      "maxpop=25",
+    );
+    expect(captured.body).toContain(
+      "maxsql=10",
     );
   });
 

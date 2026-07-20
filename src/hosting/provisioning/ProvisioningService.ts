@@ -153,14 +153,36 @@ export class ProvisioningService {
 
     const password = this.makePassword();
 
+    const specs = plan.specs;
+
     const created =
       await this.whm.createAccount({
         username,
         domain,
         password,
-        plan:
-          plan.whmPackage ?? plan.name,
         contactEmail,
+        // Provision from the plan's own specs (no WHM package needed).
+        limits: {
+          quotaMb: specs.storageMb,
+          bandwidthMb:
+            specs.bandwidthGb < 0
+              ? -1
+              : specs.bandwidthGb *
+                1024,
+          // The primary domain counts as one website, so addon
+          // domains are the remainder.
+          maxAddonDomains:
+            specs.websites < 0
+              ? -1
+              : Math.max(
+                  0,
+                  specs.websites - 1,
+                ),
+          maxEmailAccounts:
+            specs.emailAccounts,
+          maxDatabases:
+            specs.mysqlDatabases,
+        },
       });
 
     const account =

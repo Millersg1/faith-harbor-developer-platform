@@ -42,6 +42,29 @@ export type WHMFetch = (
 ) => Promise<WHMFetchResponse>;
 
 /**
+ * Explicit per-account resource limits, used when no WHM package is
+ * defined. A value of -1 means unlimited. Derived from the hosting
+ * plan's specs, so the plan catalog is the single source of truth.
+ */
+export interface WHMAccountLimits {
+  /**
+   * Disk quota in megabytes.
+   */
+  quotaMb?: number;
+
+  /**
+   * Monthly bandwidth in megabytes.
+   */
+  bandwidthMb?: number;
+
+  maxAddonDomains?: number;
+
+  maxEmailAccounts?: number;
+
+  maxDatabases?: number;
+}
+
+/**
  * Everything needed to provision one cPanel account through WHM.
  */
 export interface WHMCreateAccountRequest {
@@ -62,9 +85,16 @@ export interface WHMCreateAccountRequest {
   password: string;
 
   /**
-   * WHM package (plan) name to create the account under.
+   * WHM package (plan) name to create the account under. Optional; when
+   * omitted, explicit `limits` are applied over WHM's default package.
    */
   plan?: string;
+
+  /**
+   * Explicit resource limits (used when not provisioning from a named
+   * WHM package).
+   */
+  limits?: WHMAccountLimits;
 
   /**
    * Contact email stored on the account (for cPanel notices).
@@ -197,6 +227,62 @@ export class WHMClient {
     if (request.contactEmail) {
       params.contactemail =
         request.contactEmail;
+    }
+
+    // Explicit resource limits (WHM uses -1/"unlimited"). These map the
+    // plan's specs onto the account when no named package is used.
+    const limit = (
+      value: number,
+    ): string =>
+      value < 0
+        ? "unlimited"
+        : String(value);
+
+    const limits = request.limits;
+
+    if (limits) {
+      if (
+        limits.quotaMb !== undefined
+      ) {
+        params.quota = limit(
+          limits.quotaMb,
+        );
+      }
+
+      if (
+        limits.bandwidthMb !== undefined
+      ) {
+        params.bwlimit = limit(
+          limits.bandwidthMb,
+        );
+      }
+
+      if (
+        limits.maxAddonDomains !==
+        undefined
+      ) {
+        params.maxaddon = limit(
+          limits.maxAddonDomains,
+        );
+      }
+
+      if (
+        limits.maxEmailAccounts !==
+        undefined
+      ) {
+        params.maxpop = limit(
+          limits.maxEmailAccounts,
+        );
+      }
+
+      if (
+        limits.maxDatabases !==
+        undefined
+      ) {
+        params.maxsql = limit(
+          limits.maxDatabases,
+        );
+      }
     }
 
     const envelope = await this.call(

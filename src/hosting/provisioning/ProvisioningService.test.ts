@@ -120,10 +120,31 @@ describe("ProvisioningService", () => {
           "pastor@gracechapel.org",
       });
 
-    // WHM received the right package + normalized domain.
+    // WHM received the plan's specs as explicit limits (no package).
     expect(
       captured.request?.plan,
-    ).toBe("Starter NVMe");
+    ).toBeUndefined();
+    expect(
+      captured.request?.limits
+        ?.quotaMb,
+    ).toBe(10240);
+    expect(
+      captured.request?.limits
+        ?.bandwidthMb,
+    ).toBe(100 * 1024);
+    // Starter has 1 website → 0 addon domains.
+    expect(
+      captured.request?.limits
+        ?.maxAddonDomains,
+    ).toBe(0);
+    expect(
+      captured.request?.limits
+        ?.maxEmailAccounts,
+    ).toBe(10);
+    expect(
+      captured.request?.limits
+        ?.maxDatabases,
+    ).toBe(5);
     expect(
       captured.request?.domain,
     ).toBe("gracechapel.org");
