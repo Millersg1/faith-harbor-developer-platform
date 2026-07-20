@@ -18,6 +18,7 @@ interface ClientRow {
   website: string | null;
   industry: string | null;
   notes: string | null;
+  brand_id: string | null;
   metadata_json: string;
   created_at: string;
   updated_at: string;
@@ -87,6 +88,11 @@ export class ClientService {
         request.notes.trim();
     }
 
+    if (request.brandId) {
+      client.brandId =
+        request.brandId.trim();
+    }
+
     if (this.database) {
       this.database
         .prepare(`
@@ -99,10 +105,12 @@ export class ClientService {
             website,
             industry,
             notes,
+            brand_id,
             metadata_json,
             created_at,
             updated_at
           ) VALUES (
+            ?,
             ?,
             ?,
             ?,
@@ -125,6 +133,7 @@ export class ClientService {
           client.website ?? null,
           client.industry ?? null,
           client.notes ?? null,
+          client.brandId ?? null,
           JSON.stringify(
             client.metadata ?? {},
           ),
@@ -157,6 +166,7 @@ export class ClientService {
               website,
               industry,
               notes,
+              brand_id,
               metadata_json,
               created_at,
               updated_at
@@ -193,6 +203,7 @@ export class ClientService {
               website,
               industry,
               notes,
+              brand_id,
               metadata_json,
               created_at,
               updated_at
@@ -309,6 +320,11 @@ export class ClientService {
 
     if (row.notes) {
       client.notes = row.notes;
+    }
+
+    if (row.brand_id) {
+      client.brandId =
+        row.brand_id;
     }
 
     return client;

@@ -101,7 +101,18 @@ export class SQLiteDatabase {
         website TEXT,
         industry TEXT,
         notes TEXT,
+        brand_id TEXT,
         metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS brands (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        domain TEXT,
+        from_email TEXT,
+        email_signature TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       ) STRICT;
@@ -541,6 +552,7 @@ export class SQLiteDatabase {
         "ALTER TABLE leads ADD COLUMN campaign_id TEXT",
         "ALTER TABLE support_tickets ADD COLUMN hosting_account_id TEXT",
         "ALTER TABLE payments ADD COLUMN provider TEXT",
+        "ALTER TABLE clients ADD COLUMN brand_id TEXT",
       ];
 
     for (
