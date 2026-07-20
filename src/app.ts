@@ -94,6 +94,8 @@ import { createHostingRouter } from "./hosting/HostingRouter";
 import { HostingPlanRepository } from "./hosting/plans/HostingPlanRepository";
 import { HostingPlanService } from "./hosting/plans/HostingPlanService";
 import { createHostingPlanRouter } from "./hosting/plans/HostingPlanRouter";
+import { ProvisioningService } from "./hosting/provisioning/ProvisioningService";
+import { createProvisioningRouter } from "./hosting/provisioning/ProvisioningRouter";
 import { HostingAssistantService } from "./hosting/assistant/HostingAssistantService";
 import { nodeDnsResolver } from "./hosting/assistant/HostingDiagnostics";
 import { WHMClient } from "./hosting/whm/WHMClient";
@@ -533,6 +535,23 @@ export function createApp(
           config.NODE_ENV === "test"
             ? undefined
             : nodeDnsResolver,
+      },
+    );
+
+  // Provisioning: turns a paid plan + domain into a real cPanel account
+  // (via WHM), a local record, and a welcome email. Live provisioning
+  // requires a WHM client with account-creation access; without it the
+  // service reports "unavailable" and refuses to act.
+  const provisioningService =
+    new ProvisioningService(
+      hostingPlanService,
+      hostingService,
+      whmClient,
+      emailService,
+      {
+        brands: brandService,
+        clients: clientService,
+        serverLabel: config.WHM_HOST,
       },
     );
 
@@ -1063,6 +1082,13 @@ export function createApp(
   // Exposed so the server entry point can run periodic scans.
   app.locals.automationScanner =
     automationScanner;
+
+  app.use(
+    "/api/v1/hosting/provision",
+    createProvisioningRouter(
+      provisioningService,
+    ),
+  );
 
   app.use(
     "/api/v1/hosting/plans",
