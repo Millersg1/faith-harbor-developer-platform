@@ -249,6 +249,17 @@ export class ProvisioningService {
     const name =
       sanitizePackageName(rawName);
 
+    // WHM stores packages created by an owner with a prefix (e.g. root
+    // creates "root_Starter_NVMe"), so match on the suffix too.
+    const findMatch = (
+      list: string[],
+    ): string | undefined =>
+      list.find(
+        (pkg) =>
+          pkg === name ||
+          pkg.endsWith(`_${name}`),
+      );
+
     let existing: string[] = [];
 
     try {
@@ -259,7 +270,9 @@ export class ProvisioningService {
       // tolerated below.
     }
 
-    if (!existing.includes(name)) {
+    let match = findMatch(existing);
+
+    if (!match) {
       try {
         await whm.createPackage({
           name,
@@ -271,17 +284,28 @@ export class ProvisioningService {
             ? error.message.toLowerCase()
             : "";
 
-        // Tolerate a package that already exists (race or name-prefix
-        // difference); anything else is a real failure.
+        // Tolerate a package that already exists; anything else is a
+        // real failure.
         if (
           !message.includes("exist")
         ) {
           throw error;
         }
       }
+
+      // Re-list to resolve the actual (possibly prefixed) name to
+      // provision against.
+      try {
+        existing =
+          await whm.listPackages();
+      } catch {
+        // Fall through to the sanitized name.
+      }
+
+      match = findMatch(existing);
     }
 
-    return name;
+    return match ?? name;
   }
 
   private resolveContactEmail(

@@ -218,6 +218,43 @@ describe("ProvisioningService", () => {
     );
   });
 
+  it("uses an existing owner-prefixed package (root_) without recreating it", async () => {
+    const captured: {
+      request?: WHMCreateAccountRequest;
+      createdPackage?: {
+        name: string;
+      };
+    } = {};
+
+    const { service, plans } = build(
+      stubWhm(captured, {
+        existingPackages: [
+          "root_Starter_NVMe",
+        ],
+      }),
+    );
+
+    const starter = plans
+      .list()
+      .find(
+        (p) => p.slug === "starter-nvme",
+      );
+
+    await service.provision({
+      planId: starter?.id,
+      domain: "example.com",
+      contactEmail: "a@b.com",
+    });
+
+    // Found the prefixed package; did not create a duplicate.
+    expect(
+      captured.createdPackage,
+    ).toBeUndefined();
+    expect(
+      captured.request?.plan,
+    ).toBe("root_Starter_NVMe");
+  });
+
   it("reports unavailable and refuses to provision without WHM", async () => {
     const { service } = build(undefined);
 
