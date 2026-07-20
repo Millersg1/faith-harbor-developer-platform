@@ -113,6 +113,14 @@ interface BackupEntry {
   sizeBytes: number;
 }
 
+interface StatusMessage {
+  message: string;
+  type:
+    | "working"
+    | "success"
+    | "error";
+}
+
 function formatBytes(
   bytes: number,
 ): string {
@@ -181,6 +189,188 @@ export default function SystemAdministration() {
     } finally {
       setBackingUp(false);
     }
+  }
+
+  // ---- Security: password change + 2FA ----
+  const [authConfigured, setAuthConfigured] =
+    useState(false);
+  const [twoFa, setTwoFa] =
+    useState(false);
+  const [currentPw, setCurrentPw] =
+    useState("");
+  const [newPw, setNewPw] =
+    useState("");
+  const [secMsg, setSecMsg] =
+    useState<StatusMessage | null>(
+      null,
+    );
+  const [
+    totpSetup,
+    setTotpSetup,
+  ] = useState<{
+    secret: string;
+    otpauthUrl: string;
+  } | null>(null);
+  const [enableCode, setEnableCode] =
+    useState("");
+
+  useEffect(() => {
+    fetch("/api/v1/auth/me")
+      .then((r) =>
+        r.ok ? r.json() : null,
+      )
+      .then(
+        (data: {
+          authenticated?: boolean;
+          twoFactorEnabled?: boolean;
+        } | null) => {
+          if (
+            data?.authenticated
+          ) {
+            setAuthConfigured(true);
+            setTwoFa(
+              Boolean(
+                data.twoFactorEnabled,
+              ),
+            );
+          }
+        },
+      )
+      .catch(() => {});
+  }, []);
+
+  async function changePassword(): Promise<void> {
+    setSecMsg(null);
+
+    try {
+      const r = await fetch(
+        "/api/v1/auth/change-password",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            currentPassword:
+              currentPw,
+            newPassword: newPw,
+          }),
+        },
+      );
+
+      const data =
+        (await r.json()) as {
+          error?: {
+            message?: string;
+          };
+        };
+
+      if (!r.ok) {
+        throw new Error(
+          data.error?.message ??
+            "Could not change password.",
+        );
+      }
+
+      setCurrentPw("");
+      setNewPw("");
+      setSecMsg({
+        message:
+          "Password changed.",
+        type: "success",
+      });
+    } catch (error) {
+      setSecMsg({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not change password.",
+        type: "error",
+      });
+    }
+  }
+
+  async function start2fa(): Promise<void> {
+    setSecMsg(null);
+
+    const r = await fetch(
+      "/api/v1/auth/2fa/setup",
+      { method: "POST" },
+    );
+
+    if (r.ok) {
+      setTotpSetup(
+        (await r.json()) as {
+          secret: string;
+          otpauthUrl: string;
+        },
+      );
+    }
+  }
+
+  async function confirm2fa(): Promise<void> {
+    setSecMsg(null);
+
+    try {
+      const r = await fetch(
+        "/api/v1/auth/2fa/enable",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            code: enableCode,
+          }),
+        },
+      );
+
+      const data =
+        (await r.json()) as {
+          error?: {
+            message?: string;
+          };
+        };
+
+      if (!r.ok) {
+        throw new Error(
+          data.error?.message ??
+            "Could not enable 2FA.",
+        );
+      }
+
+      setTwoFa(true);
+      setTotpSetup(null);
+      setEnableCode("");
+      setSecMsg({
+        message:
+          "Two-factor authentication enabled.",
+        type: "success",
+      });
+    } catch (error) {
+      setSecMsg({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not enable 2FA.",
+        type: "error",
+      });
+    }
+  }
+
+  async function disable2fa(): Promise<void> {
+    await fetch(
+      "/api/v1/auth/2fa/disable",
+      { method: "POST" },
+    );
+    setTwoFa(false);
+    setSecMsg({
+      message:
+        "Two-factor authentication disabled.",
+      type: "success",
+    });
   }
 
   useEffect(() => {
@@ -604,6 +794,161 @@ export default function SystemAdministration() {
           the most recent are kept.
         </p>
       </div>
+
+      {authConfigured && (
+        <div className="card">
+          <div className="card-heading">
+            <div>
+              <p className="eyebrow">
+                Administration
+              </p>
+
+              <h3>Security</h3>
+            </div>
+          </div>
+
+          {secMsg && (
+            <div
+              className={`status-message ${secMsg.type}`}
+            >
+              {secMsg.message}
+            </div>
+          )}
+
+          <h4>Change Password</h4>
+
+          <div className="form-group">
+            <label htmlFor="cur-pw">
+              Current password
+            </label>
+            <input
+              id="cur-pw"
+              type="password"
+              value={currentPw}
+              onChange={(e) =>
+                setCurrentPw(
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="new-pw">
+              New password (8+
+              characters)
+            </label>
+            <input
+              id="new-pw"
+              type="password"
+              value={newPw}
+              onChange={(e) =>
+                setNewPw(
+                  e.target.value,
+                )
+              }
+            />
+          </div>
+
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              void changePassword()
+            }
+          >
+            Change Password
+          </button>
+
+          <div className="section-divider" />
+
+          <h4>
+            Two-Factor Authentication
+          </h4>
+
+          {twoFa ? (
+            <>
+              <p className="help-text">
+                2FA is <strong>on</strong>.
+                Sign-in requires a code
+                from your authenticator
+                app.
+              </p>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  void disable2fa()
+                }
+              >
+                Disable 2FA
+              </button>
+            </>
+          ) : totpSetup ? (
+            <>
+              <p className="help-text">
+                Add this key to your
+                authenticator app
+                (Google Authenticator,
+                Authy, 1Password), then
+                enter the 6-digit code
+                to confirm.
+              </p>
+              <p className="help-text">
+                <strong>
+                  Setup key:
+                </strong>{" "}
+                <code>
+                  {totpSetup.secret}
+                </code>
+              </p>
+              <div className="form-group">
+                <label htmlFor="enable-code">
+                  6-digit code
+                </label>
+                <input
+                  id="enable-code"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="123456"
+                  value={enableCode}
+                  onChange={(e) =>
+                    setEnableCode(
+                      e.target.value,
+                    )
+                  }
+                />
+              </div>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() =>
+                  void confirm2fa()
+                }
+              >
+                Confirm & Enable
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="help-text">
+                Add a second layer to
+                your login with an
+                authenticator app.
+              </p>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  void start2fa()
+                }
+              >
+                Enable 2FA
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }

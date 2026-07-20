@@ -13,6 +13,7 @@ interface LoginResponse {
   authenticated: boolean;
   user?: AuthUser;
   error?: {
+    code?: string;
     message?: string;
   };
 }
@@ -31,6 +32,14 @@ export default function LoginPage({
 
   const [password, setPassword] =
     useState("");
+
+  const [totpCode, setTotpCode] =
+    useState("");
+
+  const [
+    needsCode,
+    setNeedsCode,
+  ] = useState(false);
 
   const [error, setError] =
     useState<string | null>(null);
@@ -60,6 +69,8 @@ export default function LoginPage({
           body: JSON.stringify({
             email,
             password,
+            totpCode:
+              totpCode || undefined,
           }),
         },
       );
@@ -73,6 +84,23 @@ export default function LoginPage({
         result.user
       ) {
         onSuccess(result.user);
+        return;
+      }
+
+      // Server is asking for the second factor.
+      if (
+        result.error?.code ===
+          "TOTP_REQUIRED" ||
+        result.error?.code ===
+          "INVALID_TOTP"
+      ) {
+        setNeedsCode(true);
+        setError(
+          result.error.code ===
+            "INVALID_TOTP"
+            ? "That code wasn't valid. Try again."
+            : "Enter the code from your authenticator app.",
+        );
         return;
       }
 
@@ -147,6 +175,29 @@ export default function LoginPage({
             />
           </div>
 
+          {needsCode && (
+            <div className="form-group">
+              <label htmlFor="login-totp">
+                Authenticator code
+              </label>
+
+              <input
+                id="login-totp"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                value={totpCode}
+                onChange={(event) =>
+                  setTotpCode(
+                    event.target
+                      .value,
+                  )
+                }
+              />
+            </div>
+          )}
+
           {error && (
             <div className="status-message error">
               {error}
@@ -160,7 +211,9 @@ export default function LoginPage({
           >
             {submitting
               ? "Signing in..."
-              : "Sign In"}
+              : needsCode
+                ? "Verify & Sign In"
+                : "Sign In"}
           </button>
         </form>
       </div>

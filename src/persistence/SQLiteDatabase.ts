@@ -395,6 +395,11 @@ export class SQLiteDatabase {
         paid_at TEXT
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS admin_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      ) STRICT;
+
       CREATE TABLE IF NOT EXISTS client_users (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,

@@ -37,6 +37,7 @@ import { AutomationScanner } from "./automation/AutomationScanner";
 import { AutomationService } from "./automation/AutomationService";
 import { AiDraftPersonalizer } from "./automation/DraftPersonalizer";
 import { createAuthRouter } from "./auth/AuthRouter";
+import { AdminSettingsRepository } from "./auth/AdminSettingsRepository";
 import { BackupService } from "./backup/BackupService";
 import { createBackupRouter } from "./backup/BackupRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
@@ -1056,29 +1057,38 @@ export function createApp(
  * Builds the single-administrator auth service from configuration,
  * or returns undefined when no credentials are configured.
  */
-function createAuthService():
+function createAuthService(
+  database?: DatabaseSync,
+):
   AuthService | undefined {
   if (
     config.ADMIN_EMAIL &&
     (config.ADMIN_PASSWORD_HASH ||
       config.ADMIN_PASSWORD)
   ) {
-    return new AuthService({
-      adminEmail:
-        config.ADMIN_EMAIL,
+    return new AuthService(
+      {
+        adminEmail:
+          config.ADMIN_EMAIL,
 
-      passwordHash:
-        config.ADMIN_PASSWORD_HASH,
+        passwordHash:
+          config.ADMIN_PASSWORD_HASH,
 
-      passwordPlain:
-        config.ADMIN_PASSWORD,
+        passwordPlain:
+          config.ADMIN_PASSWORD,
 
-      sessionTtlMs:
-        config.SESSION_TTL_HOURS *
-        60 *
-        60 *
-        1000,
-    });
+        sessionTtlMs:
+          config.SESSION_TTL_HOURS *
+          60 *
+          60 *
+          1000,
+      },
+      database
+        ? new AdminSettingsRepository(
+            database,
+          )
+        : undefined,
+    );
   }
 
   return undefined;
@@ -1089,8 +1099,15 @@ function createAuthService():
  * and installs all configured AI providers and workers.
  */
 export async function createConfiguredApp() {
+  // The database is created first so admin settings (in-app password
+  // changes and 2FA) can persist.
+  const database =
+    new SQLiteDatabase();
+
   const authService =
-    createAuthService();
+    createAuthService(
+      database.connection,
+    );
 
   // A production deployment must never run unauthenticated.
   if (
@@ -1098,14 +1115,13 @@ export async function createConfiguredApp() {
       "production" &&
     !authService
   ) {
+    database.close();
+
     throw new Error(
       "Refusing to start: authentication is not configured. " +
         "Set ADMIN_EMAIL and ADMIN_PASSWORD (or ADMIN_PASSWORD_HASH) in the environment.",
     );
   }
-
-  const database =
-    new SQLiteDatabase();
 
   const installers =
     createProviderInstallers();

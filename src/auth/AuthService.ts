@@ -5,6 +5,20 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
+import { AdminSettingsRepository } from "./AdminSettingsRepository";
+import {
+  generateTotpSecret,
+  otpauthUrl,
+  verifyTotp,
+} from "./Totp";
+
+const KEY_PASSWORD_HASH =
+  "password_hash";
+const KEY_TOTP_SECRET =
+  "totp_secret";
+const KEY_TOTP_PENDING =
+  "totp_pending";
+
 export interface AuthConfig {
   /**
    * The single administrator's email (login identity).
@@ -146,6 +160,7 @@ export class AuthService {
 
   constructor(
     private readonly config: AuthConfig,
+    private readonly settings?: AdminSettingsRepository,
   ) {
     this.sessionTtlMs =
       config.sessionTtlMs ??
@@ -190,6 +205,20 @@ export class AuthService {
       return false;
     }
 
+    // A password changed in-app (stored) takes precedence over the
+    // .env credentials, which remain the initial/fallback secret.
+    const storedHash =
+      this.settings?.get(
+        KEY_PASSWORD_HASH,
+      );
+
+    if (storedHash) {
+      return verifyHash(
+        password,
+        storedHash,
+      );
+    }
+
     if (this.config.passwordHash) {
       return verifyHash(
         password,
@@ -205,6 +234,147 @@ export class AuthService {
     }
 
     return false;
+  }
+
+  /**
+   * Whether two-factor authentication is enabled.
+   */
+  is2faEnabled(): boolean {
+    return Boolean(
+      this.settings?.get(
+        KEY_TOTP_SECRET,
+      ),
+    );
+  }
+
+  /**
+   * Verifies a 2FA code against the stored secret.
+   */
+  verifyTotpCode(
+    code: string,
+  ): boolean {
+    const secret =
+      this.settings?.get(
+        KEY_TOTP_SECRET,
+      );
+
+    return secret
+      ? verifyTotp(code, secret)
+      : false;
+  }
+
+  /**
+   * Changes the administrator password (persisted, overriding .env).
+   */
+  changePassword(
+    currentPassword: string,
+    newPassword: string,
+  ): void {
+    if (!this.settings) {
+      throw new Error(
+        "Password changes require a database.",
+      );
+    }
+
+    if (
+      !this.verifyCredentials(
+        this.config.adminEmail,
+        currentPassword,
+      )
+    ) {
+      throw new Error(
+        "The current password is incorrect.",
+      );
+    }
+
+    if (newPassword.length < 8) {
+      throw new Error(
+        "The new password must be at least 8 characters.",
+      );
+    }
+
+    this.settings.set(
+      KEY_PASSWORD_HASH,
+      hashPassword(newPassword),
+    );
+  }
+
+  /**
+   * Begins 2FA setup: generates a secret (pending until confirmed)
+   * and returns it with an otpauth URL for the authenticator app.
+   */
+  beginTotpSetup(): {
+    secret: string;
+    otpauthUrl: string;
+  } {
+    if (!this.settings) {
+      throw new Error(
+        "Two-factor setup requires a database.",
+      );
+    }
+
+    const secret =
+      generateTotpSecret();
+
+    this.settings.set(
+      KEY_TOTP_PENDING,
+      secret,
+    );
+
+    return {
+      secret,
+      otpauthUrl: otpauthUrl(
+        secret,
+        this.config.adminEmail,
+      ),
+    };
+  }
+
+  /**
+   * Confirms and enables 2FA by verifying a code against the pending
+   * secret.
+   */
+  enableTotp(code: string): void {
+    const pending =
+      this.settings?.get(
+        KEY_TOTP_PENDING,
+      );
+
+    if (!pending) {
+      throw new Error(
+        "Start two-factor setup first.",
+      );
+    }
+
+    if (
+      !verifyTotp(code, pending)
+    ) {
+      throw new Error(
+        "That code is not valid. Try again.",
+      );
+    }
+
+    this.settings?.set(
+      KEY_TOTP_SECRET,
+      pending,
+    );
+
+    this.settings?.delete(
+      KEY_TOTP_PENDING,
+    );
+  }
+
+  /**
+   * Disables 2FA.
+   */
+  disableTotp(): void {
+    this.settings?.delete(
+      KEY_TOTP_SECRET,
+    );
+
+    this.settings?.delete(
+      KEY_TOTP_PENDING,
+    );
   }
 
   /**
