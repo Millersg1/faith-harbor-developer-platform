@@ -8,6 +8,7 @@ import {
 import type { InvoiceService } from "../accounting/InvoiceService";
 import type { ClientService } from "../clients/ClientService";
 import type { PaymentService } from "../payments/PaymentService";
+import { readProvider } from "../payments/PaymentRouter";
 import type { ProjectService } from "../projects/ProjectService";
 import { config } from "../config";
 import type { TicketService } from "../support/TicketService";
@@ -276,10 +277,13 @@ export function createPortalRouter(
       deps.payments
         .createCheckout(
           invoiceId,
+          readProvider(req),
         )
         .then((payment) => {
           res.status(201).json({
             success: true,
+            provider:
+              payment.provider,
             checkoutUrl:
               payment.checkoutUrl,
           });
@@ -327,6 +331,9 @@ function buildMe(
   const client =
     deps.clients.get(clientId);
 
+  const payStatus =
+    deps.payments.integrationStatus();
+
   return {
     client: {
       id: client.id,
@@ -336,5 +343,9 @@ function buildMe(
         client.primaryContact,
     },
     email,
+    payments: {
+      stripe: payStatus.stripe,
+      paypal: payStatus.paypal,
+    },
   };
 }

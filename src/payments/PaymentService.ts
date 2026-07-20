@@ -5,8 +5,13 @@ import type { InvoiceService } from "../accounting/InvoiceService";
 import { PaymentRepository } from "./PaymentRepository";
 import type {
   PaymentIntegrationStatus,
+  PaymentProvider,
   PaymentRecord,
 } from "./PaymentTypes";
+import {
+  DisconnectedPayPalGateway,
+  type PayPalGateway,
+} from "./PayPalGateway";
 import {
   DisconnectedStripeGateway,
   type StripeGateway,
@@ -17,9 +22,14 @@ export interface WebhookResult {
   reason?: string;
 }
 
+export interface CaptureOutcome {
+  completed: boolean;
+  invoiceId?: string;
+}
+
 /**
- * Creates Stripe checkout links for invoices and marks invoices paid
- * when Stripe confirms payment.
+ * Creates checkout links for invoices (Stripe or PayPal) and marks
+ * invoices paid when the provider confirms payment.
  */
 export class PaymentService {
   constructor(
@@ -29,13 +39,17 @@ export class PaymentService {
     private readonly repository =
       new PaymentRepository(),
     private readonly baseUrl = "",
+    private readonly paypal: PayPalGateway =
+      new DisconnectedPayPalGateway(),
   ) {}
 
   /**
-   * Creates a hosted checkout link for an invoice.
+   * Creates a hosted checkout link for an invoice with the chosen
+   * provider (defaults to Stripe).
    */
   async createCheckout(
     invoiceId: string,
+    provider: PaymentProvider = "stripe",
   ): Promise<PaymentRecord> {
     const invoice =
       this.invoices.get(invoiceId);
@@ -58,22 +72,38 @@ export class PaymentService {
       );
     }
 
+    // PayPal redirects the payer back to our capture route; Stripe
+    // confirms out-of-band via webhook and just needs a landing page.
+    const successUrl =
+      provider === "paypal"
+        ? `${this.baseUrl}/payments/paypal/return`
+        : `${this.baseUrl}/accounting?paid=${invoice.number}`;
+
+    const cancelUrl =
+      provider === "paypal"
+        ? `${this.baseUrl}/?payment=cancelled`
+        : `${this.baseUrl}/accounting?canceled=${invoice.number}`;
+
+    const gateway =
+      provider === "paypal"
+        ? this.paypal
+        : this.gateway;
+
     const session =
-      await this.gateway.createCheckout(
-        {
-          amount: invoice.amount,
-          currency: invoice.currency,
-          description: `Invoice ${invoice.number}`,
-          invoiceId: invoice.id,
-          successUrl: `${this.baseUrl}/accounting?paid=${invoice.number}`,
-          cancelUrl: `${this.baseUrl}/accounting?canceled=${invoice.number}`,
-        },
-      );
+      await gateway.createCheckout({
+        amount: invoice.amount,
+        currency: invoice.currency,
+        description: `Invoice ${invoice.number}`,
+        invoiceId: invoice.id,
+        successUrl,
+        cancelUrl,
+      });
 
     const record: PaymentRecord = {
       id: randomUUID(),
       invoiceId: invoice.id,
       clientId: invoice.clientId,
+      provider,
       amount: invoice.amount,
       currency: invoice.currency,
       status: "pending",
@@ -86,6 +116,44 @@ export class PaymentService {
     return this.repository.create(
       record,
     );
+  }
+
+  /**
+   * Captures a PayPal order when the payer returns, and marks the
+   * invoice paid on success.
+   */
+  async capturePayPalReturn(
+    orderId: string,
+  ): Promise<CaptureOutcome> {
+    const result =
+      await this.paypal.captureOrder(
+        orderId,
+      );
+
+    if (!result.completed) {
+      return { completed: false };
+    }
+
+    const payment =
+      this.repository.findBySession(
+        orderId,
+      );
+
+    const invoiceId =
+      result.invoiceId ??
+      payment?.invoiceId;
+
+    if (invoiceId) {
+      this.markPaid(
+        invoiceId,
+        orderId,
+      );
+    }
+
+    return {
+      completed: true,
+      invoiceId,
+    };
   }
 
   /**
@@ -175,14 +243,22 @@ export class PaymentService {
 
   integrationStatus():
     PaymentIntegrationStatus {
-    const connected =
+    const stripe =
       this.gateway.isConnected();
+
+    const paypal =
+      this.paypal.isConnected();
+
+    const connected =
+      stripe || paypal;
 
     return {
       connected,
+      stripe,
+      paypal,
       message: connected
-        ? "Stripe is connected. You can collect payments on invoices."
-        : "Connect Stripe (STRIPE_SECRET_KEY) to collect card payments on invoices.",
+        ? "Payments are connected. You can collect on invoices."
+        : "Connect Stripe or PayPal to collect payments on invoices.",
     };
   }
 

@@ -12,6 +12,10 @@ interface PortalClient {
 interface MeResponse {
   client: PortalClient;
   email?: string;
+  payments?: {
+    stripe: boolean;
+    paypal: boolean;
+  };
 }
 
 interface Project {
@@ -309,15 +313,21 @@ function PortalDashboard({
     onSignOut();
   }
 
+  const payments = me.payments ?? {
+    stripe: false,
+    paypal: false,
+  };
+
   async function pay(
     invoice: Invoice,
+    provider: "stripe" | "paypal",
   ): Promise<void> {
     setPaying(invoice.id);
     setNotice(null);
 
     try {
       const res = await fetch(
-        `/api/v1/portal/invoices/${invoice.id}/checkout`,
+        `/api/v1/portal/invoices/${invoice.id}/checkout?provider=${provider}`,
         { method: "POST" },
       );
 
@@ -406,24 +416,48 @@ function PortalDashboard({
                     "paid" &&
                     invoice.status !==
                       "void" && (
-                      <button
-                        type="button"
-                        className="primary-button"
-                        disabled={
-                          paying ===
-                          invoice.id
-                        }
-                        onClick={() =>
-                          void pay(
-                            invoice,
-                          )
-                        }
-                      >
-                        {paying ===
-                        invoice.id
-                          ? "..."
-                          : "Pay"}
-                      </button>
+                      <span className="button-row">
+                        {payments.stripe && (
+                          <button
+                            type="button"
+                            className="primary-button"
+                            disabled={
+                              paying ===
+                              invoice.id
+                            }
+                            onClick={() =>
+                              void pay(
+                                invoice,
+                                "stripe",
+                              )
+                            }
+                          >
+                            {paying ===
+                            invoice.id
+                              ? "..."
+                              : "Pay by Card"}
+                          </button>
+                        )}
+
+                        {payments.paypal && (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={
+                              paying ===
+                              invoice.id
+                            }
+                            onClick={() =>
+                              void pay(
+                                invoice,
+                                "paypal",
+                              )
+                            }
+                          >
+                            PayPal
+                          </button>
+                        )}
+                      </span>
                     )}
                 </div>
               ),

@@ -11,12 +11,24 @@ export type PaymentStatus =
   | "failed";
 
 /**
+ * The payment provider used.
+ */
+export type PaymentProvider =
+  | "stripe"
+  | "paypal";
+
+/**
  * A stored record of a payment attempt against an invoice.
  */
 export interface PaymentRecord {
   id: string;
   invoiceId: string;
   clientId: string;
+
+  /**
+   * Which provider processed (or is processing) this payment.
+   */
+  provider: PaymentProvider;
 
   /**
    * Amount in the smallest currency unit is not stored; the human
@@ -42,9 +54,14 @@ export interface PaymentRecord {
 }
 
 /**
- * Whether Stripe payments are configured.
+ * Which payment providers are configured.
  */
 export interface PaymentIntegrationStatus {
+  /**
+   * True when at least one provider is connected.
+   */
   connected: boolean;
+  stripe: boolean;
+  paypal: boolean;
   message: string;
 }

@@ -234,6 +234,33 @@ const schema = z.object({
     .optional()
     .transform((value) => value || undefined),
 
+  // ---- Payments (PayPal, optional) ----
+  // When both are set, invoices can also be paid with PayPal.
+  PAYPAL_CLIENT_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  PAYPAL_SECRET: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
+  // "live" or "sandbox" (default live).
+  PAYPAL_ENV: z
+    .enum(["live", "sandbox"])
+    .default("live"),
+
+  // Optional merchant email to receive PayPal funds (must belong to
+  // the same PayPal account as the credentials).
+  PAYPAL_PAYEE_EMAIL: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
+
   // ---- Backups ----
   // Directory for database snapshots. Defaults to data/backups.
   BACKUP_DIR: z

@@ -304,6 +304,12 @@ export default function AccountingPage() {
     setPaymentsConnected,
   ] = useState(false);
 
+  const [stripeOn, setStripeOn] =
+    useState(false);
+
+  const [paypalOn, setPaypalOn] =
+    useState(false);
+
   const [collecting, setCollecting] =
     useState(false);
 
@@ -319,12 +325,20 @@ export default function AccountingPage() {
       .then(
         (data: {
           connected?: boolean;
+          stripe?: boolean;
+          paypal?: boolean;
         } | null) => {
           if (!cancelled && data) {
             setPaymentsConnected(
               Boolean(
                 data.connected,
               ),
+            );
+            setStripeOn(
+              Boolean(data.stripe),
+            );
+            setPaypalOn(
+              Boolean(data.paypal),
             );
           }
         },
@@ -340,6 +354,7 @@ export default function AccountingPage() {
 
   async function handleCollectPayment(
     invoice: Invoice,
+    provider: "stripe" | "paypal",
   ): Promise<void> {
     setCollecting(true);
     setStatus({
@@ -350,7 +365,7 @@ export default function AccountingPage() {
 
     try {
       const response = await fetch(
-        `/api/v1/payments/invoices/${invoice.id}/checkout`,
+        `/api/v1/payments/invoices/${invoice.id}/checkout?provider=${provider}`,
         { method: "POST" },
       );
 
@@ -1509,27 +1524,58 @@ export default function AccountingPage() {
               <>
                 <div className="section-divider" />
 
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={collecting}
-                  onClick={() =>
-                    void handleCollectPayment(
-                      selectedInvoice,
-                    )
-                  }
-                >
-                  {collecting
-                    ? "Creating link..."
-                    : "Collect Payment"}
-                </button>
+                <p className="eyebrow">
+                  Collect Payment
+                </p>
+
+                <div className="button-row">
+                  {stripeOn && (
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={
+                        collecting
+                      }
+                      onClick={() =>
+                        void handleCollectPayment(
+                          selectedInvoice,
+                          "stripe",
+                        )
+                      }
+                    >
+                      {collecting
+                        ? "..."
+                        : "Pay by Card"}
+                    </button>
+                  )}
+
+                  {paypalOn && (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={
+                        collecting
+                      }
+                      onClick={() =>
+                        void handleCollectPayment(
+                          selectedInvoice,
+                          "paypal",
+                        )
+                      }
+                    >
+                      {collecting
+                        ? "..."
+                        : "PayPal"}
+                    </button>
+                  )}
+                </div>
 
                 <p className="help-text">
-                  Opens a secure Stripe
-                  checkout link for this
-                  invoice. It is marked
-                  paid automatically once
-                  the client pays.
+                  Opens a secure checkout
+                  link. The invoice is
+                  marked paid
+                  automatically once the
+                  client pays.
                 </p>
               </>
             )}

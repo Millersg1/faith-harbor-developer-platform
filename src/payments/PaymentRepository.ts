@@ -3,6 +3,7 @@ import type {
 } from "node:sqlite";
 
 import type {
+  PaymentProvider,
   PaymentRecord,
   PaymentStatus,
 } from "./PaymentTypes";
@@ -11,6 +12,7 @@ interface PaymentRow {
   id: string;
   invoice_id: string;
   client_id: string;
+  provider: string | null;
   amount: number;
   currency: string;
   status: string;
@@ -39,15 +41,16 @@ export class PaymentRepository {
       this.database
         .prepare(`
           INSERT INTO payments (
-            id, invoice_id, client_id, amount,
+            id, invoice_id, client_id, provider, amount,
             currency, status, session_id, checkout_url,
             created_at, paid_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           payment.id,
           payment.invoiceId,
           payment.clientId,
+          payment.provider,
           payment.amount,
           payment.currency,
           payment.status,
@@ -102,7 +105,7 @@ export class PaymentRepository {
         this.database
           .prepare(`
             SELECT
-              id, invoice_id, client_id, amount,
+              id, invoice_id, client_id, provider, amount,
               currency, status, session_id, checkout_url,
               created_at, paid_at
             FROM payments
@@ -148,6 +151,9 @@ export class PaymentRepository {
       id: row.id,
       invoiceId: row.invoice_id,
       clientId: row.client_id,
+      provider:
+        (row.provider as PaymentProvider) ??
+        "stripe",
       amount: row.amount,
       currency: row.currency,
       status:
