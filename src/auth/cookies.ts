@@ -4,6 +4,13 @@ export const SESSION_COOKIE =
   "fh_session";
 
 /**
+ * Cookie for client-portal sessions. Separate from the admin session
+ * so the two can never be confused for one another.
+ */
+export const PORTAL_COOKIE =
+  "fh_portal";
+
+/**
  * Reads a cookie value from the request without requiring a
  * cookie-parser dependency.
  */

@@ -15,6 +15,11 @@ import {
   handleStripeWebhook,
 } from "./payments/PaymentRouter";
 import { PaymentService } from "./payments/PaymentService";
+import { ClientUserRepository } from "./portal/ClientUserRepository";
+import { ClientUserService } from "./portal/ClientUserService";
+import { createClientUserAdminRouter } from "./portal/ClientUserAdminRouter";
+import { createPortalRouter } from "./portal/PortalRouter";
+import { PortalAuthService } from "./portal/PortalAuthService";
 import {
   DisconnectedStripeGateway,
   HttpStripeGateway,
@@ -293,6 +298,25 @@ export function createApp(
       config.APP_URL ?? "",
     );
 
+  // Client portal: separate multi-user auth so each client can sign
+  // in and see only their own data.
+  const portalAuthService =
+    new PortalAuthService({
+      sessionTtlMs:
+        config.SESSION_TTL_HOURS *
+        60 *
+        60 *
+        1000,
+    });
+
+  const clientUserService =
+    new ClientUserService(
+      clientService,
+      new ClientUserRepository(
+        database,
+      ),
+    );
+
   const ticketRepository =
     new TicketRepository(database);
 
@@ -543,6 +567,9 @@ export function createApp(
         payments:
           "/api/v1/payments",
 
+        portal:
+          "/api/v1/portal",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -672,6 +699,9 @@ export function createApp(
       backupsAvailable:
         Boolean(backupService),
 
+      clientPortalAvailable:
+        true,
+
       hostingManagementAvailable:
         true,
 
@@ -685,6 +715,26 @@ export function createApp(
         new Date().toISOString(),
     });
   });
+
+  // The client portal is mounted BEFORE the admin gate: it has its
+  // own client authentication, so it must not be caught by the
+  // admin-only requireAuth below. Each portal route derives the
+  // client from the portal session and returns only that client's
+  // data.
+  app.use(
+    "/api/v1/portal",
+    createPortalRouter({
+      portalAuth:
+        portalAuthService,
+      clientUsers:
+        clientUserService,
+      clients: clientService,
+      projects: projectService,
+      invoices: invoiceService,
+      tickets: ticketService,
+      payments: paymentService,
+    }),
+  );
 
   // Authentication gate. When an auth service is configured, the
   // login routes are public and everything else under /api/v1
@@ -701,6 +751,14 @@ export function createApp(
       requireAuth(authService),
     );
   }
+
+  // Admin-only: manage client portal logins (behind the gate above).
+  app.use(
+    "/api/v1/client-users",
+    createClientUserAdminRouter(
+      clientUserService,
+    ),
+  );
 
   app.get(
     "/api/v1/departments",
