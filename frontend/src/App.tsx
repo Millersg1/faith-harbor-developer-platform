@@ -9,6 +9,7 @@ import {
 import AuthGate, {
   useAuth,
 } from "./components/AuthGate";
+import PortalApp from "./portal/PortalApp";
 import AccountingPage from "./pages/AccountingPage";
 import AIWorkspacePage from "./pages/AIWorkspacePage";
 import AutomationsPage from "./pages/AutomationsPage";
@@ -189,6 +190,18 @@ const navigationItems =
   );
 
 function App() {
+  const location = useLocation();
+
+  // The client portal is a separate experience with its own login,
+  // outside the admin console and its auth gate.
+  if (
+    location.pathname.startsWith(
+      "/portal",
+    )
+  ) {
+    return <PortalApp />;
+  }
+
   return (
     <AuthGate>
       <div className="app-shell">

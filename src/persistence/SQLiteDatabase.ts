@@ -394,6 +394,17 @@ export class SQLiteDatabase {
         paid_at TEXT
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS client_users (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (client_id)
+          REFERENCES clients(id)
+          ON DELETE CASCADE
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 

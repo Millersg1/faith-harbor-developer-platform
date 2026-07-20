@@ -64,6 +64,17 @@ export function hashPassword(
   )}$${derived.toString("hex")}`;
 }
 
+/**
+ * Verifies a password against a stored "scrypt$salt$hash" string.
+ * Shared by the admin and client-portal authentication.
+ */
+export function verifyPassword(
+  password: string,
+  stored: string,
+): boolean {
+  return verifyHash(password, stored);
+}
+
 function verifyHash(
   password: string,
   stored: string,
