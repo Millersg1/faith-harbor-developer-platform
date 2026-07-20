@@ -68,6 +68,24 @@ describe("parseBrandSmtp", () => {
     expect(accounts[0].secure).toBe(true);
   });
 
+  it("accepts an account without a password (shared default used later)", () => {
+    const accounts = parseBrandSmtp(
+      JSON.stringify([
+        {
+          domain: "saassurface.com",
+          host: "mail.saassurface.com",
+          user: "hello@saassurface.com",
+          secure: true,
+        },
+      ]),
+    );
+
+    expect(accounts).toHaveLength(1);
+    expect(
+      accounts[0].password,
+    ).toBeUndefined();
+  });
+
   it("skips malformed entries and invalid JSON without throwing", () => {
     expect(
       parseBrandSmtp("not json"),
@@ -89,6 +107,71 @@ describe("parseBrandSmtp", () => {
     expect(accounts[0].domain).toBe(
       "ok.com",
     );
+  });
+});
+
+describe("buildBrandTransports password fallback", () => {
+  it("uses the shared default password when an account omits its own, and skips when neither exists", () => {
+    const configs: string[] = [];
+
+    const map = buildBrandTransports(
+      [
+        {
+          domain: "withdefault.com",
+          host: "mail.withdefault.com",
+          user: "hello@withdefault.com",
+        },
+        {
+          domain: "nopassword.com",
+          host: "mail.nopassword.com",
+          user: "hello@nopassword.com",
+        },
+      ],
+      (config) => {
+        configs.push(config.password);
+        return {
+          async send() {
+            return {
+              status: "sent" as const,
+              provider: "smtp",
+            };
+          },
+        };
+      },
+      "shared-secret",
+    );
+
+    // Both accounts omit a password, but a shared default exists, so
+    // both are built with it.
+    expect(map.has("withdefault.com")).toBe(
+      true,
+    );
+    expect(configs).toEqual([
+      "shared-secret",
+      "shared-secret",
+    ]);
+  });
+
+  it("skips a passwordless account when there is no shared default", () => {
+    const map = buildBrandTransports(
+      [
+        {
+          domain: "nopassword.com",
+          host: "mail.nopassword.com",
+          user: "hello@nopassword.com",
+        },
+      ],
+      () => ({
+        async send() {
+          return {
+            status: "sent" as const,
+            provider: "smtp",
+          };
+        },
+      }),
+    );
+
+    expect(map.size).toBe(0);
   });
 });
 

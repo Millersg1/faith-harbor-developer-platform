@@ -237,6 +237,9 @@ export function createApp(
           parseBrandSmtp(
             config.BRAND_SMTP,
           ),
+          undefined,
+          // Brands without their own password reuse the shared one.
+          config.SMTP_PASSWORD,
         );
 
   const emailService =

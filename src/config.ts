@@ -188,10 +188,11 @@ const schema = z.object({
   // Per-brand SMTP mailboxes: a JSON array so each brand's automated
   // email is sent authenticated through its own mailbox (SPF/DKIM
   // align for that domain) instead of relaying through the default.
-  // Matched to a brand by the domain of its from-address. Example:
+  // Matched to a brand by the domain of its from-address. "password"
+  // is optional; when omitted the shared SMTP_PASSWORD is used (the
+  // common case when every mailbox shares one password). Example:
   // [{"domain":"saassurface.com","host":"mail.saassurface.com",
-  //   "port":465,"user":"hello@saassurface.com","password":"...",
-  //   "secure":true}]
+  //   "port":465,"user":"hello@saassurface.com","secure":true}]
   BRAND_SMTP: z
     .string()
     .optional()

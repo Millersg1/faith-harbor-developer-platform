@@ -18,7 +18,14 @@ export interface BrandSmtpAccount {
   host: string;
   port?: number;
   user: string;
-  password: string;
+
+  /**
+   * The mailbox password. Optional: when omitted, the shared default
+   * password (SMTP_PASSWORD) is used, which is the common case when
+   * every mailbox uses the same password.
+   */
+  password?: string;
+
   secure?: boolean;
   rejectUnauthorized?: boolean;
 }
@@ -68,12 +75,10 @@ export function parseBrandSmtp(
     const user = str(record.user);
     const password = str(record.password);
 
-    if (
-      !domain ||
-      !host ||
-      !user ||
-      !password
-    ) {
+    // A mailbox needs a domain to match on, a host to reach, and a
+    // user to authenticate as. The password may be omitted to fall
+    // back to the shared default (SMTP_PASSWORD).
+    if (!domain || !host || !user) {
       continue;
     }
 
@@ -81,8 +86,11 @@ export function parseBrandSmtp(
       domain: domain.toLowerCase(),
       host,
       user,
-      password,
     };
+
+    if (password) {
+      account.password = password;
+    }
 
     if (typeof record.port === "number") {
       account.port = record.port;
@@ -118,6 +126,12 @@ export function buildBrandTransports(
     config: SmtpConfig,
   ) => EmailTransport = (config) =>
     new SmtpEmailTransport(config),
+
+  /**
+   * Password used for any mailbox that omits its own. Lets every brand
+   * share one password (SMTP_PASSWORD) without repeating the secret.
+   */
+  defaultPassword?: string,
 ): Map<string, EmailTransport> {
   const map = new Map<
     string,
@@ -125,11 +139,20 @@ export function buildBrandTransports(
   >();
 
   for (const account of accounts) {
+    const password =
+      account.password ?? defaultPassword;
+
+    // Without a password (own or shared) the mailbox cannot
+    // authenticate, so it is skipped.
+    if (!password) {
+      continue;
+    }
+
     const config: SmtpConfig = {
       host: account.host,
       port: account.port ?? 465,
       user: account.user,
-      password: account.password,
+      password,
     };
 
     if (account.secure !== undefined) {
