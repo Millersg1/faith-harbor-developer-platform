@@ -201,6 +201,98 @@ export default function ClientsPage() {
     setCreatingClient,
   ] = useState(false);
 
+  const [portalEmail, setPortalEmail] =
+    useState("");
+
+  const [
+    creatingLogin,
+    setCreatingLogin,
+  ] = useState(false);
+
+  const [
+    portalCredentials,
+    setPortalCredentials,
+  ] = useState<{
+    email: string;
+    password: string;
+  } | null>(null);
+
+  async function createPortalLogin(
+    clientId: string,
+  ): Promise<void> {
+    const email = portalEmail.trim();
+
+    if (!email) {
+      setStatus({
+        message:
+          "Enter the client's email to create a login.",
+        type: "error",
+      });
+
+      return;
+    }
+
+    setCreatingLogin(true);
+    setPortalCredentials(null);
+
+    try {
+      // The server generates the temporary password with a secure RNG
+      // and returns it once, so no credential is minted in the browser.
+      const response = await fetch(
+        "/api/v1/client-users",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            clientId,
+            email,
+          }),
+        },
+      );
+
+      const data =
+        (await response.json()) as {
+          temporaryPassword?: string;
+          error?: {
+            message?: string;
+          };
+        };
+
+      if (!response.ok) {
+        throw new Error(
+          data.error?.message ??
+            "Could not create the login.",
+        );
+      }
+
+      setPortalEmail("");
+      setPortalCredentials({
+        email,
+        password:
+          data.temporaryPassword ??
+          "(set by you)",
+      });
+      setStatus({
+        message:
+          "Portal login created. Share the credentials below with your client.",
+        type: "success",
+      });
+    } catch (error) {
+      setStatus({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not create the login.",
+        type: "error",
+      });
+    } finally {
+      setCreatingLogin(false);
+    }
+  }
+
   useEffect(() => {
     let requestCancelled = false;
 
@@ -1024,6 +1116,82 @@ export default function ClientsPage() {
                   ),
                 )}
               </div>
+            </div>
+
+            <div className="section-divider" />
+
+            <div>
+              <p className="eyebrow">
+                Client Portal
+              </p>
+
+              <h4>Portal Login</h4>
+
+              <p className="help-text">
+                Create a login so this
+                client can sign in at
+                /portal to see their
+                projects, invoices, and
+                support.
+              </p>
+
+              <div className="form-group">
+                <label htmlFor="portal-email">
+                  Client email
+                </label>
+
+                <input
+                  id="portal-email"
+                  type="email"
+                  value={portalEmail}
+                  onChange={(event) =>
+                    setPortalEmail(
+                      event.target
+                        .value,
+                    )
+                  }
+                />
+              </div>
+
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={
+                  creatingLogin
+                }
+                onClick={() =>
+                  void createPortalLogin(
+                    selectedWorkspace
+                      .client.id,
+                  )
+                }
+              >
+                {creatingLogin
+                  ? "Creating..."
+                  : "Create Portal Login"}
+              </button>
+
+              {portalCredentials && (
+                <div className="status-message success">
+                  Login created —
+                  share these with your
+                  client:
+                  <br />
+                  <strong>
+                    Email:
+                  </strong>{" "}
+                  {
+                    portalCredentials.email
+                  }
+                  <br />
+                  <strong>
+                    Password:
+                  </strong>{" "}
+                  {
+                    portalCredentials.password
+                  }
+                </div>
+              )}
             </div>
 
             <div className="section-divider" />
