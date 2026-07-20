@@ -39,6 +39,9 @@ import { AiDraftPersonalizer } from "./automation/DraftPersonalizer";
 import { createAuthRouter } from "./auth/AuthRouter";
 import { AdminSettingsRepository } from "./auth/AdminSettingsRepository";
 import { BackupService } from "./backup/BackupService";
+import { BrandRepository } from "./brands/BrandRepository";
+import { createBrandRouter } from "./brands/BrandRouter";
+import { BrandService } from "./brands/BrandService";
 import { createBackupRouter } from "./backup/BackupRouter";
 import { CampaignRepository } from "./marketing/CampaignRepository";
 import { createCampaignRouter } from "./marketing/CampaignRouter";
@@ -170,6 +173,13 @@ export function createApp(
 
   const clientService =
     new ClientService(database);
+
+  // Brands: the businesses run under one LLC (e.g. Faith Harbor Web
+  // Hosting, All Elite Hosting). Clients are tagged with a brand.
+  const brandService =
+    new BrandService(
+      new BrandRepository(database),
+    );
 
   // Email is safe by default: when no provider is configured the
   // logging transport records messages to the outbox without sending.
@@ -558,6 +568,9 @@ export function createApp(
         clients:
           "/api/v1/clients",
 
+        brands:
+          "/api/v1/brands",
+
         ai:
           "/api/v1/ai",
 
@@ -827,6 +840,13 @@ export function createApp(
     projectService,
   ),
 );
+
+  app.use(
+    "/api/v1/brands",
+    createBrandRouter(
+      brandService,
+    ),
+  );
 
   app.use(
     "/api/v1/ai",

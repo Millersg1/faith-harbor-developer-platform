@@ -15,6 +15,12 @@ export interface ClientRecord {
 
   notes?: string;
 
+  /**
+   * The brand this client belongs to (which of our businesses they
+   * are a customer of), when set.
+   */
+  brandId?: string;
+
   createdAt: string;
 
   updatedAt: string;
@@ -36,6 +42,8 @@ export interface CreateClientRequest {
   industry?: string;
 
   notes?: string;
+
+  brandId?: string;
 
   metadata?: Record<string, unknown>;
 }

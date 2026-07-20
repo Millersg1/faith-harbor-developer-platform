@@ -48,6 +48,12 @@ const createClientSchema =
       .min(1)
       .optional(),
 
+    brandId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional(),
+
     metadata: z
       .record(z.unknown())
       .optional(),

@@ -191,6 +191,63 @@ export default function SystemAdministration() {
     }
   }
 
+  // ---- Brands ----
+  interface Brand {
+    id: string;
+    name: string;
+    domain?: string;
+    fromEmail?: string;
+    emailSignature?: string;
+  }
+
+  const [brands, setBrands] =
+    useState<Brand[]>([]);
+  const [newBrand, setNewBrand] =
+    useState({
+      name: "",
+      domain: "",
+      fromEmail: "",
+      emailSignature: "",
+    });
+
+  const loadBrands =
+    async (): Promise<void> => {
+      const data = await getJson<{
+        brands?: Brand[];
+      }>("/api/v1/brands");
+      setBrands(
+        data?.brands ?? [],
+      );
+    };
+
+  useEffect(() => {
+    void loadBrands();
+  }, []);
+
+  async function addBrand(): Promise<void> {
+    if (!newBrand.name.trim()) {
+      return;
+    }
+
+    await fetch("/api/v1/brands", {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(newBrand),
+    });
+
+    setNewBrand({
+      name: "",
+      domain: "",
+      fromEmail: "",
+      emailSignature: "",
+    });
+
+    await loadBrands();
+  }
+
   // ---- Security: password change + 2FA ----
   const [authConfigured, setAuthConfigured] =
     useState(false);
@@ -793,6 +850,136 @@ export default function SystemAdministration() {
           database. Automatic daily;
           the most recent are kept.
         </p>
+      </div>
+
+      <div className="card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">
+              Organization
+            </p>
+
+            <h3>Brands</h3>
+          </div>
+        </div>
+
+        <p className="help-text">
+          The businesses you run under
+          one company (e.g. Faith Harbor
+          Web Hosting, All Elite
+          Hosting). Tag clients with a
+          brand; each brand can send
+          email in its own voice.
+        </p>
+
+        {brands.length > 0 && (
+          <div className="record-list">
+            {brands.map((brand) => (
+              <div
+                className="line-item-summary"
+                key={brand.id}
+              >
+                <span>
+                  {brand.name}
+                </span>
+                <span>
+                  {brand.fromEmail ??
+                    brand.domain ??
+                    ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="form-group">
+          <label htmlFor="brand-name">
+            Brand name
+          </label>
+          <input
+            id="brand-name"
+            type="text"
+            value={newBrand.name}
+            onChange={(e) =>
+              setNewBrand({
+                ...newBrand,
+                name: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="brand-domain">
+            Domain
+          </label>
+          <input
+            id="brand-domain"
+            type="text"
+            placeholder="allelitehosting.com"
+            value={newBrand.domain}
+            onChange={(e) =>
+              setNewBrand({
+                ...newBrand,
+                domain:
+                  e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="brand-from">
+            From email
+          </label>
+          <input
+            id="brand-from"
+            type="email"
+            placeholder="hello@allelitehosting.com"
+            value={newBrand.fromEmail}
+            onChange={(e) =>
+              setNewBrand({
+                ...newBrand,
+                fromEmail:
+                  e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="brand-sig">
+            Email signature (this
+            brand's voice)
+          </label>
+          <textarea
+            id="brand-sig"
+            rows={3}
+            placeholder={
+              "The All Elite Hosting Team"
+            }
+            value={
+              newBrand.emailSignature
+            }
+            onChange={(e) =>
+              setNewBrand({
+                ...newBrand,
+                emailSignature:
+                  e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() =>
+            void addBrand()
+          }
+        >
+          Add Brand
+        </button>
       </div>
 
       {authConfigured && (

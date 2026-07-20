@@ -59,6 +59,12 @@ interface ClientFormData {
   website: string;
   industry: string;
   notes: string;
+  brandId: string;
+}
+
+interface Brand {
+  id: string;
+  name: string;
 }
 
 const emptyForm:
@@ -70,6 +76,7 @@ const emptyForm:
     website: "",
     industry: "",
     notes: "",
+    brandId: "",
   };
 
 function formatDate(
@@ -200,6 +207,26 @@ export default function ClientsPage() {
     creatingClient,
     setCreatingClient,
   ] = useState(false);
+
+  const [brands, setBrands] =
+    useState<Brand[]>([]);
+
+  useEffect(() => {
+    fetch("/api/v1/brands")
+      .then((r) =>
+        r.ok ? r.json() : null,
+      )
+      .then(
+        (data: {
+          brands?: Brand[];
+        } | null) => {
+          if (data?.brands) {
+            setBrands(data.brands);
+          }
+        },
+      )
+      .catch(() => {});
+  }, []);
 
   const [portalEmail, setPortalEmail] =
     useState("");
@@ -488,6 +515,10 @@ export default function ClientsPage() {
               formData.notes
                 .trim() ||
               undefined,
+
+            brandId:
+              formData.brandId ||
+              undefined,
           }),
         },
       );
@@ -745,6 +776,47 @@ export default function ClientsPage() {
                 required
               />
             </div>
+
+            {brands.length > 0 && (
+              <div className="form-group">
+                <label htmlFor="client-brand">
+                  Brand
+                </label>
+
+                <select
+                  id="client-brand"
+                  value={
+                    formData.brandId
+                  }
+                  onChange={(event) =>
+                    updateFormField(
+                      "brandId",
+                      event.target
+                        .value,
+                    )
+                  }
+                >
+                  <option value="">
+                    No brand
+                  </option>
+
+                  {brands.map(
+                    (brand) => (
+                      <option
+                        key={
+                          brand.id
+                        }
+                        value={
+                          brand.id
+                        }
+                      >
+                        {brand.name}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+            )}
 
             <div className="form-row">
               <div className="form-group">
