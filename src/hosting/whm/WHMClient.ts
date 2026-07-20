@@ -37,8 +37,50 @@ export type WHMFetch = (
   init?: {
     method?: string;
     headers?: Record<string, string>;
+    body?: string;
   },
 ) => Promise<WHMFetchResponse>;
+
+/**
+ * Everything needed to provision one cPanel account through WHM.
+ */
+export interface WHMCreateAccountRequest {
+  /**
+   * cPanel username (WHM constraints: <= 16 chars, alphanumeric,
+   * lowercase, starts with a letter).
+   */
+  username: string;
+
+  /**
+   * Primary domain for the account.
+   */
+  domain: string;
+
+  /**
+   * Initial cPanel password.
+   */
+  password: string;
+
+  /**
+   * WHM package (plan) name to create the account under.
+   */
+  plan?: string;
+
+  /**
+   * Contact email stored on the account (for cPanel notices).
+   */
+  contactEmail?: string;
+}
+
+/**
+ * The result of a successful account creation.
+ */
+export interface WHMCreatedAccount {
+  username: string;
+  domain: string;
+  ipAddress?: string;
+  nameservers?: string[];
+}
 
 interface WHMEnvelope {
   metadata?: {
@@ -59,11 +101,13 @@ function toNumber(
 }
 
 /**
- * Read-only client for the WHM JSON API.
+ * Client for the WHM JSON API.
  *
- * This client intentionally exposes only observation methods. It
- * never creates, suspends, or terminates accounts. Destructive
- * operations must remain under human authority.
+ * Observation methods (listAccounts, serverStatus) are always safe.
+ * Account creation (createAccount) provisions real cPanel accounts and
+ * is used only by the provisioning flow, which is gated behind a paid
+ * order. Destructive operations (suspend/terminate) are deliberately
+ * NOT exposed here yet — those remain under explicit human authority.
  */
 export class WHMClient {
   constructor(
@@ -130,6 +174,63 @@ export class WHMClient {
   }
 
   /**
+   * Provisions a new cPanel account through WHM (createacct).
+   *
+   * Sent as a POST so the password is never placed in a URL (which
+   * servers commonly log). Throws when WHM reports failure (for
+   * example a duplicate username or domain).
+   */
+  async createAccount(
+    request: WHMCreateAccountRequest,
+  ): Promise<WHMCreatedAccount> {
+    const params: Record<string, string> =
+      {
+        username: request.username,
+        domain: request.domain,
+        password: request.password,
+      };
+
+    if (request.plan) {
+      params.plan = request.plan;
+    }
+
+    if (request.contactEmail) {
+      params.contactemail =
+        request.contactEmail;
+    }
+
+    const envelope = await this.call(
+      "createacct",
+      params,
+      "POST",
+    );
+
+    const data =
+      (envelope.data ??
+        {}) as Record<string, unknown>;
+
+    const result: WHMCreatedAccount = {
+      username: request.username,
+      domain: request.domain,
+    };
+
+    if (data.ip) {
+      result.ipAddress = String(
+        data.ip,
+      );
+    }
+
+    if (Array.isArray(data.nameserver)) {
+      result.nameservers =
+        data.nameserver.map((ns) =>
+          String(ns),
+        );
+    }
+
+    return result;
+  }
+
+  /**
    * Returns the current server load average from WHM.
    */
   async serverStatus():
@@ -157,27 +258,54 @@ export class WHMClient {
 
   /**
    * Calls a WHM JSON API function and validates the envelope.
+   *
+   * GET requests carry parameters in the query string; POST requests
+   * (used for writes such as account creation) carry them in a
+   * form-encoded body so secrets never appear in a URL.
    */
   private async call(
     functionName: string,
+    params: Record<string, string> = {},
+    method: "GET" | "POST" = "GET",
   ): Promise<WHMEnvelope> {
     const scheme =
       this.config.useSsl
         ? "https"
         : "http";
 
-    const url =
+    const query = new URLSearchParams({
+      "api.version": "1",
+      ...params,
+    });
+
+    const base =
       `${scheme}://${this.config.host}:${this.config.port}` +
-      `/json-api/${functionName}?api.version=1`;
+      `/json-api/${functionName}`;
+
+    const headers: Record<string, string> =
+      {
+        Authorization:
+          `whm ${this.config.user}:${this.config.apiToken}`,
+      };
+
+    const init: {
+      method: string;
+      headers: Record<string, string>;
+      body?: string;
+    } = { method, headers };
+
+    let url = base;
+
+    if (method === "POST") {
+      headers["Content-Type"] =
+        "application/x-www-form-urlencoded";
+      init.body = query.toString();
+    } else {
+      url = `${base}?${query.toString()}`;
+    }
 
     const response =
-      await this.fetchFn(url, {
-        method: "GET",
-        headers: {
-          Authorization:
-            `whm ${this.config.user}:${this.config.apiToken}`,
-        },
-      });
+      await this.fetchFn(url, init);
 
     if (!response.ok) {
       throw new Error(

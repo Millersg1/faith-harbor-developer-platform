@@ -142,6 +142,109 @@ describe("WHMClient", () => {
     );
   });
 
+  it("creates an account via POST without the password in the URL", async () => {
+    const captured: {
+      url?: string;
+      method?: string;
+      body?: string;
+    } = {};
+
+    const client = new WHMClient(
+      config,
+      async (url, init) => {
+        captured.url = url;
+        captured.method = init?.method;
+        captured.body = init?.body;
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            metadata: { result: 1 },
+            data: {
+              ip: "203.0.113.20",
+              nameserver: [
+                "ns1.example.com",
+                "ns2.example.com",
+              ],
+            },
+          }),
+        };
+      },
+    );
+
+    const created =
+      await client.createAccount({
+        username: "graceco",
+        domain: "gracechapel.org",
+        password: "s3cr3t-pass",
+        plan: "Starter",
+        contactEmail:
+          "pastor@gracechapel.org",
+      });
+
+    expect(created).toEqual({
+      username: "graceco",
+      domain: "gracechapel.org",
+      ipAddress: "203.0.113.20",
+      nameservers: [
+        "ns1.example.com",
+        "ns2.example.com",
+      ],
+    });
+
+    // POST to createacct.
+    expect(captured.method).toBe(
+      "POST",
+    );
+    expect(captured.url).toContain(
+      "/json-api/createacct",
+    );
+
+    // Secrets are in the body, never the URL.
+    expect(captured.url).not.toContain(
+      "s3cr3t-pass",
+    );
+    expect(captured.body).toContain(
+      "password=s3cr3t-pass",
+    );
+    expect(captured.body).toContain(
+      "username=graceco",
+    );
+    expect(captured.body).toContain(
+      "plan=Starter",
+    );
+    expect(captured.body).toContain(
+      "contactemail=pastor",
+    );
+  });
+
+  it("throws when account creation is rejected by WHM", async () => {
+    const client = new WHMClient(
+      config,
+      stubFetch(
+        {
+          metadata: {
+            result: 0,
+            reason:
+              "Username already exists.",
+          },
+        },
+        {},
+      ),
+    );
+
+    await expect(
+      client.createAccount({
+        username: "taken",
+        domain: "taken.example",
+        password: "x",
+      }),
+    ).rejects.toThrow(
+      "Username already exists.",
+    );
+  });
+
   it("throws when WHM reports a failed result", async () => {
     const client = new WHMClient(
       config,
