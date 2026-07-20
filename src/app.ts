@@ -91,6 +91,9 @@ import { ProductService } from "./engineering/ProductService";
 import { HostingAccountRepository } from "./hosting/HostingAccountRepository";
 import { HostingAccountService } from "./hosting/HostingAccountService";
 import { createHostingRouter } from "./hosting/HostingRouter";
+import { HostingPlanRepository } from "./hosting/plans/HostingPlanRepository";
+import { HostingPlanService } from "./hosting/plans/HostingPlanService";
+import { createHostingPlanRouter } from "./hosting/plans/HostingPlanRouter";
 import { HostingAssistantService } from "./hosting/assistant/HostingAssistantService";
 import { nodeDnsResolver } from "./hosting/assistant/HostingDiagnostics";
 import { WHMClient } from "./hosting/whm/WHMClient";
@@ -490,6 +493,17 @@ export function createApp(
       clientService,
       hostingRepository,
     );
+
+  // The hosting plan catalog customers order from. Seeded with the
+  // standard NVMe shared-hosting tiers on first run; editable after.
+  const hostingPlanService =
+    new HostingPlanService(
+      new HostingPlanRepository(
+        database,
+      ),
+    );
+
+  hostingPlanService.seedDefaults();
 
   // The WHM connection is optional and read-only. It is enabled
   // only when both a host and an API token are configured.
@@ -1049,6 +1063,13 @@ export function createApp(
   // Exposed so the server entry point can run periodic scans.
   app.locals.automationScanner =
     automationScanner;
+
+  app.use(
+    "/api/v1/hosting/plans",
+    createHostingPlanRouter(
+      hostingPlanService,
+    ),
+  );
 
   app.use(
     "/api/v1/hosting",
