@@ -66,6 +66,46 @@ describe("BrandRouter", () => {
     );
   });
 
+  it("updates a brand's signature and from-address in place", async () => {
+    const app = createApp();
+
+    const created = await request(app)
+      .post("/api/v1/brands")
+      .send({
+        name: "SaaS Surface",
+        fromEmail: "hello@saassurface.com",
+        emailSignature: "Old signature",
+      });
+
+    const id = created.body.id;
+
+    const updated = await request(app)
+      .put(`/api/v1/brands/${id}`)
+      .send({
+        name: "SaaS Surface",
+        fromEmail: "hello@saassurface.com",
+        emailSignature:
+          "— The SaaS Surface Team",
+      });
+
+    expect(updated.status).toBe(200);
+    expect(
+      updated.body.emailSignature,
+    ).toBe("— The SaaS Surface Team");
+
+    // Persisted, not just echoed.
+    const list = await request(app).get(
+      "/api/v1/brands",
+    );
+
+    expect(
+      list.body.brands[0].emailSignature,
+    ).toBe("— The SaaS Surface Team");
+    expect(
+      list.body.brands[0].fromEmail,
+    ).toBe("hello@saassurface.com");
+  });
+
   it("rejects a brand with no name", async () => {
     const app = createApp();
 

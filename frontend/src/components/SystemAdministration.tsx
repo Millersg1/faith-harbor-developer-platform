@@ -210,6 +210,13 @@ export default function SystemAdministration() {
       emailSignature: "",
     });
 
+  // When set, the Brands form is editing an existing brand (PUT)
+  // rather than creating a new one (POST).
+  const [
+    editingBrandId,
+    setEditingBrandId,
+  ] = useState<string | null>(null);
+
   const loadBrands =
     async (): Promise<void> => {
       const data = await getJson<{
@@ -224,26 +231,51 @@ export default function SystemAdministration() {
     void loadBrands();
   }, []);
 
-  async function addBrand(): Promise<void> {
-    if (!newBrand.name.trim()) {
-      return;
-    }
-
-    await fetch("/api/v1/brands", {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          "application/json",
-      },
-      body: JSON.stringify(newBrand),
-    });
-
+  function resetBrandForm(): void {
     setNewBrand({
       name: "",
       domain: "",
       fromEmail: "",
       emailSignature: "",
     });
+    setEditingBrandId(null);
+  }
+
+  function startEditBrand(
+    brand: Brand,
+  ): void {
+    setNewBrand({
+      name: brand.name,
+      domain: brand.domain ?? "",
+      fromEmail: brand.fromEmail ?? "",
+      emailSignature:
+        brand.emailSignature ?? "",
+    });
+    setEditingBrandId(brand.id);
+  }
+
+  async function saveBrand(): Promise<void> {
+    if (!newBrand.name.trim()) {
+      return;
+    }
+
+    await fetch(
+      editingBrandId
+        ? `/api/v1/brands/${editingBrandId}`
+        : "/api/v1/brands",
+      {
+        method: editingBrandId
+          ? "PUT"
+          : "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify(newBrand),
+      },
+    );
+
+    resetBrandForm();
 
     await loadBrands();
   }
@@ -962,7 +994,18 @@ export default function SystemAdministration() {
                 <span>
                   {brand.fromEmail ??
                     brand.domain ??
-                    ""}
+                    ""}{" "}
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      startEditBrand(
+                        brand,
+                      )
+                    }
+                  >
+                    Edit
+                  </button>
                 </span>
               </div>
             ))}
@@ -1052,11 +1095,25 @@ export default function SystemAdministration() {
           type="button"
           className="secondary-button"
           onClick={() =>
-            void addBrand()
+            void saveBrand()
           }
         >
-          Add Brand
+          {editingBrandId
+            ? "Save Changes"
+            : "Add Brand"}
         </button>
+
+        {editingBrandId && (
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() =>
+              resetBrandForm()
+            }
+          >
+            Cancel
+          </button>
+        )}
       </div>
 
       <div className="card">

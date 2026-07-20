@@ -75,6 +75,9 @@ export class BrandService {
       fromEmail:
         request.fromEmail?.trim() ||
         undefined,
+      emailSignature:
+        request.emailSignature?.trim() ||
+        undefined,
       updatedAt:
         new Date().toISOString(),
     };
