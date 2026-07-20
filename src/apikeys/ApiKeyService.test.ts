@@ -22,8 +22,12 @@ describe("ApiKeyService", () => {
     );
     // The stored summary never carries the hash or the raw key.
     expect(
-      (created.apiKey as Record<string, unknown>)
-        .keyHash,
+      (
+        created.apiKey as unknown as Record<
+          string,
+          unknown
+        >
+      ).keyHash,
     ).toBeUndefined();
   });
 
