@@ -194,6 +194,15 @@ const schema = z.object({
     .max(1440)
     .default(360),
 
+  // How often the SaaS Surface drip engine checks for onboarding-email
+  // steps that have come due and auto-sends them. Set to 0 to disable.
+  SEQUENCE_TICK_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(1440)
+    .default(5),
+
   // Days without an update before an open lead is treated as quiet
   // and a follow-up draft is prepared.
   AUTOMATION_LEAD_QUIET_DAYS: z.coerce

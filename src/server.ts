@@ -4,6 +4,7 @@ import { AutomationScheduler } from "./automation/AutomationScheduler";
 import type { BackupService } from "./backup/BackupService";
 import { config } from "./config";
 import type { SQLiteDatabase } from "./persistence/SQLiteDatabase";
+import type { SequenceService } from "./sequences/SequenceService";
 
 async function startServer(): Promise<void> {
   const app = await createConfiguredApp();
@@ -33,6 +34,42 @@ async function startServer(): Promise<void> {
       : undefined;
 
   scheduler?.start();
+
+  // SaaS Surface drip engine: on each tick, any onboarding-email step
+  // that has come due is auto-sent. This reuses the automation
+  // scheduler's safe interval runner (guards against overlap, swallows
+  // errors). Distinct from the human-approved automation drafts above.
+  const sequenceService =
+    app.locals.sequenceService as
+      | SequenceService
+      | undefined;
+
+  const sequenceScheduler =
+    sequenceService &&
+    config.SEQUENCE_TICK_INTERVAL_MINUTES >
+      0
+      ? new AutomationScheduler(
+          () =>
+            sequenceService.tick(),
+          config.SEQUENCE_TICK_INTERVAL_MINUTES *
+            60 *
+            1000,
+          {
+            log: (message) =>
+              console.log(message),
+            error: (
+              message,
+              error,
+            ) =>
+              console.error(
+                message,
+                error,
+              ),
+          },
+        )
+      : undefined;
+
+  sequenceScheduler?.start();
 
   // Automatic database backups: one at startup, then on an interval.
   // A consistent snapshot is safe to take while the app is serving.
@@ -103,6 +140,8 @@ async function startServer(): Promise<void> {
     );
 
     scheduler?.stop();
+
+    sequenceScheduler?.stop();
 
     if (backupTimer) {
       clearInterval(backupTimer);
