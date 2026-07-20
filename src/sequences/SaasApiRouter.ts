@@ -216,6 +216,33 @@ export function createSaasApiRouter(
         return;
       }
 
+      // Tenant isolation: a key may only enroll into a workflow that
+      // belongs to the same brand it acts for. A key with no brand
+      // owns the unbranded space. Unknown-or-other-brand workflows
+      // return 404 so a key cannot probe another brand's ids.
+      const sequence =
+        sequences.getSequence(
+          workflowId,
+        );
+
+      const callerBrand =
+        req.apiKey?.brandId ?? null;
+
+      if (
+        !sequence ||
+        (sequence.brandId ?? null) !==
+          callerBrand
+      ) {
+        res.status(404).json({
+          error: {
+            code: "ENROLLMENT_FAILED",
+            message: `Workflow "${workflowId}" was not found.`,
+          },
+        });
+
+        return;
+      }
+
       try {
         const result =
           sequences.enroll({

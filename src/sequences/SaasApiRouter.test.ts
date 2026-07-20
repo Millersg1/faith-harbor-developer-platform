@@ -112,6 +112,69 @@ describe("SaaS Surface API (/api/zapier)", () => {
     ).toBe("buyer@example.com");
   });
 
+  it("prevents a key from enrolling into another brand's workflow", async () => {
+    const app = createApp();
+
+    // Brand A with its own API key creates a workflow.
+    const brandRes = await request(app)
+      .post("/api/v1/brands")
+      .send({ name: "Brand A" });
+
+    const brandId = brandRes.body.id;
+
+    const brandKeyRes = await request(
+      app,
+    )
+      .post("/api/v1/api-keys")
+      .send({
+        name: "Brand A key",
+        brandId,
+      });
+
+    const brandKey =
+      brandKeyRes.body.key as string;
+
+    const workflowRes = await request(
+      app,
+    )
+      .post(
+        "/api/zapier/actions/create-workflow",
+      )
+      .set("X-API-Key", brandKey)
+      .send({
+        name: "Brand A onboarding",
+        steps: [
+          {
+            subject: "Welcome",
+            body: "Hi",
+          },
+        ],
+      });
+
+    const workflowId =
+      workflowRes.body.workflow.id;
+
+    // A different (unbranded) key must not reach Brand A's workflow.
+    const otherKey = await createApiKey(
+      app,
+    );
+
+    const res = await request(app)
+      .post(
+        "/api/zapier/actions/enroll-in-workflow",
+      )
+      .set("X-API-Key", otherKey)
+      .send({
+        email: "buyer@example.com",
+        workflow_id: workflowId,
+      });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe(
+      "ENROLLMENT_FAILED",
+    );
+  });
+
   it("rejects enrollment into an unknown workflow", async () => {
     const app = createApp();
 
