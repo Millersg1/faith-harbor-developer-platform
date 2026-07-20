@@ -31,6 +31,12 @@ import {
   HttpStripeGateway,
   type StripeGateway,
 } from "./payments/StripeGateway";
+import { ApiKeyRepository } from "./apikeys/ApiKeyRepository";
+import { ApiKeyService } from "./apikeys/ApiKeyService";
+import { createApiKeyAdminRouter } from "./apikeys/ApiKeyAdminRouter";
+import { SequenceRepository } from "./sequences/SequenceRepository";
+import { SequenceService } from "./sequences/SequenceService";
+import { createSaasApiRouter } from "./sequences/SaasApiRouter";
 import { AutomationRepository } from "./automation/AutomationRepository";
 import { createAutomationRouter } from "./automation/AutomationRouter";
 import { AutomationScanner } from "./automation/AutomationScanner";
@@ -222,6 +228,29 @@ export function createApp(
         config.ADMIN_EMAIL ??
         "Faith Harbor OS",
       new EmailRepository(database),
+    );
+
+  // SaaS Surface engine: API keys authenticate external callers (a
+  // product's Stripe webhook, the /create business launcher), and the
+  // sequence service runs the auto-sending drip-email workflows. This
+  // makes Faith Harbor OS the backend that powers SaaS Surface, so its
+  // AI cost, email, and contacts all live in one place.
+  const apiKeyService =
+    new ApiKeyService(
+      new ApiKeyRepository(database),
+    );
+
+  const sequenceService =
+    new SequenceService(
+      new SequenceRepository(database),
+      emailService,
+      {
+        brands: brandService,
+        clients: clientService,
+        defaultFrom:
+          config.EMAIL_FROM ??
+          config.ADMIN_EMAIL,
+      },
     );
 
   // The automation engine prepares proposed actions (today, email
@@ -616,6 +645,9 @@ export function createApp(
         portal:
           "/api/v1/portal",
 
+        saasSurface:
+          "/api/zapier/me",
+
         hosting:
           "/api/v1/hosting/accounts",
 
@@ -758,6 +790,9 @@ export function createApp(
       clientPortalAvailable:
         true,
 
+      saasSurfaceApiAvailable:
+        true,
+
       hostingManagementAvailable:
         true,
 
@@ -792,6 +827,31 @@ export function createApp(
     }),
   );
 
+  // SaaS Surface API is mounted BEFORE the admin gate: external
+  // systems authenticate with an X-API-Key, not a browser session, so
+  // it must not be caught by the admin-only requireAuth below. Every
+  // route here is API-key authenticated inside the router.
+  app.use(
+    "/api/zapier",
+    createSaasApiRouter(
+      apiKeyService,
+      sequenceService,
+      {
+        brands: brandService,
+        defaultEmail:
+          config.EMAIL_FROM ??
+          config.ADMIN_EMAIL,
+        accountName: config.APP_NAME,
+        ai: aiService,
+      },
+    ),
+  );
+
+  // Exposed so the server entry point can run the periodic sequence
+  // tick that auto-sends due drip-email steps.
+  app.locals.sequenceService =
+    sequenceService;
+
   // Authentication gate. When an auth service is configured, the
   // login routes are public and everything else under /api/v1
   // requires a valid session. The static UI shell stays public so
@@ -813,6 +873,14 @@ export function createApp(
     "/api/v1/client-users",
     createClientUserAdminRouter(
       clientUserService,
+    ),
+  );
+
+  // Admin-only: issue and revoke SaaS Surface API keys.
+  app.use(
+    "/api/v1/api-keys",
+    createApiKeyAdminRouter(
+      apiKeyService,
     ),
   );
 

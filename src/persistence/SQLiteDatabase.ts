@@ -422,6 +422,37 @@ export class SQLiteDatabase {
           ON DELETE CASCADE
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        brand_id TEXT,
+        key_hash TEXT NOT NULL UNIQUE,
+        prefix TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_used_at TEXT
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS sequences (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        brand_id TEXT,
+        steps_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS sequence_enrollments (
+        id TEXT PRIMARY KEY,
+        sequence_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        name TEXT,
+        client_id TEXT,
+        position INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        next_send_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 
@@ -538,6 +569,12 @@ export class SQLiteDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_emails_created
         ON emails(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_sequence_enrollments_due
+        ON sequence_enrollments(status, next_send_at);
+
+      CREATE INDEX IF NOT EXISTS idx_sequence_enrollments_lookup
+        ON sequence_enrollments(sequence_id, email);
     `);
   }
 

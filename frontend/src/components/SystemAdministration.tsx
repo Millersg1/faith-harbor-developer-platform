@@ -248,6 +248,83 @@ export default function SystemAdministration() {
     await loadBrands();
   }
 
+  // ---- SaaS Surface API keys ----
+  interface ApiKeySummary {
+    id: string;
+    name: string;
+    brandId?: string;
+    prefix: string;
+    createdAt: string;
+    lastUsedAt?: string;
+  }
+
+  const [apiKeys, setApiKeys] =
+    useState<ApiKeySummary[]>([]);
+  const [newKeyName, setNewKeyName] =
+    useState("");
+  const [newKeyBrand, setNewKeyBrand] =
+    useState("");
+  const [createdKey, setCreatedKey] =
+    useState<string | null>(null);
+
+  const loadApiKeys =
+    async (): Promise<void> => {
+      const data = await getJson<{
+        apiKeys?: ApiKeySummary[];
+      }>("/api/v1/api-keys");
+      setApiKeys(
+        data?.apiKeys ?? [],
+      );
+    };
+
+  useEffect(() => {
+    void loadApiKeys();
+  }, []);
+
+  async function createApiKey(): Promise<void> {
+    if (!newKeyName.trim()) {
+      return;
+    }
+
+    const r = await fetch(
+      "/api/v1/api-keys",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          name: newKeyName,
+          brandId:
+            newKeyBrand || undefined,
+        }),
+      },
+    );
+
+    if (r.ok) {
+      const data =
+        (await r.json()) as {
+          key: string;
+        };
+      // Shown once; it cannot be recovered later.
+      setCreatedKey(data.key);
+      setNewKeyName("");
+      setNewKeyBrand("");
+      await loadApiKeys();
+    }
+  }
+
+  async function revokeApiKey(
+    id: string,
+  ): Promise<void> {
+    await fetch(
+      `/api/v1/api-keys/${id}`,
+      { method: "DELETE" },
+    );
+    await loadApiKeys();
+  }
+
   // ---- Security: password change + 2FA ----
   const [authConfigured, setAuthConfigured] =
     useState(false);
@@ -979,6 +1056,134 @@ export default function SystemAdministration() {
           }
         >
           Add Brand
+        </button>
+      </div>
+
+      <div className="card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">
+              SaaS Surface Engine
+            </p>
+
+            <h3>API Keys</h3>
+          </div>
+        </div>
+
+        <p className="help-text">
+          Faith Harbor OS is the engine
+          behind SaaS Surface. Create a
+          key, then point saassurface.com
+          (and your product Stripe
+          webhooks) at{" "}
+          <code>
+            {`${window.location.origin}/api/zapier`}
+          </code>{" "}
+          with the header{" "}
+          <code>X-API-Key</code>. AI run
+          through this engine is tracked
+          in AI Spend above.
+        </p>
+
+        {createdKey && (
+          <div className="status-message success">
+            Copy this key now — it is
+            shown only once:
+            <br />
+            <code>{createdKey}</code>
+          </div>
+        )}
+
+        {apiKeys.length > 0 && (
+          <div className="record-list">
+            {apiKeys.map((key) => (
+              <div
+                className="line-item-summary"
+                key={key.id}
+              >
+                <span>
+                  {key.name}{" "}
+                  <code>
+                    {key.prefix}…
+                  </code>
+                </span>
+
+                <span>
+                  {key.lastUsedAt
+                    ? `Used ${new Date(
+                        key.lastUsedAt,
+                      ).toLocaleDateString()}`
+                    : "Never used"}{" "}
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      void revokeApiKey(
+                        key.id,
+                      )
+                    }
+                  >
+                    Revoke
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="form-group">
+          <label htmlFor="key-name">
+            Key name
+          </label>
+          <input
+            id="key-name"
+            type="text"
+            placeholder="SaaS Surface — product launches"
+            value={newKeyName}
+            onChange={(e) =>
+              setNewKeyName(
+                e.target.value,
+              )
+            }
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="key-brand">
+            Brand (optional — sets the
+            voice for onboarding email)
+          </label>
+          <select
+            id="key-brand"
+            value={newKeyBrand}
+            onChange={(e) =>
+              setNewKeyBrand(
+                e.target.value,
+              )
+            }
+          >
+            <option value="">
+              No specific brand
+            </option>
+            {brands.map((brand) => (
+              <option
+                key={brand.id}
+                value={brand.id}
+              >
+                {brand.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() =>
+            void createApiKey()
+          }
+        >
+          Create API Key
         </button>
       </div>
 
