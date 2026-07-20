@@ -293,6 +293,191 @@ export default function HostingPage() {
   const [diagnosing, setDiagnosing] =
     useState(false);
 
+  // ---- Provisioning (create a real cPanel account) ----
+  interface HostingPlanOption {
+    id: string;
+    name: string;
+    slug: string;
+    kind: string;
+    priceMonthlyCents: number;
+    active: boolean;
+  }
+
+  interface BrandOption {
+    id: string;
+    name: string;
+  }
+
+  const [plans, setPlans] = useState<
+    HostingPlanOption[]
+  >([]);
+  const [provBrands, setProvBrands] =
+    useState<BrandOption[]>([]);
+  const [
+    provAvailable,
+    setProvAvailable,
+  ] = useState(false);
+  const [provForm, setProvForm] =
+    useState({
+      planId: "",
+      domain: "",
+      contactEmail: "",
+      clientId: "",
+      brandId: "",
+    });
+  const [provisioning, setProvisioning] =
+    useState(false);
+  const [provMsg, setProvMsg] =
+    useState<StatusMessage | null>(null);
+  const [provResult, setProvResult] =
+    useState<{
+      username: string;
+      domain: string;
+    } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/v1/hosting/plans")
+      .then((r) =>
+        r.ok ? r.json() : null,
+      )
+      .then(
+        (
+          d: {
+            plans?: HostingPlanOption[];
+          } | null,
+        ) => setPlans(d?.plans ?? []),
+      )
+      .catch(() => {});
+
+    fetch(
+      "/api/v1/hosting/provision/status",
+    )
+      .then((r) =>
+        r.ok ? r.json() : null,
+      )
+      .then(
+        (
+          d: {
+            available?: boolean;
+          } | null,
+        ) =>
+          setProvAvailable(
+            Boolean(d?.available),
+          ),
+      )
+      .catch(() => {});
+
+    fetch("/api/v1/brands")
+      .then((r) =>
+        r.ok ? r.json() : null,
+      )
+      .then(
+        (
+          d: {
+            brands?: BrandOption[];
+          } | null,
+        ) =>
+          setProvBrands(
+            d?.brands ?? [],
+          ),
+      )
+      .catch(() => {});
+  }, []);
+
+  async function handleProvision(): Promise<void> {
+    setProvMsg(null);
+    setProvResult(null);
+
+    if (
+      !provForm.planId ||
+      !provForm.domain.trim() ||
+      !provForm.contactEmail.trim()
+    ) {
+      setProvMsg({
+        message:
+          "Plan, domain, and customer email are required.",
+        type: "error",
+      });
+
+      return;
+    }
+
+    setProvisioning(true);
+
+    try {
+      const res = await fetch(
+        "/api/v1/hosting/provision",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            planId: provForm.planId,
+            domain:
+              provForm.domain.trim(),
+            contactEmail:
+              provForm.contactEmail.trim(),
+            clientId:
+              provForm.clientId ||
+              undefined,
+            brandId:
+              provForm.brandId ||
+              undefined,
+          }),
+        },
+      );
+
+      const data =
+        (await res.json()) as {
+          account?: {
+            username: string;
+            domain: string;
+          };
+          error?: {
+            message?: string;
+          };
+        };
+
+      if (!res.ok || !data.account) {
+        throw new Error(
+          data.error?.message ??
+            "Provisioning failed.",
+        );
+      }
+
+      setProvResult({
+        username:
+          data.account.username,
+        domain: data.account.domain,
+      });
+      setProvMsg({
+        message:
+          "Hosting provisioned. The customer has been emailed their login.",
+        type: "success",
+      });
+      setProvForm({
+        planId: "",
+        domain: "",
+        contactEmail: "",
+        clientId: "",
+        brandId: "",
+      });
+      void refresh();
+    } catch (error) {
+      setProvMsg({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Provisioning failed.",
+        type: "error",
+      });
+    } finally {
+      setProvisioning(false);
+    }
+  }
+
   const refresh = useCallback(
     async (): Promise<void> => {
       const accountsResponse =
@@ -744,14 +929,14 @@ export default function HostingPage() {
           </h3>
 
           <p className="help-text">
-            Monitor hosting accounts and
-            server health. This view
-            refreshes automatically, so
-            it can be left open as a
-            status board. Account
-            actions never touch the live
-            server &mdash; WHM access is
-            read-only.
+            Provision hosting and monitor
+            accounts and server health.
+            This view refreshes
+            automatically. Provisioning
+            creates real cPanel accounts;
+            status changes and deletes on
+            the list below are local
+            records only.
           </p>
         </div>
 
@@ -846,6 +1031,207 @@ export default function HostingPage() {
               : "WHM read-only link"}
           </span>
         </article>
+      </div>
+
+      <div className="card">
+        <div className="card-heading">
+          <div>
+            <p className="eyebrow">
+              Hosting
+            </p>
+
+            <h3>
+              Provision New Hosting
+            </h3>
+          </div>
+        </div>
+
+        {!provAvailable ? (
+          <p className="help-text">
+            Provisioning is unavailable
+            &mdash; WHM is not connected
+            with account-creation access.
+          </p>
+        ) : (
+          <>
+            <p className="help-text">
+              Create a live cPanel account
+              on a plan. The customer is
+              emailed their login
+              automatically.
+            </p>
+
+            {provMsg && (
+              <div
+                className={`status-message ${provMsg.type}`}
+              >
+                {provMsg.message}
+              </div>
+            )}
+
+            {provResult && (
+              <div className="status-message success">
+                Account{" "}
+                <code>
+                  {provResult.username}
+                </code>{" "}
+                created for{" "}
+                {provResult.domain}.
+              </div>
+            )}
+
+            <div className="form-group">
+              <label htmlFor="prov-plan">
+                Plan
+              </label>
+              <select
+                id="prov-plan"
+                value={provForm.planId}
+                onChange={(e) =>
+                  setProvForm({
+                    ...provForm,
+                    planId:
+                      e.target.value,
+                  })
+                }
+              >
+                <option value="">
+                  Select a plan
+                </option>
+                {plans
+                  .filter(
+                    (p) => p.active,
+                  )
+                  .map((p) => (
+                    <option
+                      key={p.id}
+                      value={p.id}
+                    >
+                      {p.name} &mdash; $
+                      {(
+                        p.priceMonthlyCents /
+                        100
+                      ).toFixed(2)}
+                      /mo
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="prov-domain">
+                Domain
+              </label>
+              <input
+                id="prov-domain"
+                type="text"
+                placeholder="customersite.com"
+                value={provForm.domain}
+                onChange={(e) =>
+                  setProvForm({
+                    ...provForm,
+                    domain:
+                      e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="prov-email">
+                Customer email
+              </label>
+              <input
+                id="prov-email"
+                type="email"
+                placeholder="owner@customersite.com"
+                value={
+                  provForm.contactEmail
+                }
+                onChange={(e) =>
+                  setProvForm({
+                    ...provForm,
+                    contactEmail:
+                      e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="prov-brand">
+                Brand (optional)
+              </label>
+              <select
+                id="prov-brand"
+                value={provForm.brandId}
+                onChange={(e) =>
+                  setProvForm({
+                    ...provForm,
+                    brandId:
+                      e.target.value,
+                  })
+                }
+              >
+                <option value="">
+                  No specific brand
+                </option>
+                {provBrands.map((b) => (
+                  <option
+                    key={b.id}
+                    value={b.id}
+                  >
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="prov-client">
+                Link to client (optional)
+              </label>
+              <select
+                id="prov-client"
+                value={
+                  provForm.clientId
+                }
+                onChange={(e) =>
+                  setProvForm({
+                    ...provForm,
+                    clientId:
+                      e.target.value,
+                  })
+                }
+              >
+                <option value="">
+                  Not linked
+                </option>
+                {clients.map((c) => (
+                  <option
+                    key={c.id}
+                    value={c.id}
+                  >
+                    {c.companyName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className="primary-button"
+              disabled={provisioning}
+              onClick={() =>
+                void handleProvision()
+              }
+            >
+              {provisioning
+                ? "Provisioning..."
+                : "Provision Hosting"}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="card">
