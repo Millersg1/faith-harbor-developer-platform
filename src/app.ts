@@ -78,6 +78,10 @@ import {
   type EmailTransport,
 } from "./communications/EmailTransport";
 import { SmtpEmailTransport } from "./communications/SmtpEmailTransport";
+import {
+  buildBrandTransports,
+  parseBrandSmtp,
+} from "./communications/BrandSmtp";
 import { config } from "./config";
 import { DepartmentService } from "./departments/DepartmentService";
 import { defaultDepartments } from "./departments/defaultDepartments";
@@ -221,6 +225,20 @@ export function createApp(
             })
           : new LoggingEmailTransport();
 
+  // Per-brand mailboxes: each brand's automated email is sent through
+  // its own authenticated SMTP account (matched by the from-address
+  // domain), so a brand like SaaS Surface sends from hello@saassurface
+  // .com with aligned SPF/DKIM. Disabled under test so the suite never
+  // opens a real connection.
+  const brandTransports =
+    config.NODE_ENV === "test"
+      ? new Map<string, EmailTransport>()
+      : buildBrandTransports(
+          parseBrandSmtp(
+            config.BRAND_SMTP,
+          ),
+        );
+
   const emailService =
     new EmailService(
       emailTransport,
@@ -228,6 +246,7 @@ export function createApp(
         config.ADMIN_EMAIL ??
         "Faith Harbor OS",
       new EmailRepository(database),
+      brandTransports,
     );
 
   // SaaS Surface engine: API keys authenticate external callers (a

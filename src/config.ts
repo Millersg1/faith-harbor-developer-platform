@@ -185,6 +185,18 @@ const schema = z.object({
         : value === "true",
     ),
 
+  // Per-brand SMTP mailboxes: a JSON array so each brand's automated
+  // email is sent authenticated through its own mailbox (SPF/DKIM
+  // align for that domain) instead of relaying through the default.
+  // Matched to a brand by the domain of its from-address. Example:
+  // [{"domain":"saassurface.com","host":"mail.saassurface.com",
+  //   "port":465,"user":"hello@saassurface.com","password":"...",
+  //   "secure":true}]
+  BRAND_SMTP: z
+    .string()
+    .optional()
+    .transform((value) => value || undefined),
+
   // How often the automation scheduler scans for time-based work
   // (for example overdue invoices). Set to 0 to disable scheduling.
   AUTOMATION_SCAN_INTERVAL_MINUTES: z.coerce

@@ -21,7 +21,45 @@ export class EmailService {
     private readonly defaultFrom: string,
     private readonly repository =
       new EmailRepository(),
+
+    /**
+     * Optional per-brand transports keyed by the lowercased domain of
+     * the "from" address (for example "saassurface.com"). When a
+     * message's from-address matches, it is sent authenticated through
+     * that brand's own mailbox so SPF/DKIM align for the domain.
+     * Otherwise the default transport is used.
+     */
+    private readonly brandTransports: ReadonlyMap<
+      string,
+      EmailTransport
+    > = new Map(),
   ) {}
+
+  /**
+   * Chooses the transport for a message: the brand mailbox matching the
+   * from-address domain when one is configured, else the default.
+   */
+  private resolveTransport(
+    from: string,
+  ): EmailTransport {
+    const at = from.lastIndexOf("@");
+
+    if (at >= 0) {
+      const domain = from
+        .slice(at + 1)
+        .trim()
+        .toLowerCase();
+
+      const branded =
+        this.brandTransports.get(domain);
+
+      if (branded) {
+        return branded;
+      }
+    }
+
+    return this.transport;
+  }
 
   /**
    * Sends (or logs) an email and records it in the outbox.
@@ -59,7 +97,9 @@ export class EmailService {
       this.defaultFrom;
 
     const result =
-      await this.transport.send({
+      await this.resolveTransport(
+        from,
+      ).send({
         from,
         to,
         subject,
