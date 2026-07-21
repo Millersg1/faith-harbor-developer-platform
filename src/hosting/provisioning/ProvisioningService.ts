@@ -390,8 +390,10 @@ export class ProvisioningService {
     password: string,
     clientId: string | undefined,
   ): Promise<void> {
+    // Reads naturally with or without a brand: "Your All Elite Hosting
+    // account is ready" / "Your hosting account is ready".
     const brandName =
-      brand?.name ?? "your hosting";
+      brand?.name ?? "hosting";
 
     const cpanelUrl = this.serverLabel
       ? `https://${this.serverLabel}:2083`
