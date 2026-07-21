@@ -905,6 +905,8 @@ export function createApp(
       invoices: invoiceService,
       tickets: ticketService,
       payments: paymentService,
+      hosting: hostingService,
+      whm: whmClient,
     }),
   );
 

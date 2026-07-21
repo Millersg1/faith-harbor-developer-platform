@@ -317,6 +317,34 @@ export class WHMClient {
   }
 
   /**
+   * Creates a one-time cPanel login session for an account and returns
+   * the sign-in URL (create_user_session). This powers the customer's
+   * one-click "Open cPanel" button — no password needed.
+   */
+  async createUserSession(
+    user: string,
+    service = "cpaneld",
+  ): Promise<string> {
+    const envelope = await this.call(
+      "create_user_session",
+      { user, service },
+      "POST",
+    );
+
+    const data =
+      (envelope.data ??
+        {}) as Record<string, unknown>;
+
+    if (!data.url) {
+      throw new Error(
+        "WHM did not return a cPanel login URL.",
+      );
+    }
+
+    return String(data.url);
+  }
+
+  /**
    * Returns the names of the WHM packages defined on the server.
    */
   async listPackages():

@@ -7,6 +7,8 @@ import {
 } from "../auth/cookies";
 import type { InvoiceService } from "../accounting/InvoiceService";
 import type { ClientService } from "../clients/ClientService";
+import type { HostingAccountService } from "../hosting/HostingAccountService";
+import type { WHMClient } from "../hosting/whm/WHMClient";
 import type { PaymentService } from "../payments/PaymentService";
 import { readProvider } from "../payments/PaymentRouter";
 import type { ProjectService } from "../projects/ProjectService";
@@ -33,6 +35,8 @@ export interface PortalDependencies {
   invoices: InvoiceService;
   tickets: TicketService;
   payments: PaymentService;
+  hosting: HostingAccountService;
+  whm?: WHMClient;
 }
 
 /**
@@ -226,6 +230,89 @@ export function createPortalRouter(
         count: tickets.length,
         tickets,
       });
+    },
+  );
+
+  router.get(
+    "/hosting",
+    guard,
+    (req: PortalRequest, res) => {
+      const accounts =
+        deps.hosting.listForClient(
+          req.portalClientId as string,
+        );
+
+      res.json({
+        count: accounts.length,
+        accounts,
+        cpanelEnabled: Boolean(
+          deps.whm,
+        ),
+      });
+    },
+  );
+
+  // One-click cPanel login: creates a one-time WHM session for the
+  // customer's own hosting account and returns the URL.
+  router.post(
+    "/hosting/:id/cpanel-session",
+    guard,
+    async (
+      req: PortalRequest,
+      res,
+      next,
+    ) => {
+      const clientId =
+        req.portalClientId as string;
+
+      const account = deps.hosting
+        .listForClient(clientId)
+        .find(
+          (a) =>
+            a.id ===
+            String(req.params.id),
+        );
+
+      // Ownership check: only the account's own client, and only when
+      // it has a cPanel username, may open a session.
+      if (
+        !account ||
+        !account.username
+      ) {
+        res.status(404).json({
+          error: {
+            code: "NOT_FOUND",
+            message:
+              "Hosting account not found.",
+          },
+        });
+
+        return;
+      }
+
+      if (!deps.whm) {
+        res.status(503).json({
+          error: {
+            code:
+              "CPANEL_UNAVAILABLE",
+            message:
+              "cPanel access is not available right now.",
+          },
+        });
+
+        return;
+      }
+
+      try {
+        const url =
+          await deps.whm.createUserSession(
+            account.username,
+          );
+
+        res.json({ url });
+      } catch (error) {
+        next(error);
+      }
     },
   );
 

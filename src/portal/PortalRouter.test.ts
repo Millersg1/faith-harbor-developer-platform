@@ -101,6 +101,76 @@ describe("Client portal", () => {
     ).toBe("Grace Chapel");
   });
 
+  it("shows a client only their own hosting, ownership-checked", async () => {
+    const app = createApp();
+
+    const a = await createClient(
+      app,
+      "Client A",
+    );
+    const b = await createClient(
+      app,
+      "Client B",
+    );
+
+    // A hosting account for each client.
+    const accountA = await request(app)
+      .post("/api/v1/hosting/accounts")
+      .send({
+        clientId: a.id,
+        domain: "clienta.com",
+        username: "clienta1",
+        status: "active",
+      });
+
+    const accountB = await request(app)
+      .post("/api/v1/hosting/accounts")
+      .send({
+        clientId: b.id,
+        domain: "clientb.com",
+        username: "clientb1",
+        status: "active",
+      });
+
+    await addPortalUser(
+      app,
+      a.id,
+      "a@example.com",
+    );
+
+    const agent = request.agent(app);
+    await agent
+      .post(
+        "/api/v1/portal/auth/login",
+      )
+      .send({
+        email: "a@example.com",
+        password: "portalpass123",
+      });
+
+    // A sees only their own hosting.
+    const list = await agent.get(
+      "/api/v1/portal/hosting",
+    );
+    expect(list.body.count).toBe(1);
+    expect(
+      list.body.accounts[0].domain,
+    ).toBe("clienta.com");
+
+    // A cannot open a cPanel session for B's account.
+    const other = await agent
+      .post(
+        `/api/v1/portal/hosting/${accountB.body.account.id}/cpanel-session`,
+      );
+    expect(other.status).toBe(404);
+
+    // On A's own account, WHM is not configured under test → 503.
+    const own = await agent.post(
+      `/api/v1/portal/hosting/${accountA.body.account.id}/cpanel-session`,
+    );
+    expect(own.status).toBe(503);
+  });
+
   it("shows a client only their own data", async () => {
     const app = createApp();
 

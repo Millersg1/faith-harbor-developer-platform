@@ -42,6 +42,14 @@ interface Ticket {
   priority: string;
 }
 
+interface PortalHosting {
+  id: string;
+  domain: string;
+  plan?: string;
+  status: string;
+  username: string;
+}
+
 async function getJson<T>(
   url: string,
 ): Promise<T | null> {
@@ -274,6 +282,14 @@ function PortalDashboard({
     useState<Invoice[]>([]);
   const [tickets, setTickets] =
     useState<Ticket[]>([]);
+  const [hosting, setHosting] =
+    useState<PortalHosting[]>([]);
+  const [
+    cpanelEnabled,
+    setCpanelEnabled,
+  ] = useState(false);
+  const [opening, setOpening] =
+    useState<string | null>(null);
   const [paying, setPaying] =
     useState<string | null>(null);
   const [notice, setNotice] =
@@ -290,8 +306,12 @@ function PortalDashboard({
       getJson<{
         tickets: Ticket[];
       }>("/api/v1/portal/tickets"),
+      getJson<{
+        accounts: PortalHosting[];
+        cpanelEnabled: boolean;
+      }>("/api/v1/portal/hosting"),
     ]).then(
-      ([p, i, t]) => {
+      ([p, i, t, h]) => {
         setProjects(
           p?.projects ?? [],
         );
@@ -301,9 +321,52 @@ function PortalDashboard({
         setTickets(
           t?.tickets ?? [],
         );
+        setHosting(
+          h?.accounts ?? [],
+        );
+        setCpanelEnabled(
+          Boolean(h?.cpanelEnabled),
+        );
       },
     );
   }, []);
+
+  async function openCpanel(
+    id: string,
+  ): Promise<void> {
+    setOpening(id);
+    setNotice(null);
+
+    try {
+      const res = await fetch(
+        `/api/v1/portal/hosting/${id}/cpanel-session`,
+        { method: "POST" },
+      );
+
+      const data =
+        (await res.json()) as {
+          url?: string;
+        };
+
+      if (res.ok && data.url) {
+        window.open(
+          data.url,
+          "_blank",
+          "noopener",
+        );
+      } else {
+        setNotice(
+          "cPanel login is not available right now.",
+        );
+      }
+    } catch {
+      setNotice(
+        "Something went wrong opening cPanel.",
+      );
+    } finally {
+      setOpening(null);
+    }
+  }
 
   async function signOut(): Promise<void> {
     await fetch(
@@ -384,6 +447,58 @@ function PortalDashboard({
           {notice}
         </div>
       )}
+
+      <section className="portal-card">
+        <h3>Your Hosting</h3>
+        {hosting.length === 0 ? (
+          <p className="help-text">
+            No hosting accounts yet.
+          </p>
+        ) : (
+          <div className="record-list">
+            {hosting.map((account) => (
+              <div
+                className="portal-row"
+                key={account.id}
+              >
+                <span>
+                  {account.domain}
+                  {account.plan
+                    ? ` · ${account.plan}`
+                    : ""}{" "}
+                  ·{" "}
+                  {titleCase(
+                    account.status,
+                  )}
+                </span>
+
+                {cpanelEnabled && (
+                  <span className="button-row">
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={
+                        opening ===
+                        account.id
+                      }
+                      onClick={() =>
+                        void openCpanel(
+                          account.id,
+                        )
+                      }
+                    >
+                      {opening ===
+                      account.id
+                        ? "Opening..."
+                        : "Open cPanel"}
+                    </button>
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="portal-card">
         <h3>Invoices</h3>
