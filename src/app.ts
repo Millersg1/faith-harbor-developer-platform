@@ -99,6 +99,8 @@ import { createProvisioningRouter } from "./hosting/provisioning/ProvisioningRou
 import { HostingOrderRepository } from "./hosting/orders/HostingOrderRepository";
 import { HostingOrderService } from "./hosting/orders/HostingOrderService";
 import { createHostingOrderRouter } from "./hosting/orders/HostingOrderRouter";
+import { createPublicStorefrontRouter } from "./hosting/storefront/PublicStorefrontRouter";
+import { renderStorefrontPage } from "./hosting/storefront/storefrontPage";
 import { HostingAssistantService } from "./hosting/assistant/HostingAssistantService";
 import { nodeDnsResolver } from "./hosting/assistant/HostingDiagnostics";
 import { WHMClient } from "./hosting/whm/WHMClient";
@@ -930,6 +932,27 @@ export function createApp(
   // tick that auto-sends due drip-email steps.
   app.locals.sequenceService =
     sequenceService;
+
+  // Public hosting storefront: a customer-facing plan listing + signup,
+  // mounted BEFORE the admin gate (no authentication). A signup creates
+  // a client and a hosting order; paying its invoice auto-provisions.
+  app.use(
+    "/api/public",
+    createPublicStorefrontRouter(
+      hostingPlanService,
+      hostingOrderService,
+      clientService,
+      paymentService,
+    ),
+  );
+
+  // The storefront page itself (self-contained HTML). Brand is chosen
+  // via ?brand=<id>&name=<display>, so one page serves every brand.
+  app.get("/store", (_req, res) => {
+    res
+      .type("html")
+      .send(renderStorefrontPage());
+  });
 
   // Authentication gate. When an auth service is configured, the
   // login routes are public and everything else under /api/v1
