@@ -255,6 +255,82 @@ describe("ProvisioningService", () => {
     ).toBe("root_Starter_NVMe");
   });
 
+  it("retries with a fallback username when WHM rejects a reserved name", async () => {
+    const clients = new ClientService();
+    const plans = new HostingPlanService();
+    plans.seedDefaults();
+    const emails = new EmailService(
+      new LoggingEmailTransport(),
+      "sys@test",
+    );
+    const hostingAccounts =
+      new HostingAccountService(
+        clients,
+        undefined,
+      );
+
+    const attempts: string[] = [];
+    const whm = {
+      async listPackages() {
+        return ["root_Starter_NVMe"];
+      },
+      async createPackage() {},
+      async createAccount(
+        req: WHMCreateAccountRequest,
+      ) {
+        attempts.push(req.username);
+        if (
+          req.username.startsWith(
+            "test",
+          )
+        ) {
+          throw new Error(
+            `"${req.username}" is a reserved username on this system.`,
+          );
+        }
+        return {
+          username: req.username,
+          domain: req.domain,
+          ipAddress: "203.0.113.7",
+        };
+      },
+    } as unknown as WHMClient;
+
+    const service =
+      new ProvisioningService(
+        plans,
+        hostingAccounts,
+        whm,
+        emails,
+        {
+          clients,
+          serverLabel: "srv",
+        },
+      );
+
+    const result =
+      await service.provision({
+        planSlug: "starter-nvme",
+        // Derives a "test…" username that WHM rejects as reserved.
+        domain: "teststore123.com",
+        contactEmail: "a@b.com",
+      });
+
+    // First tried the domain-derived name, then succeeded on a fallback.
+    expect(
+      attempts[0].startsWith("test"),
+    ).toBe(true);
+    expect(
+      attempts.length,
+    ).toBeGreaterThan(1);
+    expect(result.account.status).toBe(
+      "active",
+    );
+    expect(
+      result.username.startsWith("test"),
+    ).toBe(false);
+  });
+
   it("reports unavailable and refuses to provision without WHM", async () => {
     const { service } = build(undefined);
 

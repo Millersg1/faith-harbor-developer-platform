@@ -6,7 +6,10 @@ import type { EmailService } from "../../communications/EmailService";
 import type { HostingAccountRecord } from "../HostingAccountRecord";
 import type { HostingAccountService } from "../HostingAccountService";
 import type { HostingPlanService } from "../plans/HostingPlanService";
-import type { WHMClient } from "../whm/WHMClient";
+import type {
+  WHMClient,
+  WHMCreatedAccount,
+} from "../whm/WHMClient";
 
 export interface ProvisionRequest {
   planId?: string;
@@ -147,10 +150,6 @@ export class ProvisioningService {
         )
       : undefined;
 
-    const username = this.makeUsername(
-      domain,
-    );
-
     const password = this.makePassword();
 
     const specs = plan.specs;
@@ -184,15 +183,65 @@ export class ProvisioningService {
         limits,
       );
 
-    const created =
-      await this.whm.createAccount({
-        username,
-        domain,
-        password,
-        contactEmail,
-        plan: packageName,
-        limits,
-      });
+    // Create the cPanel account, retrying with a fresh username if WHM
+    // rejects it — a reserved name (cPanel reserves names starting with
+    // "test", for example) or a collision. The first try is the
+    // readable, domain-derived name; fallbacks are safe random names
+    // that cannot be reserved.
+    const usernameCandidates = [
+      this.makeUsername(domain),
+      randomUsername(),
+      randomUsername(),
+    ];
+
+    let created:
+      | WHMCreatedAccount
+      | undefined;
+    let username = usernameCandidates[0];
+    let lastError: unknown;
+
+    for (const candidate of usernameCandidates) {
+      username = candidate;
+
+      try {
+        created =
+          await this.whm.createAccount({
+            username,
+            domain,
+            password,
+            contactEmail,
+            plan: packageName,
+            limits,
+          });
+
+        break;
+      } catch (error) {
+        lastError = error;
+
+        const message =
+          error instanceof Error
+            ? error.message.toLowerCase()
+            : "";
+
+        // Retry only on a username problem; other failures (package,
+        // quota, ...) are surfaced immediately.
+        if (
+          !/reserved|already exists|in use|invalid username|taken/.test(
+            message,
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    if (!created) {
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(
+            "Account creation failed.",
+          );
+    }
 
     const account =
       this.hostingAccounts.create({
@@ -369,6 +418,20 @@ export class ProvisioningService {
       clientId,
     });
   }
+}
+
+/**
+ * A safe fallback cPanel username: "u" plus random hex, <= 16 chars,
+ * lowercase alphanumeric, starting with a letter. Cannot collide with a
+ * cPanel reserved name.
+ */
+export function randomUsername(): string {
+  return (
+    "u" +
+    randomBytes(8)
+      .toString("hex")
+      .slice(0, 14)
+  );
 }
 
 /**
