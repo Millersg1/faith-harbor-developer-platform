@@ -100,7 +100,10 @@ import { HostingOrderRepository } from "./hosting/orders/HostingOrderRepository"
 import { HostingOrderService } from "./hosting/orders/HostingOrderService";
 import { createHostingOrderRouter } from "./hosting/orders/HostingOrderRouter";
 import { createPublicStorefrontRouter } from "./hosting/storefront/PublicStorefrontRouter";
-import { renderStorefrontPage } from "./hosting/storefront/storefrontPage";
+import {
+  renderStorefrontPage,
+  storefrontScript,
+} from "./hosting/storefront/storefrontPage";
 import { HostingAssistantService } from "./hosting/assistant/HostingAssistantService";
 import { nodeDnsResolver } from "./hosting/assistant/HostingDiagnostics";
 import { WHMClient } from "./hosting/whm/WHMClient";
@@ -954,6 +957,15 @@ export function createApp(
     res
       .type("html")
       .send(renderStorefrontPage());
+  });
+
+  // The storefront script is served as an external same-origin file so
+  // it satisfies the Content-Security-Policy (script-src 'self'); inline
+  // scripts are blocked by Helmet's CSP.
+  app.get("/store.js", (_req, res) => {
+    res
+      .type("application/javascript")
+      .send(storefrontScript());
   });
 
   // Authentication gate. When an auth service is configured, the

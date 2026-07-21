@@ -90,8 +90,19 @@ export function renderStorefrontPage(): string {
 
 <footer id="foot"></footer>
 
-<script>
-(function () {
+<script src="/store.js"></script>
+</body>
+</html>`;
+}
+
+/**
+ * The storefront's client script, served as an external file at
+ * /store.js. It must be external (not inline) because the app's
+ * Content-Security-Policy allows scripts only from 'self' — inline
+ * scripts are blocked.
+ */
+export function storefrontScript(): string {
+  return `(function () {
   var params = new URLSearchParams(location.search);
   var brandId = params.get("brand") || "";
   var brandName = params.get("name") || "";
@@ -122,7 +133,6 @@ export function renderStorefrontPage(): string {
       var specs = p.specs || {};
       var el = document.createElement("div");
       el.className = "plan" + (p.popular ? " popular" : "");
-      // All dynamic values are escaped; specs are coerced to numbers.
       var feats = (p.features || []).map(function (f) { return "<li>" + esc(f) + "</li>"; }).join("");
       el.innerHTML =
         (p.popular ? '<div class="badge">Most Popular</div>' : "") +
@@ -195,8 +205,5 @@ export function renderStorefrontPage(): string {
   });
 
   load();
-})();
-</script>
-</body>
-</html>`;
+})();`;
 }

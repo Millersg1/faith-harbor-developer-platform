@@ -24,6 +24,32 @@ describe("Public storefront", () => {
     );
   });
 
+  it("serves the storefront script as an external file (CSP-safe)", async () => {
+    const app = createApp();
+
+    // The page must reference the external script, not inline it.
+    const page = await request(app).get(
+      "/store",
+    );
+    expect(page.text).toContain(
+      'src="/store.js"',
+    );
+    expect(page.text).not.toContain(
+      "<script>(function",
+    );
+
+    const script = await request(
+      app,
+    ).get("/store.js");
+    expect(script.status).toBe(200);
+    expect(
+      script.headers["content-type"],
+    ).toContain("javascript");
+    expect(script.text).toContain(
+      "/api/public/hosting/plans",
+    );
+  });
+
   it("lists active shared plans publicly (no auth)", async () => {
     const app = createApp();
 
