@@ -2,9 +2,25 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { ClientService } from "../../clients/ClientService";
+import type { EmailService } from "../../communications/EmailService";
 import type { PaymentService } from "../../payments/PaymentService";
 import { HostingOrderService } from "../orders/HostingOrderService";
 import { HostingPlanService } from "../plans/HostingPlanService";
+
+const contactSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email(),
+  topic: z
+    .string()
+    .trim()
+    .max(60)
+    .optional(),
+  message: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4000),
+});
 
 const signupSchema = z.object({
   planSlug: z.string().trim().min(1),
@@ -75,6 +91,8 @@ export function createPublicStorefrontRouter(
   orders: HostingOrderService,
   clients: ClientService,
   payments: PaymentService,
+  emails: EmailService,
+  contactEmail: string | undefined,
 ): Router {
   const router = Router();
 
@@ -83,6 +101,104 @@ export function createPublicStorefrontRouter(
       5,
       10 * 60 * 1000,
     );
+
+  const allowContact =
+    createRateLimiter(
+      5,
+      10 * 60 * 1000,
+    );
+
+  // Public contact form: a visitor's message is emailed to the
+  // operator so it works for everyone (no mail app needed). Validated
+  // and rate-limited.
+  router.post(
+    "/contact",
+    async (req, res, next) => {
+      const ip =
+        (req.headers[
+          "x-forwarded-for"
+        ] as string | undefined)
+          ?.split(",")[0]
+          ?.trim() ||
+        req.ip ||
+        "unknown";
+
+      if (!allowContact(ip)) {
+        res.status(429).json({
+          error: {
+            code: "RATE_LIMITED",
+            message:
+              "Too many messages from this address. Please try again shortly.",
+          },
+        });
+
+        return;
+      }
+
+      const parsed =
+        contactSchema.safeParse(
+          req.body,
+        );
+
+      if (!parsed.success) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_CONTACT",
+            message:
+              "Please provide your name, a valid email, and a message.",
+            details:
+              parsed.error.flatten(),
+          },
+        });
+
+        return;
+      }
+
+      if (!contactEmail) {
+        res.status(503).json({
+          error: {
+            code: "CONTACT_UNAVAILABLE",
+            message:
+              "Messaging is unavailable right now. Please email us directly.",
+          },
+        });
+
+        return;
+      }
+
+      const data = parsed.data;
+      const topic =
+        data.topic || "General";
+
+      const body = [
+        `New website enquiry (${topic})`,
+        "",
+        `Name:  ${data.name}`,
+        `Email: ${data.email}`,
+        "",
+        "Message:",
+        data.message,
+        "",
+        `Reply to the customer at: ${data.email}`,
+      ].join("\n");
+
+      try {
+        await emails.send({
+          to: contactEmail,
+          subject: `Website enquiry (${topic}) — ${data.name}`,
+          body,
+        });
+
+        res.status(201).json({
+          ok: true,
+          message:
+            "Thanks! Your message was sent — we'll be in touch soon.",
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   // Public plan listing for any storefront to render.
   router.get(

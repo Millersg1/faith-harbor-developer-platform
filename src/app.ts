@@ -941,13 +941,36 @@ export function createApp(
   // Public hosting storefront: a customer-facing plan listing + signup,
   // mounted BEFORE the admin gate (no authentication). A signup creates
   // a client and a hosting order; paying its invoice auto-provisions.
+  // The public routes are called cross-origin by the brand marketing
+  // sites (the storefront + contact form), so allow those origins here.
+  const brandOrigins = [
+    "https://faithharborwebhosting.com",
+    "https://www.faithharborwebhosting.com",
+    "https://allelitehosting.com",
+    "https://www.allelitehosting.com",
+    "https://saassurface.com",
+    "https://www.saassurface.com",
+    "https://faithharborpublishing.com",
+    "https://www.faithharborpublishing.com",
+  ];
+
+  const publicCors = cors({
+    origin: config.CORS_ORIGIN
+      ? [config.CORS_ORIGIN, ...brandOrigins]
+      : brandOrigins,
+    methods: ["GET", "POST", "OPTIONS"],
+  });
+
   app.use(
     "/api/public",
+    publicCors,
     createPublicStorefrontRouter(
       hostingPlanService,
       hostingOrderService,
       clientService,
       paymentService,
+      emailService,
+      config.ADMIN_EMAIL,
     ),
   );
 

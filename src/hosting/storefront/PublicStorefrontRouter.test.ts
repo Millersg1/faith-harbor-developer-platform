@@ -121,6 +121,42 @@ describe("Public storefront", () => {
     );
   });
 
+  it("accepts a valid contact submission (or reports unavailable without a destination)", async () => {
+    const app = createApp();
+
+    const res = await request(app)
+      .post("/api/public/contact")
+      .send({
+        name: "Pat Lee",
+        email: "pat@example.com",
+        topic: "Sales",
+        message:
+          "Do you offer managed WordPress hosting?",
+      });
+
+    // 201 when a contact destination is configured; 503 otherwise.
+    expect([201, 503]).toContain(
+      res.status,
+    );
+  });
+
+  it("rejects an invalid contact submission", async () => {
+    const app = createApp();
+
+    const res = await request(app)
+      .post("/api/public/contact")
+      .send({
+        name: "Pat",
+        email: "not-an-email",
+        message: "",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe(
+      "INVALID_CONTACT",
+    );
+  });
+
   it("rejects an unknown plan", async () => {
     const app = createApp();
 
