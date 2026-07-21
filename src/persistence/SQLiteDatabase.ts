@@ -471,6 +471,25 @@ export class SQLiteDatabase {
         updated_at TEXT NOT NULL
       ) STRICT;
 
+      CREATE TABLE IF NOT EXISTS hosting_orders (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        contact_email TEXT NOT NULL,
+        brand_id TEXT,
+        billing_cycle TEXT NOT NULL,
+        invoice_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        username TEXT,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS idx_hosting_orders_invoice
+        ON hosting_orders(invoice_id);
+
       CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp
         ON ai_decisions(timestamp);
 

@@ -32,6 +32,10 @@ export interface CaptureOutcome {
  * invoices paid when the provider confirms payment.
  */
 export class PaymentService {
+  private onInvoicePaid?: (
+    invoiceId: string,
+  ) => void;
+
   constructor(
     private readonly invoices: InvoiceService,
     private readonly gateway: StripeGateway =
@@ -42,6 +46,20 @@ export class PaymentService {
     private readonly paypal: PayPalGateway =
       new DisconnectedPayPalGateway(),
   ) {}
+
+  /**
+   * Registers a handler fired once when an invoice first transitions to
+   * paid (via Stripe webhook or PayPal capture). Used to auto-provision
+   * hosting for a paid order. Errors in the handler never affect the
+   * payment result.
+   */
+  setInvoicePaidHandler(
+    handler: (
+      invoiceId: string,
+    ) => void,
+  ): void {
+    this.onInvoicePaid = handler;
+  }
 
   /**
    * Creates a hosted checkout link for an invoice with the chosen
@@ -291,6 +309,8 @@ export class PaymentService {
       }
     }
 
+    let transitioned = false;
+
     try {
       const invoice =
         this.invoices.get(invoiceId);
@@ -301,9 +321,21 @@ export class PaymentService {
           status: "paid",
           paidDate: now,
         });
+
+        transitioned = true;
       }
     } catch {
       // The invoice may have been deleted; the payment record stands.
+    }
+
+    // Fire the paid handler once, only on a real transition, and never
+    // let its failure affect the payment result.
+    if (transitioned && this.onInvoicePaid) {
+      try {
+        this.onInvoicePaid(invoiceId);
+      } catch {
+        // Auto-provisioning is best-effort; the payment still stands.
+      }
     }
   }
 }

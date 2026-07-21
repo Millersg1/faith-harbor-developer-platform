@@ -142,6 +142,45 @@ describe("PaymentService", () => {
     ).toBe("paid");
   });
 
+  it("fires the invoice-paid handler once, only on the paid transition", async () => {
+    const { payments, invoice } =
+      setup();
+
+    const paidInvoiceIds: string[] = [];
+    payments.setInvoicePaidHandler(
+      (id) => paidInvoiceIds.push(id),
+    );
+
+    await payments.createCheckout(
+      invoice.id,
+    );
+
+    const event = JSON.stringify({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          id: "cs_test",
+          client_reference_id:
+            invoice.id,
+        },
+      },
+    });
+
+    payments.handleWebhook(
+      event,
+      "sig",
+    );
+    // A repeated webhook must not fire the handler again.
+    payments.handleWebhook(
+      event,
+      "sig",
+    );
+
+    expect(paidInvoiceIds).toEqual([
+      invoice.id,
+    ]);
+  });
+
   it("rejects a webhook with an invalid signature", () => {
     const { payments } = setup(
       new FakeGateway(true, false),

@@ -96,6 +96,9 @@ import { HostingPlanService } from "./hosting/plans/HostingPlanService";
 import { createHostingPlanRouter } from "./hosting/plans/HostingPlanRouter";
 import { ProvisioningService } from "./hosting/provisioning/ProvisioningService";
 import { createProvisioningRouter } from "./hosting/provisioning/ProvisioningRouter";
+import { HostingOrderRepository } from "./hosting/orders/HostingOrderRepository";
+import { HostingOrderService } from "./hosting/orders/HostingOrderService";
+import { createHostingOrderRouter } from "./hosting/orders/HostingOrderRouter";
 import { HostingAssistantService } from "./hosting/assistant/HostingAssistantService";
 import { nodeDnsResolver } from "./hosting/assistant/HostingDiagnostics";
 import { WHMClient } from "./hosting/whm/WHMClient";
@@ -554,6 +557,27 @@ export function createApp(
         serverLabel: config.WHM_HOST,
       },
     );
+
+  // Hosting orders: create an invoice for a plan; paying it
+  // auto-provisions the account. The paid-invoice handler is wired to
+  // the payment service so Stripe/PayPal payments trigger provisioning.
+  const hostingOrderService =
+    new HostingOrderService(
+      hostingPlanService,
+      invoiceService,
+      provisioningService,
+      new HostingOrderRepository(
+        database,
+      ),
+    );
+
+  paymentService.setInvoicePaidHandler(
+    (invoiceId) => {
+      void hostingOrderService.handleInvoicePaid(
+        invoiceId,
+      );
+    },
+  );
 
   for (
     const department of
@@ -1082,6 +1106,14 @@ export function createApp(
   // Exposed so the server entry point can run periodic scans.
   app.locals.automationScanner =
     automationScanner;
+
+  app.use(
+    "/api/v1/hosting/orders",
+    createHostingOrderRouter(
+      hostingOrderService,
+      paymentService,
+    ),
+  );
 
   app.use(
     "/api/v1/hosting/provision",
