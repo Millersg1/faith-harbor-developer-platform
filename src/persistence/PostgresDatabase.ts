@@ -148,6 +148,25 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_users_org
         ON users (organization_id);
     `);
+
+    // Sessions — server-side login tokens. Cascades on user or org
+    // deletion so revocation is automatic when either goes away.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        token            TEXT PRIMARY KEY,
+        user_id          TEXT NOT NULL
+                           REFERENCES users (id) ON DELETE CASCADE,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        expires_at       TEXT NOT NULL,
+        created_at       TEXT NOT NULL
+      );
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_sessions_user
+        ON sessions (user_id);
+    `);
   }
 
   /**
