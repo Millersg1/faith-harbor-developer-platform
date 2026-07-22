@@ -95,6 +95,35 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_projects_client
         ON projects (client_id);
     `);
+
+    // Invoices — line items in JSONB, amount in integer cents. The
+    // invoice number is unique per organization, so each tenant has its
+    // own INV-#### sequence with no collisions across tenants.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        number           TEXT NOT NULL,
+        client_id        TEXT
+                           REFERENCES clients (id) ON DELETE SET NULL,
+        status           TEXT NOT NULL DEFAULT 'draft',
+        currency         TEXT NOT NULL DEFAULT 'USD',
+        line_items       JSONB NOT NULL DEFAULT '[]'::jsonb,
+        amount_cents     INTEGER NOT NULL DEFAULT 0,
+        issue_date       TEXT,
+        due_date         TEXT,
+        paid_date        TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        UNIQUE (organization_id, number)
+      );
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_invoices_org
+        ON invoices (organization_id);
+    `);
   }
 
   /**
