@@ -165,6 +165,22 @@ export class OrganizationRepository {
 
     return organization;
   }
+
+  async delete(
+    id: string,
+  ): Promise<void> {
+    if (this.db) {
+      // Cascades to all of the organization's tenant-scoped rows.
+      await this.db.query(
+        "DELETE FROM organizations WHERE id = $1",
+        [id],
+      );
+
+      return;
+    }
+
+    this.memory.delete(id);
+  }
 }
 
 /**

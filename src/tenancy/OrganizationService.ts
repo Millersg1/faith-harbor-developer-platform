@@ -147,4 +147,15 @@ export class OrganizationService {
       updated,
     );
   }
+
+  /**
+   * Permanently removes an organization and everything it owns (via the
+   * database's cascading deletes). Used for signup rollback and, later,
+   * platform-admin offboarding.
+   */
+  async delete(
+    id: string,
+  ): Promise<void> {
+    await this.repository.delete(id);
+  }
 }

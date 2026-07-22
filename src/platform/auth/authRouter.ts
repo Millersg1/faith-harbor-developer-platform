@@ -5,7 +5,9 @@ import {
 
 import { toPublicUser } from "../users/PlatformUser";
 import type { PlatformUserService } from "../users/PlatformUserService";
+import type { PlatformSessionRecord } from "../sessions/PlatformSession";
 import type { PlatformSessionService } from "../sessions/PlatformSessionService";
+import type { PlatformSignupService } from "../signup/PlatformSignupService";
 import {
   readToken,
   SESSION_COOKIE,
@@ -28,6 +30,11 @@ export interface AuthRouterDependencies {
   requireUser: RequestHandler;
 
   /**
+   * Self-serve org onboarding. When provided, POST /signup is exposed.
+   */
+  signup?: PlatformSignupService;
+
+  /**
    * Whether to mark the session cookie Secure (HTTPS only). True in
    * production.
    */
@@ -43,6 +50,136 @@ export function createAuthRouter(
   deps: AuthRouterDependencies,
 ): Router {
   const router = Router();
+
+  const secure =
+    deps.secureCookie ?? false;
+
+  // Self-serve onboarding: create an organization + its first owner and
+  // (when a session service is wired) log them straight in. Public — it
+  // is what creates the tenant, so it runs before any tenant exists.
+  if (deps.signup) {
+    const signup = deps.signup;
+
+    router.post(
+      "/signup",
+      (req, res, next) => {
+        const body = (req.body ??
+          {}) as {
+          organizationName?: unknown;
+          slug?: unknown;
+          email?: unknown;
+          password?: unknown;
+          name?: unknown;
+        };
+
+        if (
+          typeof body.organizationName !==
+            "string" ||
+          typeof body.email !==
+            "string" ||
+          typeof body.password !==
+            "string"
+        ) {
+          res.status(400).json({
+            error: {
+              code: "INVALID_SIGNUP",
+              message:
+                "Organization name, email, and password are required.",
+            },
+          });
+
+          return;
+        }
+
+        signup
+          .signup({
+            organizationName:
+              body.organizationName,
+            slug:
+              typeof body.slug ===
+              "string"
+                ? body.slug
+                : undefined,
+            ownerEmail: body.email,
+            ownerPassword:
+              body.password,
+            ownerName:
+              typeof body.name ===
+              "string"
+                ? body.name
+                : undefined,
+          })
+          .then((result) => {
+            if (result.session) {
+              setSessionCookie(
+                res,
+                result.session,
+                secure,
+              );
+            }
+
+            res.status(201).json({
+              organization: {
+                id: result
+                  .organization.id,
+                name: result
+                  .organization
+                  .name,
+                slug: result
+                  .organization
+                  .slug,
+              },
+              user: result.owner,
+            });
+          })
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /already in use|already exists/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(409)
+                  .json({
+                    error: {
+                      code: "CONFLICT",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              if (
+                /required|valid|at least|slug|name|password|email/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(400)
+                  .json({
+                    error: {
+                      code: "INVALID_SIGNUP",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+  }
 
   router.post(
     "/login",
@@ -80,20 +217,10 @@ export function createAuthRouter(
           deps.sessions
             .createForUser(user)
             .then((session) => {
-              res.cookie(
-                SESSION_COOKIE,
-                session.token,
-                {
-                  httpOnly: true,
-                  sameSite: "lax",
-                  secure:
-                    deps.secureCookie ??
-                    false,
-                  expires: new Date(
-                    session.expiresAt,
-                  ),
-                  path: "/",
-                },
+              setSessionCookie(
+                res,
+                session,
+                secure,
               );
 
               res.json({
@@ -169,4 +296,27 @@ export function createAuthRouter(
   );
 
   return router;
+}
+
+/**
+ * Sets the httpOnly session cookie from a session record.
+ */
+function setSessionCookie(
+  res: Parameters<RequestHandler>[1],
+  session: PlatformSessionRecord,
+  secure: boolean,
+): void {
+  res.cookie(
+    SESSION_COOKIE,
+    session.token,
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure,
+      expires: new Date(
+        session.expiresAt,
+      ),
+      path: "/",
+    },
+  );
 }
