@@ -124,6 +124,30 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_invoices_org
         ON invoices (organization_id);
     `);
+
+    // Users — login accounts within an organization. Email is unique per
+    // organization, so the same person can have separate accounts across
+    // tenants and logging in always resolves within one tenant.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        email            TEXT NOT NULL,
+        password_hash    TEXT NOT NULL,
+        name             TEXT,
+        role             TEXT NOT NULL DEFAULT 'member',
+        status           TEXT NOT NULL DEFAULT 'active',
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        UNIQUE (organization_id, email)
+      );
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_org
+        ON users (organization_id);
+    `);
   }
 
   /**
