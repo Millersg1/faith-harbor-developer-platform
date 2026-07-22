@@ -42,6 +42,29 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_organizations_slug
         ON organizations (slug);
     `);
+
+    // Clients — the first tenant-scoped entity. Every tenant-scoped table
+    // follows this shape: an organization_id foreign key, cascading on
+    // tenant deletion, and indexed for the per-tenant queries the app
+    // always makes.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS clients (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        email            TEXT,
+        company          TEXT,
+        status           TEXT NOT NULL DEFAULT 'active',
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_clients_org
+        ON clients (organization_id);
+    `);
   }
 
   /**
