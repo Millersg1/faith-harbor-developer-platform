@@ -234,6 +234,44 @@ const schema = z.object({
     .max(365)
     .default(14),
 
+  // ---- Recurring hosting billing ----
+  // How often the recurring-billing engine runs: generates renewal
+  // invoices, sends reminders, and suspends/reactivates accounts. Set
+  // to 0 to disable the whole recurring-billing loop.
+  BILLING_CYCLE_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(1440)
+    .default(720),
+
+  // How many days before a hosting term ends to raise the renewal
+  // invoice and send the first renewal notice.
+  BILLING_RENEWAL_LEAD_DAYS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(90)
+    .default(7),
+
+  // How many days a renewal invoice may stay unpaid past its due date
+  // before the account is automatically suspended (grace period).
+  BILLING_GRACE_DAYS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(90)
+    .default(7),
+
+  // Master switch for automatic suspension on non-payment. When false,
+  // the engine still invoices and sends reminders but never suspends —
+  // suspension stays a manual decision. Suspension is always reversible;
+  // account termination is never automated.
+  BILLING_AUTO_SUSPEND: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+
   // The public URL of this app, used for payment redirects and links.
   APP_URL: z
     .string()

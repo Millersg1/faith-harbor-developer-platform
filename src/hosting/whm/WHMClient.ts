@@ -136,8 +136,11 @@ function toNumber(
  * Observation methods (listAccounts, serverStatus) are always safe.
  * Account creation (createAccount) provisions real cPanel accounts and
  * is used only by the provisioning flow, which is gated behind a paid
- * order. Destructive operations (suspend/terminate) are deliberately
- * NOT exposed here yet — those remain under explicit human authority.
+ * order. Suspend/unsuspend are exposed for automated dunning: both are
+ * fully reversible (a suspended account keeps all its data and is
+ * restored the moment payment arrives). Account TERMINATION (removeacct)
+ * is deliberately NOT exposed — deleting an account is irreversible and
+ * remains under explicit human authority.
  */
 export class WHMClient {
   constructor(
@@ -342,6 +345,45 @@ export class WHMClient {
     }
 
     return String(data.url);
+  }
+
+  /**
+   * Suspends a cPanel account (suspendacct). The account's data is
+   * preserved and its website goes offline until unsuspended. Used by
+   * automated dunning when a renewal invoice goes unpaid past the grace
+   * period. Fully reversible via unsuspendAccount. Sent as POST.
+   */
+  async suspendAccount(
+    user: string,
+    reason?: string,
+  ): Promise<void> {
+    const params: Record<string, string> =
+      { user };
+
+    if (reason) {
+      params.reason = reason;
+    }
+
+    await this.call(
+      "suspendacct",
+      params,
+      "POST",
+    );
+  }
+
+  /**
+   * Restores a suspended cPanel account (unsuspendacct), bringing the
+   * website back online. Used to automatically reactivate an account the
+   * moment a past-due renewal is paid. Sent as POST.
+   */
+  async unsuspendAccount(
+    user: string,
+  ): Promise<void> {
+    await this.call(
+      "unsuspendacct",
+      { user },
+      "POST",
+    );
   }
 
   /**

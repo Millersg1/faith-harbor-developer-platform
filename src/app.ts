@@ -98,6 +98,7 @@ import { ProvisioningService } from "./hosting/provisioning/ProvisioningService"
 import { createProvisioningRouter } from "./hosting/provisioning/ProvisioningRouter";
 import { HostingOrderRepository } from "./hosting/orders/HostingOrderRepository";
 import { HostingOrderService } from "./hosting/orders/HostingOrderService";
+import { RecurringBillingService } from "./hosting/billing/RecurringBillingService";
 import { createHostingOrderRouter } from "./hosting/orders/HostingOrderRouter";
 import { createPublicStorefrontRouter } from "./hosting/storefront/PublicStorefrontRouter";
 import {
@@ -566,19 +567,51 @@ export function createApp(
   // Hosting orders: create an invoice for a plan; paying it
   // auto-provisions the account. The paid-invoice handler is wired to
   // the payment service so Stripe/PayPal payments trigger provisioning.
+  const hostingOrderRepository =
+    new HostingOrderRepository(
+      database,
+    );
+
   const hostingOrderService =
     new HostingOrderService(
       hostingPlanService,
       invoiceService,
       provisioningService,
-      new HostingOrderRepository(
-        database,
-      ),
+      hostingOrderRepository,
     );
 
+  // Recurring billing: raises renewal invoices, sends reminders, and
+  // suspends/reactivates accounts automatically. Shares the order
+  // repository with the order service so both see the same records.
+  const recurringBillingService =
+    new RecurringBillingService(
+      hostingOrderRepository,
+      hostingPlanService,
+      invoiceService,
+      provisioningService,
+      hostingService,
+      emailService,
+      {
+        renewalLeadDays:
+          config.BILLING_RENEWAL_LEAD_DAYS,
+        graceDays:
+          config.BILLING_GRACE_DAYS,
+        autoSuspend:
+          config.BILLING_AUTO_SUSPEND,
+        appUrl: config.APP_URL,
+        brands: brandService,
+      },
+    );
+
+  // A paid invoice either provisions a new account (first payment) or
+  // renews/reactivates an existing one. Both handlers are idempotent and
+  // act on disjoint invoices, so calling both is safe.
   paymentService.setInvoicePaidHandler(
     (invoiceId) => {
       void hostingOrderService.handleInvoicePaid(
+        invoiceId,
+      );
+      void recurringBillingService.handleRenewalPayment(
         invoiceId,
       );
     },
@@ -1166,6 +1199,10 @@ export function createApp(
   // Exposed so the server entry point can run periodic scans.
   app.locals.automationScanner =
     automationScanner;
+
+  // Exposed so the server entry point can run the recurring-billing loop.
+  app.locals.recurringBillingService =
+    recurringBillingService;
 
   app.use(
     "/api/v1/hosting/orders",

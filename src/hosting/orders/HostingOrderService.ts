@@ -4,6 +4,7 @@ import type { InvoiceRecord } from "../../accounting/InvoiceRecord";
 import type { InvoiceService } from "../../accounting/InvoiceService";
 import type { HostingPlanService } from "../plans/HostingPlanService";
 import type { ProvisioningService } from "../provisioning/ProvisioningService";
+import { addBillingPeriod } from "../billing/billingPeriod";
 import { HostingOrderRepository } from "./HostingOrderRepository";
 import type {
   CreateHostingOrderRequest,
@@ -122,6 +123,10 @@ export class HostingOrderService {
       billingCycle,
       invoiceId: invoice.id,
       status: "pending",
+      // Hosting renews automatically unless the customer opts out. The
+      // renewal engine acts on nextDueDate, which is set once the
+      // account is provisioned (below).
+      autoRenew: true,
       createdAt: now,
       updatedAt: now,
     };
@@ -168,13 +173,21 @@ export class HostingOrderService {
           },
         );
 
+      const paidAt = new Date();
+
       this.repository.update({
         ...order,
         status: "provisioned",
         username:
           result.account.username,
+        // The customer has paid for the first term now, so the next
+        // renewal is due one billing period from today.
+        nextDueDate: addBillingPeriod(
+          paidAt.toISOString(),
+          order.billingCycle,
+        ),
         updatedAt:
-          new Date().toISOString(),
+          paidAt.toISOString(),
       });
     } catch (error) {
       this.logger.error(

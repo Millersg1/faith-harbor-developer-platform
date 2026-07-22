@@ -129,6 +129,30 @@ export class HostingAccountService {
   }
 
   /**
+   * Finds a hosting account by its cPanel username. Used by billing to
+   * resolve the live account for an order (which stores the username
+   * once provisioned). Returns undefined when none matches.
+   */
+  findByUsername(
+    username: string,
+  ): HostingAccountRecord | undefined {
+    const target = username
+      .trim()
+      .toLowerCase();
+
+    if (!target) {
+      return undefined;
+    }
+
+    return this.list().find(
+      (account) =>
+        account.username
+          .trim()
+          .toLowerCase() === target,
+    );
+  }
+
+  /**
    * Updates an existing hosting account.
    */
   update(

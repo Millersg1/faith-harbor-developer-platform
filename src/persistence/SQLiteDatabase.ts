@@ -627,6 +627,12 @@ export class SQLiteDatabase {
         "ALTER TABLE support_tickets ADD COLUMN hosting_account_id TEXT",
         "ALTER TABLE payments ADD COLUMN provider TEXT",
         "ALTER TABLE clients ADD COLUMN brand_id TEXT",
+        // Recurring hosting billing: renewal tracking on orders.
+        "ALTER TABLE hosting_orders ADD COLUMN auto_renew INTEGER",
+        "ALTER TABLE hosting_orders ADD COLUMN next_due_date TEXT",
+        "ALTER TABLE hosting_orders ADD COLUMN last_renewed_at TEXT",
+        "ALTER TABLE hosting_orders ADD COLUMN renewal_invoice_id TEXT",
+        "ALTER TABLE hosting_orders ADD COLUMN last_reminder_stage INTEGER",
       ];
 
     for (

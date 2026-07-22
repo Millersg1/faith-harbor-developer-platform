@@ -272,6 +272,57 @@ export class ProvisioningService {
   }
 
   /**
+   * Suspends the live cPanel account and marks the local record
+   * suspended. Used by automated dunning when a renewal goes unpaid.
+   * Fully reversible via unsuspend — the account keeps all its data.
+   * Requires WHM to be configured.
+   */
+  async suspend(
+    account: HostingAccountRecord,
+    reason?: string,
+  ): Promise<HostingAccountRecord> {
+    if (!this.whm) {
+      throw new Error(
+        "Cannot suspend: WHM is not configured.",
+      );
+    }
+
+    await this.whm.suspendAccount(
+      account.username,
+      reason,
+    );
+
+    return this.hostingAccounts.update({
+      ...account,
+      status: "suspended",
+    });
+  }
+
+  /**
+   * Restores a suspended cPanel account and marks the local record
+   * active again. Used to automatically reactivate the moment a
+   * past-due renewal is paid. Requires WHM to be configured.
+   */
+  async unsuspend(
+    account: HostingAccountRecord,
+  ): Promise<HostingAccountRecord> {
+    if (!this.whm) {
+      throw new Error(
+        "Cannot unsuspend: WHM is not configured.",
+      );
+    }
+
+    await this.whm.unsuspendAccount(
+      account.username,
+    );
+
+    return this.hostingAccounts.update({
+      ...account,
+      status: "active",
+    });
+  }
+
+  /**
    * Ensures a WHM package exists for the plan (creating it from the
    * plan's limits when missing) and returns its WHM-safe name. Since
    * WHM requires a package to create an account, the OS keeps one

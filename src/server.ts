@@ -5,6 +5,7 @@ import type { BackupService } from "./backup/BackupService";
 import { config } from "./config";
 import type { SQLiteDatabase } from "./persistence/SQLiteDatabase";
 import type { SequenceService } from "./sequences/SequenceService";
+import type { RecurringBillingService } from "./hosting/billing/RecurringBillingService";
 
 async function startServer(): Promise<void> {
   const app = await createConfiguredApp();
@@ -70,6 +71,56 @@ async function startServer(): Promise<void> {
       : undefined;
 
   sequenceScheduler?.start();
+
+  // Recurring hosting billing: on each tick, raise renewal invoices that
+  // have come due, send escalating reminders, and suspend accounts past
+  // the grace period. Reactivation on payment happens instantly via the
+  // paid-invoice handler, not this loop. Suspension is reversible;
+  // termination is never automated. A zero interval disables it.
+  const recurringBillingService =
+    app.locals.recurringBillingService as
+      | RecurringBillingService
+      | undefined;
+
+  const billingScheduler =
+    recurringBillingService &&
+    config.BILLING_CYCLE_INTERVAL_MINUTES >
+      0
+      ? new AutomationScheduler(
+          // These actions execute (they are not drafts for review), so
+          // log an accurate summary here and return 0 to suppress the
+          // scheduler's generic "draft(s)" message.
+          async () => {
+            const actions =
+              await recurringBillingService.runBillingCycle();
+
+            if (actions > 0) {
+              console.log(
+                `Recurring billing: ${actions} action(s) taken (renewals, reminders, suspensions).`,
+              );
+            }
+
+            return 0;
+          },
+          config.BILLING_CYCLE_INTERVAL_MINUTES *
+            60 *
+            1000,
+          {
+            log: (message) =>
+              console.log(message),
+            error: (
+              message,
+              error,
+            ) =>
+              console.error(
+                message,
+                error,
+              ),
+          },
+        )
+      : undefined;
+
+  billingScheduler?.start();
 
   // Automatic database backups: one at startup, then on an interval.
   // A consistent snapshot is safe to take while the app is serving.
@@ -142,6 +193,8 @@ async function startServer(): Promise<void> {
     scheduler?.stop();
 
     sequenceScheduler?.stop();
+
+    billingScheduler?.stop();
 
     if (backupTimer) {
       clearInterval(backupTimer);
