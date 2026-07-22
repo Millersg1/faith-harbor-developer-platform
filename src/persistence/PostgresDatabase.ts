@@ -65,6 +65,36 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_clients_org
         ON clients (organization_id);
     `);
+
+    // Projects — a second tenant-scoped entity that also references a
+    // client. The client_id FK is scoped to the same organization by the
+    // service layer; the column simply cascades to null if the client is
+    // removed, so a project is never left pointing at a deleted client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT
+                           REFERENCES clients (id) ON DELETE SET NULL,
+        name             TEXT NOT NULL,
+        description      TEXT,
+        status           TEXT NOT NULL DEFAULT 'active',
+        due_date         TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_projects_org
+        ON projects (organization_id);
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_projects_client
+        ON projects (client_id);
+    `);
   }
 
   /**
