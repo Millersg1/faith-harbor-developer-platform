@@ -238,7 +238,7 @@ describe("createPlatformApp (composition root)", () => {
     const pages: Array<
       [string, string]
     > = [
-      ["/", "All Elite Cloud"],
+      ["/", "AllEliteCloud"],
       ["/login", "Sign in"],
       [
         "/signup",

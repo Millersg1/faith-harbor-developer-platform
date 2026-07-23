@@ -8,6 +8,8 @@
  * inject markup.
  */
 
+import { landingHtml } from "./landing";
+
 const STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -118,27 +120,13 @@ ${opts.script ? `<script>${opts.script}</script>` : ""}
 
 const LOGO = `<span class="logo"></span>`;
 
+/**
+ * The public marketing homepage (generated from the AllEliteCloud design
+ * file into ./landing). The auth pages below stay lightweight and are
+ * served at /login, /signup, /app.
+ */
 export function landingPage(): string {
-  const body = `
-  <div class="topbar"><div class="wrap">
-    <div class="brand">${LOGO} All Elite Cloud</div>
-    <div class="row"><a class="btn ghost" href="/login">Sign in</a></div>
-  </div></div>
-  <div class="wrap" style="padding-top:64px; max-width:760px; text-align:center;">
-    <div class="pill" style="display:inline-block; margin-bottom:18px;">Multi-tenant business platform</div>
-    <h1 style="font-size:2.6rem; letter-spacing:-0.03em; line-height:1.1;">One platform to run your whole organization.</h1>
-    <p class="muted" style="font-size:1.05rem; margin:16px auto 26px; max-width:560px;">
-      Clients, projects, invoicing, and your own branded workspace — isolated per organization, yours to run.
-    </p>
-    <div class="row" style="justify-content:center;">
-      <a class="btn" style="width:auto; padding:12px 22px;" href="/signup">Create your organization</a>
-      <a class="btn sec" style="width:auto; padding:12px 22px;" href="/login">Sign in</a>
-    </div>
-  </div>`;
-  return layout({
-    title: "All Elite Cloud",
-    body,
-  });
+  return landingHtml;
 }
 
 export function loginPage(): string {
