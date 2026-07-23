@@ -3,6 +3,9 @@ import "dotenv/config";
 import { PostgresDatabase } from "../persistence/PostgresDatabase";
 import { OrganizationRepository } from "../tenancy/OrganizationRepository";
 import { OrganizationService } from "../tenancy/OrganizationService";
+import { PlatformAdminRepository } from "./admin/PlatformAdminRepository";
+import { PlatformAdminService } from "./admin/PlatformAdminService";
+import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { BrandingRepository } from "./branding/BrandingRepository";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
@@ -100,6 +103,45 @@ async function start(): Promise<void> {
       sessions,
     );
 
+  const admins =
+    new PlatformAdminService(
+      new PlatformAdminRepository(db),
+    );
+  const adminSessions =
+    new PlatformAdminSessionService(
+      db,
+    );
+
+  // Bootstrap the first platform admin from the environment, once.
+  const bootEmail =
+    process.env.PLATFORM_ADMIN_EMAIL;
+  const bootPass =
+    process.env
+      .PLATFORM_ADMIN_PASSWORD;
+
+  if (bootEmail && bootPass) {
+    try {
+      const created =
+        await admins.ensureBootstrapAdmin(
+          bootEmail,
+          bootPass,
+          process.env
+            .PLATFORM_ADMIN_NAME,
+        );
+
+      if (created) {
+        console.log(
+          `Bootstrapped platform admin: ${bootEmail}`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Failed to bootstrap platform admin.",
+        error,
+      );
+    }
+  }
+
   const app = createPlatformApp({
     organizations,
     users,
@@ -109,6 +151,8 @@ async function start(): Promise<void> {
     projects,
     invoices,
     signup,
+    admins,
+    adminSessions,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

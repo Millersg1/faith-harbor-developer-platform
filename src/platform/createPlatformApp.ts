@@ -4,6 +4,11 @@ import express, {
 
 import { OrganizationService } from "../tenancy/OrganizationService";
 import { createTenantMiddleware } from "../tenancy/tenantMiddleware";
+import { adminConsolePage } from "./admin/adminPage";
+import { createAdminRouter } from "./admin/adminRouter";
+import { PlatformAdminService } from "./admin/PlatformAdminService";
+import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
+import { createRequirePlatformAdmin } from "./admin/requirePlatformAdmin";
 import { createAuthRouter } from "./auth/authRouter";
 import { createRequireUser } from "./auth/requireUser";
 import { createBrandingRouter } from "./branding/BrandingRouter";
@@ -31,6 +36,8 @@ export interface PlatformAppDependencies {
   projects: PlatformProjectService;
   invoices: PlatformInvoiceService;
   signup: PlatformSignupService;
+  admins: PlatformAdminService;
+  adminSessions: PlatformAdminSessionService;
 
   /**
    * Platform base domain used to resolve tenants from subdomains
@@ -103,6 +110,37 @@ export function createPlatformApp(
       .type("html")
       .send(dashboardPage());
   });
+
+  // Platform administration (All Elite Cloud, cross-tenant).
+  const requireAdmin =
+    createRequirePlatformAdmin({
+      adminSessions:
+        deps.adminSessions,
+      admins: deps.admins,
+    });
+
+  app.get(
+    "/platform/admin",
+    (_req, res) => {
+      res
+        .type("html")
+        .send(adminConsolePage());
+    },
+  );
+
+  app.use(
+    "/platform/admin/api",
+    createAdminRouter({
+      admins: deps.admins,
+      adminSessions:
+        deps.adminSessions,
+      organizations:
+        deps.organizations,
+      requireAdmin,
+      secureCookie:
+        deps.secureCookie,
+    }),
+  );
 
   // Auth: public signup/login/logout + authenticated /me.
   app.use(

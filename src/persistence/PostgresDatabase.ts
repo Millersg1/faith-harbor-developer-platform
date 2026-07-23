@@ -185,6 +185,29 @@ export class PostgresDatabase
         updated_at       TEXT NOT NULL
       );
     `);
+
+    // Platform administrators (All Elite Cloud staff) — global accounts,
+    // NOT tied to any organization; they act across all tenants.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS platform_admins (
+        id             TEXT PRIMARY KEY,
+        email          TEXT NOT NULL UNIQUE,
+        password_hash  TEXT NOT NULL,
+        name           TEXT,
+        created_at     TEXT NOT NULL,
+        updated_at     TEXT NOT NULL
+      );
+    `);
+
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS platform_admin_sessions (
+        token       TEXT PRIMARY KEY,
+        admin_id    TEXT NOT NULL
+                      REFERENCES platform_admins (id) ON DELETE CASCADE,
+        expires_at  TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+      );
+    `);
   }
 
   /**
