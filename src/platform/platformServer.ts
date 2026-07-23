@@ -3,6 +3,8 @@ import "dotenv/config";
 import { PostgresDatabase } from "../persistence/PostgresDatabase";
 import { OrganizationRepository } from "../tenancy/OrganizationRepository";
 import { OrganizationService } from "../tenancy/OrganizationService";
+import { OrganizationDomainRepository } from "../tenancy/OrganizationDomainRepository";
+import { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
 import { PlatformAdminRepository } from "./admin/PlatformAdminRepository";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
@@ -102,6 +104,12 @@ async function start(): Promise<void> {
       users,
       sessions,
     );
+  const domains =
+    new OrganizationDomainService(
+      new OrganizationDomainRepository(
+        db,
+      ),
+    );
 
   const admins =
     new PlatformAdminService(
@@ -151,6 +159,7 @@ async function start(): Promise<void> {
     projects,
     invoices,
     signup,
+    domains,
     admins,
     adminSessions,
     baseDomain:

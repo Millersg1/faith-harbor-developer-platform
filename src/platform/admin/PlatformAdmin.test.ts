@@ -6,6 +6,7 @@ import {
 } from "vitest";
 
 import { OrganizationService } from "../../tenancy/OrganizationService";
+import { OrganizationDomainService } from "../../tenancy/OrganizationDomainService";
 import { BrandingRepository } from "../branding/BrandingRepository";
 import { BrandingService } from "../branding/BrandingService";
 import { PlatformClientRepository } from "../clients/PlatformClientRepository";
@@ -64,6 +65,8 @@ async function build() {
       users,
       sessions,
     ),
+    domains:
+      new OrganizationDomainService(),
     admins,
     adminSessions:
       new PlatformAdminSessionService(),

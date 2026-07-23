@@ -260,6 +260,17 @@ export function dashboardPage(): string {
         <button class="btn" id="saveBrand">Save branding</button>
         <div class="msg" id="bmsg"></div>
       </div>
+      <div class="panel" id="domainPanel" style="display:none;">
+        <h2>Custom domain <span class="pill">owner/admin</span></h2>
+        <p class="hint">White-label: run your workspace on your own domain.</p>
+        <div class="list" id="domains"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="dname">Domain</label><input id="dname" placeholder="cloud.yourbrand.com" /></div>
+          <button class="btn" id="addDomain" style="width:auto;">Add</button>
+        </div>
+        <div class="msg" id="dmsg"></div>
+        <p class="hint" style="margin-top:12px">Point your domain (A/CNAME record) at the platform; once it resolves, your workspace loads there and SSL is issued automatically.</p>
+      </div>
     </div>
   </div>`;
   const script = `
@@ -319,6 +330,27 @@ export function dashboardPage(): string {
     document.getElementById('bname').value=b.displayName||'';
     document.getElementById('bcolor').value=b.primaryColor||'';
   }
+  async function loadDomains(){
+    var r=await api('/api/platform/domains'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('domains'); clear(el);
+    var list=d.domains||[];
+    if(!list.length){el.appendChild(emptyMsg('No custom domains yet.'));return;}
+    list.forEach(function(dm){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var nm=document.createElement('div');nm.textContent=esc(dm.domain);left.appendChild(nm);
+      row.appendChild(left);
+      var st=document.createElement('span');st.className='pill';st.textContent=dm.verified?'live':'pending DNS';row.appendChild(st);
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.marginLeft='8px';rm.style.padding='6px 12px';rm.textContent='Remove';
+      rm.addEventListener('click',function(){removeDomain(dm.id);});row.appendChild(rm);
+      el.appendChild(row);
+    });
+  }
+  async function removeDomain(id){
+    var r=await api('/api/platform/domains/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok)loadDomains();
+  }
   async function init(){
     var me=await api('/auth/me');
     if(!me.ok){window.location='/login';return;}
@@ -326,8 +358,11 @@ export function dashboardPage(): string {
     slug=org.slug||'';
     document.getElementById('who').textContent=esc(u.email)+' · '+esc(u.role);
     if(org.name){document.getElementById('orgName').textContent=esc(org.name);}
-    if(u.role==='owner'||u.role==='admin'){document.getElementById('brandPanel').style.display='';}
-    await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices();
+    if(u.role==='owner'||u.role==='admin'){
+      document.getElementById('brandPanel').style.display='';
+      document.getElementById('domainPanel').style.display='';
+    }
+    await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadDomains();
   }
   document.getElementById('logout').addEventListener('click',async function(){
     await api('/auth/logout',{method:'POST'}); window.location='/login';
@@ -371,6 +406,15 @@ export function dashboardPage(): string {
       if(b.primaryColor){document.documentElement.style.setProperty('--accent',b.primaryColor);}
       if(b.displayName){document.getElementById('orgName').textContent=b.displayName;}}
     else{setMsg('bmsg','err',(d.error&&d.error.message)||'Could not save.');}
+  });
+  document.getElementById('addDomain').addEventListener('click',async function(){
+    var d=document.getElementById('dname');
+    if(!d.value.trim()){setMsg('dmsg','err','Enter a domain.');return;}
+    setMsg('dmsg','','Adding…');
+    var r=await api('/api/platform/domains',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:d.value.trim()})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){d.value='';setMsg('dmsg','ok','Domain added. Point its DNS at the platform.');loadDomains();}
+    else{setMsg('dmsg','err',(x.error&&x.error.message)||'Could not add domain.');}
   });
   init();`;
   return layout({

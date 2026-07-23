@@ -3,6 +3,8 @@ import {
   type Response,
 } from "express";
 
+import type { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
+import { requireRole } from "./auth/requireRole";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
@@ -12,6 +14,7 @@ export interface PlatformApiDependencies {
   clients: PlatformClientService;
   projects?: PlatformProjectService;
   invoices?: PlatformInvoiceService;
+  domains?: OrganizationDomainService;
 }
 
 /**
@@ -202,6 +205,104 @@ export function createPlatformApiRouter(
               next,
             ),
           );
+      },
+    );
+  }
+
+  // ---- Custom (white-label) domains ----
+  if (deps.domains) {
+    const domains = deps.domains;
+
+    router.get(
+      "/domains",
+      (_req, res, next) => {
+        domains
+          .listMine()
+          .then((rows) =>
+            res.json({
+              domains: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/domains",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.domain,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_DOMAIN",
+            "A domain is required.",
+          );
+
+          return;
+        }
+
+        domains
+          .add(body.domain)
+          .then((domain) =>
+            res
+              .status(201)
+              .json({ domain }),
+          )
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "";
+            if (
+              /already in use/i.test(
+                message,
+              )
+            ) {
+              res.status(409).json({
+                error: {
+                  code: "DOMAIN_TAKEN",
+                  message,
+                },
+              });
+              return;
+            }
+            if (
+              /valid domain/i.test(
+                message,
+              )
+            ) {
+              badRequest(
+                res,
+                "INVALID_DOMAIN",
+                message,
+              );
+              return;
+            }
+            next(error);
+          });
+      },
+    );
+
+    router.delete(
+      "/domains/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        domains
+          .remove(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
       },
     );
   }

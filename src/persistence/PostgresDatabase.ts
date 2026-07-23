@@ -208,6 +208,19 @@ export class PostgresDatabase
         created_at  TEXT NOT NULL
       );
     `);
+
+    // Custom (white-label) domains. Globally unique so no two tenants can
+    // claim the same host; the request host resolves to the owning org.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS organization_domains (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        domain           TEXT NOT NULL UNIQUE,
+        verified         BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at       TEXT NOT NULL
+      );
+    `);
   }
 
   /**

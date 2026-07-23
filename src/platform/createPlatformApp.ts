@@ -3,6 +3,7 @@ import express, {
 } from "express";
 
 import { OrganizationService } from "../tenancy/OrganizationService";
+import { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
 import { createTenantMiddleware } from "../tenancy/tenantMiddleware";
 import { adminConsolePage } from "./admin/adminPage";
 import { createAdminRouter } from "./admin/adminRouter";
@@ -36,6 +37,7 @@ export interface PlatformAppDependencies {
   projects: PlatformProjectService;
   invoices: PlatformInvoiceService;
   signup: PlatformSignupService;
+  domains: OrganizationDomainService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
 
@@ -66,7 +68,10 @@ export function createPlatformApp(
   const tenantMiddleware =
     createTenantMiddleware(
       deps.organizations,
-      { baseDomain: deps.baseDomain },
+      {
+        baseDomain: deps.baseDomain,
+        domains: deps.domains,
+      },
     );
 
   const requireUser =
@@ -177,6 +182,7 @@ export function createPlatformApp(
       clients: deps.clients,
       projects: deps.projects,
       invoices: deps.invoices,
+      domains: deps.domains,
     }),
   );
 

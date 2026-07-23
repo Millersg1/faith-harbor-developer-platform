@@ -6,6 +6,7 @@ import {
 } from "vitest";
 
 import { OrganizationService } from "../tenancy/OrganizationService";
+import { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { BrandingRepository } from "./branding/BrandingRepository";
@@ -68,6 +69,8 @@ function build() {
     projects,
     invoices,
     signup,
+    domains:
+      new OrganizationDomainService(),
     admins: new PlatformAdminService(),
     adminSessions:
       new PlatformAdminSessionService(),
