@@ -167,6 +167,24 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_sessions_user
         ON sessions (user_id);
     `);
+
+    // Per-tenant white-label branding. One row per organization (the
+    // organization id is the primary key), cascading on tenant deletion.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS organization_branding (
+        organization_id  TEXT PRIMARY KEY
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        display_name     TEXT,
+        logo_url         TEXT,
+        favicon_url      TEXT,
+        primary_color    TEXT,
+        secondary_color  TEXT,
+        accent_color     TEXT,
+        login_message    TEXT,
+        support_email    TEXT,
+        updated_at       TEXT NOT NULL
+      );
+    `);
   }
 
   /**
