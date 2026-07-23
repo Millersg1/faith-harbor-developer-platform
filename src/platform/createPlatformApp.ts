@@ -1,0 +1,137 @@
+import express, {
+  type ErrorRequestHandler,
+} from "express";
+
+import { OrganizationService } from "../tenancy/OrganizationService";
+import { createTenantMiddleware } from "../tenancy/tenantMiddleware";
+import { createAuthRouter } from "./auth/authRouter";
+import { createRequireUser } from "./auth/requireUser";
+import { createBrandingRouter } from "./branding/BrandingRouter";
+import { BrandingService } from "./branding/BrandingService";
+import { PlatformClientService } from "./clients/PlatformClientService";
+import { createPlatformApiRouter } from "./PlatformApiRouter";
+import { PlatformSessionService } from "./sessions/PlatformSessionService";
+import { PlatformSignupService } from "./signup/PlatformSignupService";
+import { PlatformUserService } from "./users/PlatformUserService";
+
+export interface PlatformAppDependencies {
+  organizations: OrganizationService;
+  users: PlatformUserService;
+  sessions: PlatformSessionService;
+  branding: BrandingService;
+  clients: PlatformClientService;
+  signup: PlatformSignupService;
+
+  /**
+   * Platform base domain used to resolve tenants from subdomains
+   * (e.g. "allelitecloud.com" or "staging.allelitecloud.com").
+   */
+  baseDomain?: string;
+
+  /**
+   * Mark the session cookie Secure (HTTPS only). True in staging/prod.
+   */
+  secureCookie?: boolean;
+}
+
+/**
+ * Assembles the All Elite Cloud platform into a single Express app.
+ *
+ * This is the composition root: it wires the tenant middleware, auth
+ * (signup/login/sessions), white-label branding, and the tenant-scoped
+ * API into one application. It takes already-constructed services, so the
+ * same assembly runs against Postgres in production and against in-memory
+ * repositories in tests.
+ */
+export function createPlatformApp(
+  deps: PlatformAppDependencies,
+): express.Express {
+  const tenantMiddleware =
+    createTenantMiddleware(
+      deps.organizations,
+      { baseDomain: deps.baseDomain },
+    );
+
+  const requireUser =
+    createRequireUser({
+      sessions: deps.sessions,
+      users: deps.users,
+    });
+
+  const app = express();
+
+  app.use(express.json());
+
+  app.get(
+    "/health",
+    (_req, res) => {
+      res.json({
+        status: "ok",
+        service: "All Elite Cloud",
+      });
+    },
+  );
+
+  // Auth: public signup/login/logout + authenticated /me.
+  app.use(
+    "/auth",
+    createAuthRouter({
+      users: deps.users,
+      sessions: deps.sessions,
+      signup: deps.signup,
+      tenantMiddleware,
+      requireUser,
+      secureCookie:
+        deps.secureCookie,
+    }),
+  );
+
+  // Branding: GET is public (login screen), PUT is owner/admin only.
+  app.use(
+    "/api/platform",
+    createBrandingRouter({
+      branding: deps.branding,
+      tenantMiddleware,
+      requireUser,
+    }),
+  );
+
+  // Authenticated tenant-scoped API (falls through here after the
+  // branding routes above have had their chance).
+  app.use(
+    "/api/platform",
+    requireUser,
+    createPlatformApiRouter({
+      clients: deps.clients,
+    }),
+  );
+
+  app.use((_req, res) => {
+    res.status(404).json({
+      error: {
+        code: "NOT_FOUND",
+        message: "Not found.",
+      },
+    });
+  });
+
+  const errorHandler: ErrorRequestHandler =
+    (error, _req, res, _next) => {
+      console.error(
+        "Platform request failed.",
+        error,
+      );
+
+      res.status(500).json({
+        error: {
+          code: "INTERNAL",
+          message:
+            "Something went wrong.",
+        },
+      });
+    };
+
+  app.use(errorHandler);
+
+  return app;
+}
