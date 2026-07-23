@@ -3,6 +3,7 @@ import {
   type RequestHandler,
 } from "express";
 
+import type { OrganizationService } from "../../tenancy/OrganizationService";
 import { toPublicUser } from "../users/PlatformUser";
 import type { PlatformUserService } from "../users/PlatformUserService";
 import type { PlatformSessionRecord } from "../sessions/PlatformSession";
@@ -17,6 +18,12 @@ import {
 export interface AuthRouterDependencies {
   users: PlatformUserService;
   sessions: PlatformSessionService;
+
+  /**
+   * Optional: when provided, GET /me also returns the caller's
+   * organization (id, name, slug) — the UI needs the slug for branding.
+   */
+  organizations?: OrganizationService;
 
   /**
    * Resolves the tenant for the login request (login happens within a
@@ -289,9 +296,37 @@ export function createAuthRouter(
         req as AuthedRequest
       ).auth;
 
-      res.json({
-        user: auth?.user,
-      });
+      if (
+        !deps.organizations ||
+        !auth
+      ) {
+        res.json({
+          user: auth?.user,
+        });
+
+        return;
+      }
+
+      deps.organizations
+        .get(
+          auth.session
+            .organizationId,
+        )
+        .then((org) =>
+          res.json({
+            user: auth.user,
+            organization: {
+              id: org.id,
+              name: org.name,
+              slug: org.slug,
+            },
+          }),
+        )
+        .catch(() =>
+          res.json({
+            user: auth.user,
+          }),
+        );
     },
   );
 

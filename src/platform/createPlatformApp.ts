@@ -13,6 +13,12 @@ import { createPlatformApiRouter } from "./PlatformApiRouter";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PlatformUserService } from "./users/PlatformUserService";
+import {
+  dashboardPage,
+  landingPage,
+  loginPage,
+  signupPage,
+} from "./web/pages";
 
 export interface PlatformAppDependencies {
   organizations: OrganizationService;
@@ -72,6 +78,28 @@ export function createPlatformApp(
     },
   );
 
+  // Web UI (self-contained HTML that calls the API below).
+  app.get("/", (_req, res) => {
+    res.type("html").send(
+      landingPage(),
+    );
+  });
+  app.get("/login", (_req, res) => {
+    res
+      .type("html")
+      .send(loginPage());
+  });
+  app.get("/signup", (_req, res) => {
+    res
+      .type("html")
+      .send(signupPage());
+  });
+  app.get("/app", (_req, res) => {
+    res
+      .type("html")
+      .send(dashboardPage());
+  });
+
   // Auth: public signup/login/logout + authenticated /me.
   app.use(
     "/auth",
@@ -79,6 +107,8 @@ export function createPlatformApp(
       users: deps.users,
       sessions: deps.sessions,
       signup: deps.signup,
+      organizations:
+        deps.organizations,
       tenantMiddleware,
       requireUser,
       secureCookie:

@@ -127,11 +127,44 @@ describe("createPlatformApp (composition root)", () => {
     ).toHaveLength(1);
   });
 
-  it("404s an unknown route", async () => {
+  it("404s an unknown API route", async () => {
     const app = build();
 
     await request(app)
-      .get("/nope")
+      .get("/api/nope")
       .expect(404);
+  });
+
+  it("serves the web UI pages as HTML", async () => {
+    const app = build();
+
+    const pages: Array<
+      [string, string]
+    > = [
+      ["/", "All Elite Cloud"],
+      ["/login", "Sign in"],
+      [
+        "/signup",
+        "Create your organization",
+      ],
+      ["/app", "Dashboard"],
+    ];
+
+    for (const [
+      path,
+      needle,
+    ] of pages) {
+      const res = await request(
+        app,
+      ).get(path);
+
+      expect(res.status).toBe(200);
+      expect(
+        res.headers["content-type"],
+      ).toContain("html");
+      expect(res.text).toContain(
+        needle,
+      );
+    }
   });
 });
