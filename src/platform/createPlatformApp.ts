@@ -9,6 +9,8 @@ import { createRequireUser } from "./auth/requireUser";
 import { createBrandingRouter } from "./branding/BrandingRouter";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientService } from "./clients/PlatformClientService";
+import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
+import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApiRouter } from "./PlatformApiRouter";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
@@ -26,6 +28,8 @@ export interface PlatformAppDependencies {
   sessions: PlatformSessionService;
   branding: BrandingService;
   clients: PlatformClientService;
+  projects: PlatformProjectService;
+  invoices: PlatformInvoiceService;
   signup: PlatformSignupService;
 
   /**
@@ -133,6 +137,8 @@ export function createPlatformApp(
     requireUser,
     createPlatformApiRouter({
       clients: deps.clients,
+      projects: deps.projects,
+      invoices: deps.invoices,
     }),
   );
 

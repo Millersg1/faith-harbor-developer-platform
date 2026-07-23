@@ -7,6 +7,10 @@ import { BrandingRepository } from "./branding/BrandingRepository";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
+import { PlatformInvoiceRepository } from "./invoices/PlatformInvoiceRepository";
+import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
+import { PlatformProjectRepository } from "./projects/PlatformProjectRepository";
+import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApp } from "./createPlatformApp";
 import { PlatformSessionRepository } from "./sessions/PlatformSessionRepository";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
@@ -75,6 +79,20 @@ async function start(): Promise<void> {
         db,
       ),
     );
+  const projects =
+    new PlatformProjectService(
+      new PlatformProjectRepository(
+        db,
+      ),
+      clients,
+    );
+  const invoices =
+    new PlatformInvoiceService(
+      new PlatformInvoiceRepository(
+        db,
+      ),
+      clients,
+    );
   const signup =
     new PlatformSignupService(
       organizations,
@@ -88,6 +106,8 @@ async function start(): Promise<void> {
     sessions,
     branding,
     clients,
+    projects,
+    invoices,
     signup,
     baseDomain:
       process.env

@@ -55,12 +55,13 @@ const STYLES = `
   .card .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 22px; }
   label { display: block; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.03em;
     text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
-  input {
+  input, select {
     width: 100%; padding: 12px 14px; font-size: 0.95rem;
     color: var(--text); background: rgba(0,0,0,0.25);
     border: 1px solid var(--border); border-radius: 11px; outline: none;
   }
-  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45,212,191,0.18); }
+  select { appearance: none; }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45,212,191,0.18); }
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     width: 100%; margin-top: 20px; padding: 12px 16px; font-size: 0.95rem; font-weight: 700;
@@ -237,6 +238,30 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="cmsg"></div>
       </div>
+      <div class="panel">
+        <h2>Projects</h2>
+        <p class="hint">Work you're delivering, optionally linked to a client.</p>
+        <div class="list" id="projects"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="pname">Name</label><input id="pname" placeholder="New project" /></div>
+          <div class="f"><label for="pclient">Client (optional)</label><select id="pclient" class="client-select"></select></div>
+          <button class="btn" id="addProject" style="width:auto;">Add</button>
+        </div>
+        <div class="msg" id="pmsg"></div>
+      </div>
+      <div class="panel">
+        <h2>Invoices</h2>
+        <p class="hint">Bill a client. Numbered per organization.</p>
+        <div class="list" id="invoices"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="iclient">Client</label><select id="iclient" class="client-select"></select></div>
+          <div class="f"><label for="idesc">Description</label><input id="idesc" placeholder="Consulting" /></div>
+          <div class="f" style="max-width:80px;"><label for="iqty">Qty</label><input id="iqty" type="number" value="1" min="1" /></div>
+          <div class="f" style="max-width:110px;"><label for="iprice">Unit price</label><input id="iprice" type="number" value="0" min="0" step="0.01" /></div>
+          <button class="btn" id="addInvoice" style="width:auto;">Add</button>
+        </div>
+        <div class="msg" id="imsg"></div>
+      </div>
       <div class="panel" id="brandPanel" style="display:none;">
         <h2>Branding <span class="pill">owner/admin</span></h2>
         <p class="hint">White-label your workspace. Changes are live instantly.</p>
@@ -250,27 +275,52 @@ export function dashboardPage(): string {
     </div>
   </div>`;
   const script = `
-  var slug='';
+  var slug='', clientsCache=[];
   function esc(s){return s==null?'':String(s);}
+  function money(n){return '$'+(Number(n||0)).toFixed(2);}
   function clear(el){while(el.firstChild){el.removeChild(el.firstChild);}}
   function emptyMsg(text){var d=document.createElement('div');d.className='empty';d.textContent=text;return d;}
+  function item(title,subtext,pillText){
+    var row=document.createElement('div');row.className='item';
+    var left=document.createElement('div');
+    var t=document.createElement('div');t.textContent=title;left.appendChild(t);
+    if(subtext){var s=document.createElement('div');s.className='sub';s.textContent=subtext;left.appendChild(s);}
+    row.appendChild(left);
+    if(pillText){var p=document.createElement('span');p.className='pill';p.textContent=pillText;row.appendChild(p);}
+    return row;
+  }
+  function renderList(id,list,map){
+    var el=document.getElementById(id); clear(el);
+    if(!list.length){el.appendChild(emptyMsg('Nothing yet.'));return;}
+    list.forEach(function(x){el.appendChild(map(x));});
+  }
+  function setMsg(id,cls,text){var m=document.getElementById(id);m.className='msg'+(cls?' '+cls:'');m.textContent=text;}
   async function api(path,opts){return fetch(path,Object.assign({credentials:'include'},opts||{}));}
-  function renderClients(list){
-    var el=document.getElementById('clients'); clear(el);
-    if(!list.length){el.appendChild(emptyMsg('No clients yet.'));return;}
-    list.forEach(function(c){
-      var row=document.createElement('div');row.className='item';
-      var left=document.createElement('div');
-      var nm=document.createElement('div');nm.textContent=esc(c.name);
-      var sub=document.createElement('div');sub.className='sub';sub.textContent=esc(c.email||'');
-      left.appendChild(nm);left.appendChild(sub);
-      var st=document.createElement('span');st.className='pill';st.textContent=esc(c.status);
-      row.appendChild(left);row.appendChild(st);el.appendChild(row);
-    });
+
+  function fillClientSelects(){
+    var sels=document.querySelectorAll('.client-select');
+    for(var i=0;i<sels.length;i++){
+      var sel=sels[i]; var prev=sel.value; clear(sel);
+      var none=document.createElement('option');none.value='';none.textContent='— No client —';sel.appendChild(none);
+      clientsCache.forEach(function(c){var o=document.createElement('option');o.value=c.id;o.textContent=c.name;sel.appendChild(o);});
+      sel.value=prev;
+    }
   }
   async function loadClients(){
-    var r=await api('/api/platform/clients');
-    if(r.ok){var d=await r.json();renderClients(d.clients||[]);}
+    var r=await api('/api/platform/clients'); if(!r.ok)return;
+    var d=await r.json(); clientsCache=d.clients||[];
+    renderList('clients',clientsCache,function(c){return item(esc(c.name),esc(c.email||''),esc(c.status));});
+    fillClientSelects();
+  }
+  async function loadProjects(){
+    var r=await api('/api/platform/projects'); if(!r.ok)return;
+    var d=await r.json();
+    renderList('projects',d.projects||[],function(p){return item(esc(p.name),p.clientId?'Linked to a client':'',esc(p.status));});
+  }
+  async function loadInvoices(){
+    var r=await api('/api/platform/invoices'); if(!r.ok)return;
+    var d=await r.json();
+    renderList('invoices',d.invoices||[],function(v){return item(esc(v.number)+' · '+money(v.amount),'',esc(v.status));});
   }
   async function loadBranding(){
     if(!slug)return;
@@ -289,30 +339,50 @@ export function dashboardPage(): string {
     document.getElementById('who').textContent=esc(u.email)+' · '+esc(u.role);
     if(org.name){document.getElementById('orgName').textContent=esc(org.name);}
     if(u.role==='owner'||u.role==='admin'){document.getElementById('brandPanel').style.display='';}
-    await loadBranding(); await loadClients();
+    await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices();
   }
   document.getElementById('logout').addEventListener('click',async function(){
     await api('/auth/logout',{method:'POST'}); window.location='/login';
   });
   document.getElementById('addClient').addEventListener('click',async function(){
-    var name=document.getElementById('cname'),email=document.getElementById('cemail'),msg=document.getElementById('cmsg');
-    if(!name.value.trim()){msg.className='msg err';msg.textContent='Name is required.';return;}
-    msg.className='msg';msg.textContent='Adding…';
+    var name=document.getElementById('cname'),email=document.getElementById('cemail');
+    if(!name.value.trim()){setMsg('cmsg','err','Name is required.');return;}
+    setMsg('cmsg','','Adding…');
     var r=await api('/api/platform/clients',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:name.value.trim(),email:email.value.trim()||undefined})});
-    if(r.ok){name.value='';email.value='';msg.className='msg ok';msg.textContent='Added.';loadClients();}
-    else{var e=await r.json().catch(function(){return {};});msg.className='msg err';msg.textContent=(e.error&&e.error.message)||'Could not add.';}
+    if(r.ok){name.value='';email.value='';setMsg('cmsg','ok','Added.');loadClients();}
+    else{var e=await r.json().catch(function(){return {};});setMsg('cmsg','err',(e.error&&e.error.message)||'Could not add.');}
+  });
+  document.getElementById('addProject').addEventListener('click',async function(){
+    var name=document.getElementById('pname'),client=document.getElementById('pclient');
+    if(!name.value.trim()){setMsg('pmsg','err','Name is required.');return;}
+    setMsg('pmsg','','Adding…');
+    var r=await api('/api/platform/projects',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:name.value.trim(),clientId:client.value||undefined})});
+    if(r.ok){name.value='';setMsg('pmsg','ok','Added.');loadProjects();}
+    else{var e=await r.json().catch(function(){return {};});setMsg('pmsg','err',(e.error&&e.error.message)||'Could not add.');}
+  });
+  document.getElementById('addInvoice').addEventListener('click',async function(){
+    var client=document.getElementById('iclient'),desc=document.getElementById('idesc'),
+        qty=document.getElementById('iqty'),price=document.getElementById('iprice');
+    if(!desc.value.trim()){setMsg('imsg','err','A description is required.');return;}
+    setMsg('imsg','','Adding…');
+    var r=await api('/api/platform/invoices',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({clientId:client.value||undefined,
+        lineItems:[{description:desc.value.trim(),quantity:Number(qty.value)||1,unitPrice:Number(price.value)||0}]})});
+    if(r.ok){desc.value='';qty.value='1';price.value='0';setMsg('imsg','ok','Invoice created.');loadInvoices();}
+    else{var e=await r.json().catch(function(){return {};});setMsg('imsg','err',(e.error&&e.error.message)||'Could not create.');}
   });
   document.getElementById('saveBrand').addEventListener('click',async function(){
-    var msg=document.getElementById('bmsg');msg.className='msg';msg.textContent='Saving…';
+    setMsg('bmsg','','Saving…');
     var r=await api('/api/platform/branding',{method:'PUT',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({displayName:document.getElementById('bname').value.trim(),
         primaryColor:document.getElementById('bcolor').value.trim()})});
     var d=await r.json().catch(function(){return {};});
-    if(r.ok){msg.className='msg ok';msg.textContent='Saved.';var b=d.branding||{};
+    if(r.ok){setMsg('bmsg','ok','Saved.');var b=d.branding||{};
       if(b.primaryColor){document.documentElement.style.setProperty('--accent',b.primaryColor);}
       if(b.displayName){document.getElementById('orgName').textContent=b.displayName;}}
-    else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not save.';}
+    else{setMsg('bmsg','err',(d.error&&d.error.message)||'Could not save.');}
   });
   init();`;
   return layout({

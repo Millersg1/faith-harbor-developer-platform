@@ -10,6 +10,10 @@ import { BrandingRepository } from "./branding/BrandingRepository";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
+import { PlatformInvoiceRepository } from "./invoices/PlatformInvoiceRepository";
+import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
+import { PlatformProjectRepository } from "./projects/PlatformProjectRepository";
+import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApp } from "./createPlatformApp";
 import { PlatformSessionRepository } from "./sessions/PlatformSessionRepository";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
@@ -36,6 +40,16 @@ function build() {
     new PlatformClientService(
       new PlatformClientRepository(),
     );
+  const projects =
+    new PlatformProjectService(
+      new PlatformProjectRepository(),
+      clients,
+    );
+  const invoices =
+    new PlatformInvoiceService(
+      new PlatformInvoiceRepository(),
+      clients,
+    );
   const signup =
     new PlatformSignupService(
       organizations,
@@ -49,6 +63,8 @@ function build() {
     sessions,
     branding,
     clients,
+    projects,
+    invoices,
     signup,
   });
 }
@@ -124,6 +140,87 @@ describe("createPlatformApp (composition root)", () => {
       .set("Cookie", cookie);
     expect(
       list.body.clients,
+    ).toHaveLength(1);
+  });
+
+  it("manages projects and invoices for the tenant", async () => {
+    const app = build();
+
+    const signup = await request(app)
+      .post("/auth/signup")
+      .send({
+        organizationName: "Acme",
+        email: "o@acme.com",
+        password: "password123",
+      });
+    const cookie =
+      signup.headers["set-cookie"];
+
+    const client = await request(app)
+      .post("/api/platform/clients")
+      .set("Cookie", cookie)
+      .send({ name: "Client A" });
+    const clientId =
+      client.body.client.id;
+
+    // Project referencing the client.
+    const project = await request(app)
+      .post("/api/platform/projects")
+      .set("Cookie", cookie)
+      .send({
+        name: "Website",
+        clientId,
+      });
+    expect(project.status).toBe(201);
+    expect(
+      project.body.project.clientId,
+    ).toBe(clientId);
+
+    // Invoice with a line item -> per-tenant number + computed amount.
+    const invoice = await request(app)
+      .post("/api/platform/invoices")
+      .set("Cookie", cookie)
+      .send({
+        clientId,
+        lineItems: [
+          {
+            description: "Design",
+            quantity: 2,
+            unitPrice: 100,
+          },
+        ],
+      });
+    expect(invoice.status).toBe(201);
+    expect(
+      invoice.body.invoice.number,
+    ).toBe("INV-0001");
+    expect(
+      invoice.body.invoice.amount,
+    ).toBe(200);
+
+    // Cross-tenant reference guard surfaces as a 400.
+    const bad = await request(app)
+      .post("/api/platform/invoices")
+      .set("Cookie", cookie)
+      .send({
+        clientId: "does-not-exist",
+        lineItems: [
+          {
+            description: "x",
+            quantity: 1,
+            unitPrice: 1,
+          },
+        ],
+      });
+    expect(bad.status).toBe(400);
+
+    const projects = await request(
+      app,
+    )
+      .get("/api/platform/projects")
+      .set("Cookie", cookie);
+    expect(
+      projects.body.projects,
     ).toHaveLength(1);
   });
 

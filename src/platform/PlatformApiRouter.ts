@@ -1,26 +1,32 @@
-import { Router } from "express";
+import {
+  Router,
+  type Response,
+} from "express";
 
 import type { PlatformClientService } from "./clients/PlatformClientService";
+import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
+import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
+import type { PlatformProjectService } from "./projects/PlatformProjectService";
 
 export interface PlatformApiDependencies {
   clients: PlatformClientService;
+  projects?: PlatformProjectService;
+  invoices?: PlatformInvoiceService;
 }
 
 /**
- * The tenant-scoped platform API. It is always mounted *behind* the
- * tenant middleware, so every handler runs inside an organization's
+ * The tenant-scoped platform API. It is always mounted *behind* auth /
+ * the tenant middleware, so every handler runs inside an organization's
  * scope and the services it calls are automatically confined to that
  * tenant. No handler here ever mentions an organization id — isolation
  * is ambient.
- *
- * This starts with Clients as the demonstrator; the other tenant-scoped
- * entities plug in the same way.
  */
 export function createPlatformApiRouter(
   deps: PlatformApiDependencies,
 ): Router {
   const router = Router();
 
+  // ---- Clients ----
   router.get(
     "/clients",
     (_req, res, next) => {
@@ -36,25 +42,18 @@ export function createPlatformApiRouter(
   router.post(
     "/clients",
     (req, res, next) => {
-      const body = (req.body ??
-        {}) as {
-        name?: unknown;
-        email?: unknown;
-        company?: unknown;
-      };
+      const body = asObject(
+        req.body,
+      );
 
       if (
-        typeof body.name !==
-          "string" ||
-        !body.name.trim()
+        !isNonEmptyString(body.name)
       ) {
-        res.status(400).json({
-          error: {
-            code: "INVALID_CLIENT",
-            message:
-              "A client requires a name.",
-          },
-        });
+        badRequest(
+          res,
+          "INVALID_CLIENT",
+          "A client requires a name.",
+        );
 
         return;
       }
@@ -62,16 +61,12 @@ export function createPlatformApiRouter(
       deps.clients
         .create({
           name: body.name,
-          email:
-            typeof body.email ===
-            "string"
-              ? body.email
-              : undefined,
-          company:
-            typeof body.company ===
-            "string"
-              ? body.company
-              : undefined,
+          email: optionalString(
+            body.email,
+          ),
+          company: optionalString(
+            body.company,
+          ),
         })
         .then((client) =>
           res
@@ -82,5 +77,236 @@ export function createPlatformApiRouter(
     },
   );
 
+  // ---- Projects ----
+  if (deps.projects) {
+    const projects = deps.projects;
+
+    router.get(
+      "/projects",
+      (_req, res, next) => {
+        projects
+          .list()
+          .then((rows) =>
+            res.json({
+              projects: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/projects",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(body.name)
+        ) {
+          badRequest(
+            res,
+            "INVALID_PROJECT",
+            "A project requires a name.",
+          );
+
+          return;
+        }
+
+        projects
+          .create({
+            name: body.name,
+            clientId: optionalString(
+              body.clientId,
+            ),
+            description:
+              optionalString(
+                body.description,
+              ),
+          })
+          .then((project) =>
+            res
+              .status(201)
+              .json({ project }),
+          )
+          .catch((error: unknown) =>
+            validationOrNext(
+              error,
+              res,
+              "INVALID_PROJECT",
+              next,
+            ),
+          );
+      },
+    );
+  }
+
+  // ---- Invoices ----
+  if (deps.invoices) {
+    const invoices = deps.invoices;
+
+    router.get(
+      "/invoices",
+      (_req, res, next) => {
+        invoices
+          .list()
+          .then((rows) =>
+            res.json({
+              invoices: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/invoices",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        const lineItems =
+          parseLineItems(
+            body.lineItems,
+          );
+
+        if (!lineItems.length) {
+          badRequest(
+            res,
+            "INVALID_INVOICE",
+            "An invoice requires at least one line item.",
+          );
+
+          return;
+        }
+
+        invoices
+          .create({
+            clientId: optionalString(
+              body.clientId,
+            ),
+            lineItems,
+          })
+          .then((invoice) =>
+            res
+              .status(201)
+              .json({ invoice }),
+          )
+          .catch((error: unknown) =>
+            validationOrNext(
+              error,
+              res,
+              "INVALID_INVOICE",
+              next,
+            ),
+          );
+      },
+    );
+  }
+
   return router;
+}
+
+function asObject(
+  value: unknown,
+): Record<string, unknown> {
+  return value &&
+    typeof value === "object"
+    ? (value as Record<
+        string,
+        unknown
+      >)
+    : {};
+}
+
+function isNonEmptyString(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0
+  );
+}
+
+function optionalString(
+  value: unknown,
+): string | undefined {
+  return typeof value === "string" &&
+    value.trim()
+    ? value
+    : undefined;
+}
+
+function parseLineItems(
+  value: unknown,
+): PlatformInvoiceLineItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const items: PlatformInvoiceLineItem[] =
+    [];
+
+  for (const raw of value) {
+    const row = asObject(raw);
+
+    if (
+      !isNonEmptyString(
+        row.description,
+      )
+    ) {
+      continue;
+    }
+
+    items.push({
+      description: row.description,
+      quantity: Number(
+        row.quantity ?? 1,
+      ),
+      unitPrice: Number(
+        row.unitPrice ?? 0,
+      ),
+    });
+  }
+
+  return items;
+}
+
+function badRequest(
+  res: Response,
+  code: string,
+  message: string,
+): void {
+  res
+    .status(400)
+    .json({ error: { code, message } });
+}
+
+/**
+ * Maps a service validation error to a 400; anything else bubbles to the
+ * error handler.
+ */
+function validationOrNext(
+  error: unknown,
+  res: Response,
+  code: string,
+  next: (error?: unknown) => void,
+): void {
+  const message =
+    error instanceof Error
+      ? error.message
+      : "";
+
+  if (
+    /required|not found|line item|valid/i.test(
+      message,
+    )
+  ) {
+    badRequest(res, code, message);
+    return;
+  }
+
+  next(error);
 }
