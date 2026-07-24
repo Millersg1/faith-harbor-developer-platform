@@ -9,6 +9,8 @@ import {
   BillingService,
   PlanLimitError,
 } from "./billing/BillingService";
+import type { AiUsageRepository } from "./ai/AiUsageRepository";
+import type { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { PLANS } from "./billing/Plan";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -26,6 +28,8 @@ export interface PlatformApiDependencies {
   domains?: OrganizationDomainService;
   hosting?: PlatformHostingService;
   websites?: PlatformWebsiteService;
+  aiSettings?: OrganizationAiSettingsService;
+  aiUsage?: AiUsageRepository;
   billing?: BillingService;
 }
 
@@ -1079,6 +1083,121 @@ export function createPlatformApiRouter(
           )
           .then(() =>
             res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- AI settings (bring-your-own-key) ----
+  if (deps.aiSettings) {
+    const aiSettings = deps.aiSettings;
+
+    router.get(
+      "/ai-settings",
+      (_req, res, next) => {
+        aiSettings
+          .getPublic()
+          .then((settings) =>
+            res.json({ settings }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.put(
+      "/ai-settings",
+      requireRole("owner"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        aiSettings
+          .set({
+            provider:
+              body.provider as never,
+            apiKey: String(
+              body.apiKey ?? "",
+            ),
+            model: optionalString(
+              body.model,
+            ),
+          })
+          .then((settings) =>
+            res.json({ settings }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /provider|valid API key/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_AI_SETTINGS",
+                  message,
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/ai-settings",
+      requireRole("owner"),
+      (_req, res, next) => {
+        aiSettings
+          .clear()
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- AI usage (metering) ----
+  if (deps.aiUsage) {
+    const aiUsage = deps.aiUsage;
+
+    router.get(
+      "/ai-usage",
+      (_req, res, next) => {
+        const now = new Date();
+        const since = new Date(
+          Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            1,
+          ),
+        ).toISOString();
+
+        aiUsage
+          .summarySince(since)
+          .then((summary) =>
+            res.json({
+              periodStart: since,
+              usage: summary,
+              costUsd:
+                summary.costMicros /
+                1_000_000,
+              platformCostUsd:
+                summary.platformCostMicros /
+                1_000_000,
+            }),
           )
           .catch(next);
       },

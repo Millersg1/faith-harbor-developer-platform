@@ -8,6 +8,9 @@ import { OrganizationDomainService } from "../tenancy/OrganizationDomainService"
 import { PlatformAdminRepository } from "./admin/PlatformAdminRepository";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
+import { AiUsageRepository } from "./ai/AiUsageRepository";
+import { OrganizationAiSettingsRepository } from "./ai/OrganizationAiSettingsRepository";
+import { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { BillingService } from "./billing/BillingService";
 import { SubscriptionRepository } from "./billing/SubscriptionRepository";
 import {
@@ -169,6 +172,14 @@ async function start(): Promise<void> {
             undefined,
         })
       : new DisconnectedWebsiteGenerator();
+  const aiSettings =
+    new OrganizationAiSettingsService(
+      new OrganizationAiSettingsRepository(
+        db,
+      ),
+    );
+  const aiUsage =
+    new AiUsageRepository(db);
   const websites =
     new PlatformWebsiteService(
       new PlatformWebsiteRepository(
@@ -176,6 +187,8 @@ async function start(): Promise<void> {
       ),
       websiteGenerator,
       clients,
+      aiSettings,
+      aiUsage,
     );
 
   const admins =
@@ -229,6 +242,8 @@ async function start(): Promise<void> {
     domains,
     hosting,
     websites,
+    aiSettings,
+    aiUsage,
     billing,
     admins,
     adminSessions,

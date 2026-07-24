@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 
+import { estimateCostMicros } from "../ai/AiUsageEvent";
+import type { AiUsageRepository } from "../ai/AiUsageRepository";
+import type { OrganizationAiSettingsService } from "../ai/OrganizationAiSettingsService";
 import type { PlatformClientService } from "../clients/PlatformClientService";
 import type {
   CreatePlatformWebsiteRequest,
@@ -8,9 +11,17 @@ import type {
 } from "./PlatformWebsite";
 import { PlatformWebsiteRepository } from "./PlatformWebsiteRepository";
 import {
+  createWebsiteGenerator,
   DisconnectedWebsiteGenerator,
   type WebsiteGenerator,
 } from "./WebsiteGenerator";
+
+/** Builds a generator from a provider/key — injectable for tests. */
+export type GeneratorFactory = (input: {
+  provider: string;
+  apiKey: string;
+  model?: string;
+}) => WebsiteGenerator;
 
 /** Thrown when generation is attempted but no AI key is configured. */
 export class GeneratorUnavailableError extends Error {
@@ -36,9 +47,16 @@ export class PlatformWebsiteService {
     private readonly generator: WebsiteGenerator =
       new DisconnectedWebsiteGenerator(),
     private readonly clients?: PlatformClientService,
+    private readonly aiSettings?: OrganizationAiSettingsService,
+    private readonly aiUsage?: AiUsageRepository,
+    private readonly generatorFactory: GeneratorFactory =
+      createWebsiteGenerator,
   ) {}
 
-  /** Whether AI generation is available (an AI key is configured). */
+  /**
+   * Whether the platform's included AI is available. A tenant with its own
+   * key can still generate even when this is false.
+   */
   generationAvailable(): boolean {
     return this.generator.isConnected();
   }
@@ -117,14 +135,40 @@ export class PlatformWebsiteService {
     const website =
       await this.get(id);
 
-    if (!this.generator.isConnected()) {
+    // Resolve which generator to use: the tenant's own key (their spend)
+    // when they've configured one, otherwise the platform's included AI.
+    const settings = this.aiSettings
+      ? await this.aiSettings.getRaw()
+      : undefined;
+
+    let generator: WebsiteGenerator;
+    let ownKey: boolean;
+    let provider: string;
+
+    if (settings?.apiKey) {
+      generator =
+        this.generatorFactory({
+          provider:
+            settings.provider,
+          apiKey: settings.apiKey,
+          model: settings.model,
+        });
+      ownKey = true;
+      provider = settings.provider;
+    } else {
+      generator = this.generator;
+      ownKey = false;
+      provider = "platform";
+    }
+
+    if (!generator.isConnected()) {
       throw new GeneratorUnavailableError(
-        "AI website generation isn't set up yet. Add an AI key to enable it.",
+        "AI website generation isn't set up yet. Add your own AI key in settings to enable it.",
       );
     }
 
     const result =
-      await this.generator.generate({
+      await generator.generate({
         name: website.name,
         description:
           website.brief ||
@@ -132,6 +176,38 @@ export class PlatformWebsiteService {
         accentColor:
           website.accentColor,
       });
+
+    // Meter the usage so cost is always visible (and never an open tab).
+    if (this.aiUsage) {
+      const model =
+        result.model ||
+        settings?.model ||
+        "unknown";
+      const usage = result.usage ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+      };
+
+      await this.aiUsage.record({
+        id: randomUUID(),
+        kind: "website_generation",
+        provider,
+        model,
+        inputTokens:
+          usage.inputTokens,
+        outputTokens:
+          usage.outputTokens,
+        costMicros:
+          estimateCostMicros(
+            model,
+            usage.inputTokens,
+            usage.outputTokens,
+          ),
+        ownKey,
+        createdAt:
+          new Date().toISOString(),
+      });
+    }
 
     const updated: PlatformWebsiteRecord =
       {

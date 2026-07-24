@@ -283,6 +283,42 @@ export class PostgresDatabase
         updated_at       TEXT NOT NULL
       );
     `);
+
+    // Per-tenant AI credentials (bring-your-own-key). One row per org; the
+    // api_key is a secret and is never returned to clients in full.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS organization_ai_settings (
+        organization_id  TEXT PRIMARY KEY
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        provider         TEXT NOT NULL,
+        api_key          TEXT NOT NULL,
+        model            TEXT,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
+    // Metered AI usage — one row per AI operation, so cost per tenant is
+    // always known. cost_micros is millionths of a dollar; own_key marks
+    // usage that ran on the tenant's own key (not the platform's cost).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_usage_events (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        kind             TEXT NOT NULL,
+        provider         TEXT NOT NULL,
+        model            TEXT NOT NULL,
+        input_tokens     INTEGER NOT NULL DEFAULT 0,
+        output_tokens    INTEGER NOT NULL DEFAULT 0,
+        cost_micros      INTEGER NOT NULL DEFAULT 0,
+        own_key          BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS ai_usage_events_org_created
+        ON ai_usage_events (organization_id, created_at);
+    `);
   }
 
   /**

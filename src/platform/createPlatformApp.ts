@@ -10,6 +10,8 @@ import { createAdminRouter } from "./admin/adminRouter";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { createRequirePlatformAdmin } from "./admin/requirePlatformAdmin";
+import type { AiUsageRepository } from "./ai/AiUsageRepository";
+import type { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { createAuthRouter } from "./auth/authRouter";
 import { createRequireUser } from "./auth/requireUser";
 import { BillingService } from "./billing/BillingService";
@@ -43,6 +45,8 @@ export interface PlatformAppDependencies {
   domains: OrganizationDomainService;
   hosting?: PlatformHostingService;
   websites?: PlatformWebsiteService;
+  aiSettings?: OrganizationAiSettingsService;
+  aiUsage?: AiUsageRepository;
   billing?: BillingService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
@@ -247,6 +251,8 @@ export function createPlatformApp(
       domains: deps.domains,
       hosting: deps.hosting,
       websites: deps.websites,
+      aiSettings: deps.aiSettings,
+      aiUsage: deps.aiUsage,
       billing: deps.billing,
     }),
   );

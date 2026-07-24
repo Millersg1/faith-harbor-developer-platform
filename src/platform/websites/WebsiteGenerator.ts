@@ -17,9 +17,15 @@ export interface WebsiteBrief {
   accentColor?: string;
 }
 
+export interface GenerationUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface GeneratedWebsite {
   html: string;
   model?: string;
+  usage?: GenerationUsage;
 }
 
 export interface WebsiteGenerator {
@@ -70,17 +76,24 @@ export class DisconnectedWebsiteGenerator
 export interface OpenAiWebsiteGeneratorConfig {
   apiKey: string;
   model?: string;
+  /**
+   * OpenAI-compatible API base, e.g. "https://api.openai.com/v1" (default)
+   * or "https://openrouter.ai/api/v1". So the same code drives OpenAI,
+   * OpenRouter (incl. free models), and a tenant's own key.
+   */
+  baseUrl?: string;
 }
 
 /**
- * Generates a complete, self-contained HTML page through the OpenAI
+ * Generates a complete, self-contained HTML page through an OpenAI-compatible
  * Chat Completions REST API — no SDK dependency (built-in fetch), matching
- * how the platform already talks to Stripe.
+ * how the platform already talks to Stripe. Works with OpenAI and OpenRouter.
  */
 export class OpenAiWebsiteGenerator
   implements WebsiteGenerator
 {
   private readonly model: string;
+  private readonly baseUrl: string;
 
   constructor(
     private readonly config: OpenAiWebsiteGeneratorConfig,
@@ -89,6 +102,10 @@ export class OpenAiWebsiteGenerator
   ) {
     this.model =
       config.model || "gpt-4o-mini";
+    this.baseUrl = (
+      config.baseUrl ||
+      "https://api.openai.com/v1"
+    ).replace(/\/+$/, "");
   }
 
   isConnected(): boolean {
@@ -116,7 +133,7 @@ export class OpenAiWebsiteGenerator
 
     const response =
       await this.fetchFn(
-        "https://api.openai.com/v1/chat/completions",
+        `${this.baseUrl}/chat/completions`,
         {
           method: "POST",
           headers: {
@@ -146,6 +163,10 @@ export class OpenAiWebsiteGenerator
           content?: string;
         };
       }>;
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+      };
     };
 
     const content =
@@ -161,11 +182,70 @@ export class OpenAiWebsiteGenerator
       );
     }
 
-    return {
+    const result: GeneratedWebsite = {
       html,
       model: parsed.model,
     };
+
+    if (parsed.usage) {
+      result.usage = {
+        inputTokens:
+          parsed.usage
+            .prompt_tokens ?? 0,
+        outputTokens:
+          parsed.usage
+            .completion_tokens ?? 0,
+      };
+    }
+
+    return result;
   }
+}
+
+/** Provider defaults so a tenant only has to supply a key. */
+const PROVIDER_DEFAULTS: Record<
+  string,
+  { baseUrl: string; model: string }
+> = {
+  openai: {
+    baseUrl:
+      "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+  },
+  openrouter: {
+    baseUrl:
+      "https://openrouter.ai/api/v1",
+    model: "openai/gpt-4o-mini",
+  },
+};
+
+/**
+ * Builds a generator for a provider + key (+ optional model override),
+ * filling in the provider's base URL and default model.
+ */
+export function createWebsiteGenerator(
+  input: {
+    provider: string;
+    apiKey: string;
+    model?: string;
+  },
+  fetchFn?: GeneratorFetch,
+): WebsiteGenerator {
+  const defaults =
+    PROVIDER_DEFAULTS[
+      input.provider
+    ] ?? PROVIDER_DEFAULTS.openai;
+
+  return new OpenAiWebsiteGenerator(
+    {
+      apiKey: input.apiKey,
+      model:
+        input.model ||
+        defaults.model,
+      baseUrl: defaults.baseUrl,
+    },
+    fetchFn,
+  );
 }
 
 const SYSTEM_PROMPT =

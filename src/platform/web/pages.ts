@@ -293,6 +293,23 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="hmsg"></div>
       </div>
+      <div class="panel" id="aiPanel" style="display:none;">
+        <h2>AI settings <span class="pill">owner</span></h2>
+        <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
+        <div class="hint" id="aiCurrent">Loading…</div>
+        <div class="hint" id="aiUsage"></div>
+        <label for="aiProvider">Provider</label>
+        <select id="aiProvider"><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
+        <label for="aiKey">API key</label>
+        <input id="aiKey" placeholder="sk-…" autocomplete="off" />
+        <label for="aiModel">Model (optional)</label>
+        <input id="aiModel" placeholder="gpt-4o-mini" />
+        <div class="inline">
+          <button class="btn" id="saveAi" style="width:auto;">Save key</button>
+          <button class="btn ghost" id="removeAi" style="width:auto;">Use platform AI</button>
+        </div>
+        <div class="msg" id="aimsg"></div>
+      </div>
       <div class="panel" id="brandPanel" style="display:none;">
         <h2>Branding <span class="pill">owner/admin</span></h2>
         <p class="hint">White-label your workspace. Changes are live instantly.</p>
@@ -462,6 +479,15 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/websites/'+encodeURIComponent(id),{method:'DELETE'});
     if(r.ok)loadWebsites();
   }
+  async function loadAiSettings(){
+    var r=await api('/api/platform/ai-settings');
+    if(r.ok){var d=await r.json();var s=d.settings;var el=document.getElementById('aiCurrent');
+      if(s&&s.hasKey){el.textContent='Using your own '+esc(s.provider)+' key ('+esc(s.keyHint||'')+')'+(s.model?' · '+esc(s.model):'');}
+      else{el.textContent='Using the platform\\u2019s included AI (billed to the platform).';}}
+    var u=await api('/api/platform/ai-usage');
+    if(u.ok){var ud=await u.json();var us=ud.usage||{};
+      document.getElementById('aiUsage').textContent='This month: '+(us.generations||0)+' generations · '+((us.inputTokens||0)+(us.outputTokens||0))+' tokens · ~$'+(Number(ud.costUsd||0)).toFixed(4)+' estimated.';}
+  }
   function planPrice(p){return p.priceCents==null?'Custom pricing':('$'+(p.priceCents/100).toFixed(0)+'/mo');}
   async function loadBilling(){
     var r=await api('/api/platform/billing'); if(!r.ok)return;
@@ -492,9 +518,24 @@ export function dashboardPage(): string {
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
+      document.getElementById('aiPanel').style.display='';
     }
     await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadDomains();
+    if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('saveAi').addEventListener('click',async function(){
+    var p=document.getElementById('aiProvider').value,k=document.getElementById('aiKey').value.trim(),m=document.getElementById('aiModel').value.trim();
+    if(!k){setMsg('aimsg','err','Enter an API key.');return;}
+    setMsg('aimsg','','Saving\\u2026');
+    var r=await api('/api/platform/ai-settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,apiKey:k,model:m||undefined})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){document.getElementById('aiKey').value='';setMsg('aimsg','ok','Saved. Generation now runs on your key.');loadAiSettings();}
+    else{setMsg('aimsg','err',(x.error&&x.error.message)||'Could not save.');}
+  });
+  document.getElementById('removeAi').addEventListener('click',async function(){
+    var r=await api('/api/platform/ai-settings',{method:'DELETE'});
+    if(r.ok){setMsg('aimsg','ok','Removed. Using the platform\\u2019s included AI.');loadAiSettings();}
+  });
   document.getElementById('addWebsite').addEventListener('click',async function(){
     var nm=document.getElementById('wname'),br=document.getElementById('wbrief'),cl=document.getElementById('wclient');
     if(!nm.value.trim()){setMsg('wmsg','err','A site name is required.');return;}
