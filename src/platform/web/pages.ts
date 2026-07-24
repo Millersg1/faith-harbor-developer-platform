@@ -520,7 +520,8 @@ export function dashboardPage(): string {
     setMsg('plmsg','','Updating\\u2026');
     var r=await api('/api/platform/billing/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planId:pid})});
     var x=await r.json().catch(function(){return {};});
-    if(r.ok){setMsg('plmsg','ok','Plan updated.');loadBilling();loadDomains();}
+    if(r.ok&&x.checkoutUrl){setMsg('plmsg','','Redirecting to secure checkout\\u2026');window.location=x.checkoutUrl;return;}
+    if(r.ok){setMsg('plmsg','ok','Plan updated.');loadBilling();loadDomains();loadWebsites();}
     else{setMsg('plmsg','err',(x.error&&x.error.message)||'Could not change plan.');}
   });
   document.getElementById('logout').addEventListener('click',async function(){

@@ -98,13 +98,43 @@ export function createPlatformApiRouter(
           return;
         }
 
+        // Build absolute return URLs from the incoming request (works
+        // behind the HTTPS proxy via X-Forwarded-Proto).
+        const proto =
+          (req.headers[
+            "x-forwarded-proto"
+          ] as string) ||
+          req.protocol ||
+          "https";
+        const host = req.get("host");
+        const base = `${proto}://${host}`;
+
         billing
-          .changePlan(body.planId)
-          .then((subscription) =>
-            res.json({
-              subscription,
-            }),
+          .startPlanChange(
+            body.planId,
+            {
+              successUrl: `${base}/app?billing=success`,
+              cancelUrl: `${base}/app?billing=cancel`,
+            },
           )
+          .then((outcome) => {
+            if (
+              outcome.status ===
+              "checkout"
+            ) {
+              res.json({
+                checkoutUrl:
+                  outcome.url,
+              });
+
+              return;
+            }
+
+            res.json({
+              subscription:
+                outcome.subscription,
+            });
+          })
           .catch(
             (error: unknown) => {
               const message =

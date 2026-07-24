@@ -10,6 +10,11 @@ import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { BillingService } from "./billing/BillingService";
 import { SubscriptionRepository } from "./billing/SubscriptionRepository";
+import {
+  DisconnectedStripeSubscriptionGateway,
+  HttpStripeSubscriptionGateway,
+  type StripeSubscriptionGateway,
+} from "./billing/StripeSubscriptionGateway";
 import { BrandingRepository } from "./branding/BrandingRepository";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
@@ -121,9 +126,25 @@ async function start(): Promise<void> {
         db,
       ),
     );
+  // Stripe subscription billing: live when a secret key is present in the
+  // platform env, otherwise a disconnected stub (so the platform runs, and
+  // free-plan changes still work, with no key).
+  const stripeSecret =
+    process.env.STRIPE_SECRET_KEY?.trim();
+  const stripeGateway: StripeSubscriptionGateway =
+    stripeSecret
+      ? new HttpStripeSubscriptionGateway(
+          {
+            secretKey: stripeSecret,
+            webhookSecret:
+              process.env.STRIPE_WEBHOOK_SECRET?.trim(),
+          },
+        )
+      : new DisconnectedStripeSubscriptionGateway();
   const billing =
     new BillingService(
       new SubscriptionRepository(db),
+      stripeGateway,
     );
   const hosting =
     new PlatformHostingService(

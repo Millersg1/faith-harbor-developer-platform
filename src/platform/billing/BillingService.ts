@@ -1,4 +1,7 @@
-import { requireTenant } from "../../tenancy/TenantContext";
+import {
+  requireTenant,
+  runWithTenant,
+} from "../../tenancy/TenantContext";
 import {
   defaultPlan,
   getPlan,
@@ -7,6 +10,27 @@ import {
 } from "./Plan";
 import type { OrganizationSubscriptionRecord } from "./OrganizationSubscription";
 import { SubscriptionRepository } from "./SubscriptionRepository";
+import {
+  DisconnectedStripeSubscriptionGateway,
+  type StripeSubscriptionGateway,
+} from "./StripeSubscriptionGateway";
+
+/** The outcome of starting a plan change. */
+export type PlanChangeOutcome =
+  | {
+      status: "changed";
+      subscription: OrganizationSubscriptionRecord;
+    }
+  | {
+      status: "checkout";
+      url: string;
+    };
+
+export interface StartPlanChangeOptions {
+  customerEmail?: string;
+  successUrl: string;
+  cancelUrl: string;
+}
 
 /**
  * Thrown when an action would exceed the acting tenant's plan limit. The
@@ -32,7 +56,14 @@ export class BillingService {
   constructor(
     private readonly repository =
       new SubscriptionRepository(),
+    private readonly gateway: StripeSubscriptionGateway =
+      new DisconnectedStripeSubscriptionGateway(),
   ) {}
+
+  /** Whether real (Stripe) billing is connected. */
+  billingConnected(): boolean {
+    return this.gateway.isConnected();
+  }
 
   /**
    * The tenant's subscription, synthesizing a default (entry plan, active)
@@ -112,6 +143,166 @@ export class BillingService {
       updatedAt:
         new Date().toISOString(),
     });
+  }
+
+  /**
+   * Begins a plan change. For a free plan, or when Stripe isn't connected,
+   * the switch is immediate ("changed"). For a paid plan with Stripe
+   * connected, it creates a Checkout session and returns its URL — the plan
+   * only actually changes once Stripe confirms payment via the webhook, so
+   * nobody gets a paid tier without paying.
+   */
+  async startPlanChange(
+    planId: string,
+    options: StartPlanChangeOptions,
+  ): Promise<PlanChangeOutcome> {
+    const plan = getPlan(planId);
+
+    if (!plan) {
+      throw new Error(
+        "Unknown plan.",
+      );
+    }
+
+    if (!plan.selfServe) {
+      throw new Error(
+        "That plan is set up with our team — contact sales to enable it.",
+      );
+    }
+
+    const paid =
+      plan.priceCents !== null &&
+      plan.priceCents > 0;
+
+    if (
+      !paid ||
+      !this.gateway.isConnected()
+    ) {
+      const subscription =
+        await this.changePlan(plan.id);
+
+      return {
+        status: "changed",
+        subscription,
+      };
+    }
+
+    const organizationId =
+      requireTenant().organizationId;
+
+    const result =
+      await this.gateway.createSubscriptionCheckout(
+        {
+          organizationId,
+          planId: plan.id,
+          planName: plan.name,
+          amountCents:
+            plan.priceCents as number,
+          currency: "usd",
+          customerEmail:
+            options.customerEmail,
+          successUrl:
+            options.successUrl,
+          cancelUrl: options.cancelUrl,
+        },
+      );
+
+    return {
+      status: "checkout",
+      url: result.url,
+    };
+  }
+
+  /** Verifies a Stripe webhook signature (delegates to the gateway). */
+  verifyWebhook(
+    rawBody: string,
+    signatureHeader: string | undefined,
+  ): boolean {
+    return this.gateway.verifyWebhook(
+      rawBody,
+      signatureHeader,
+    );
+  }
+
+  /**
+   * Activates a paid subscription after Stripe confirms checkout. Runs in
+   * the org's tenant scope — the org id comes from Stripe metadata we set at
+   * checkout, trusted only because the webhook signature is verified before
+   * this is ever called.
+   */
+  async applyCheckoutCompleted(input: {
+    organizationId: string;
+    planId: string;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    currentPeriodEnd?: string | null;
+  }): Promise<void> {
+    const plan = getPlan(input.planId);
+
+    if (!plan) {
+      return;
+    }
+
+    await runWithTenant(
+      {
+        organizationId:
+          input.organizationId,
+      },
+      async () => {
+        const existing =
+          await this.repository.get();
+
+        await this.repository.upsert({
+          planId: plan.id,
+          status: "active",
+          currentPeriodEnd:
+            input.currentPeriodEnd ??
+            existing?.currentPeriodEnd ??
+            null,
+          stripeCustomerId:
+            input.stripeCustomerId ??
+            existing?.stripeCustomerId ??
+            null,
+          stripeSubscriptionId:
+            input.stripeSubscriptionId ??
+            existing?.stripeSubscriptionId ??
+            null,
+          updatedAt:
+            new Date().toISOString(),
+        });
+      },
+    );
+  }
+
+  /**
+   * Handles a canceled/ended subscription by dropping the org back to the
+   * default (free) plan.
+   */
+  async applySubscriptionCanceled(input: {
+    organizationId: string;
+  }): Promise<void> {
+    await runWithTenant(
+      {
+        organizationId:
+          input.organizationId,
+      },
+      async () => {
+        const existing =
+          await this.repository.get();
+
+        await this.repository.upsert({
+          planId: defaultPlan().id,
+          status: "canceled",
+          currentPeriodEnd: null,
+          stripeCustomerId:
+            existing?.stripeCustomerId ??
+            null,
+          stripeSubscriptionId: null,
+          updatedAt:
+            new Date().toISOString(),
+        });
+      },
+    );
   }
 
   /**

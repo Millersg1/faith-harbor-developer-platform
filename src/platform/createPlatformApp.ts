@@ -88,6 +88,62 @@ export function createPlatformApp(
 
   const app = express();
 
+  // Stripe webhook — MUST be registered before express.json(), because
+  // signature verification needs the exact raw request body. The signature
+  // is verified before we trust anything in the payload (including the org
+  // id we act on).
+  app.post(
+    "/webhooks/stripe",
+    express.raw({ type: "*/*" }),
+    (req, res) => {
+      const billing = deps.billing;
+      const raw = Buffer.isBuffer(
+        req.body,
+      )
+        ? req.body.toString("utf8")
+        : "";
+      const signature = req.headers[
+        "stripe-signature"
+      ] as string | undefined;
+
+      if (
+        !billing ||
+        !billing.verifyWebhook(
+          raw,
+          signature,
+        )
+      ) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_SIGNATURE",
+            message:
+              "Invalid webhook signature.",
+          },
+        });
+
+        return;
+      }
+
+      let event: unknown;
+
+      try {
+        event = JSON.parse(raw);
+      } catch {
+        res.status(400).end();
+
+        return;
+      }
+
+      // Always ack 200 so Stripe doesn't retry on our processing errors.
+      handleStripeEvent(
+        billing,
+        event,
+      ).finally(() =>
+        res.json({ received: true }),
+      );
+    },
+  );
+
   app.use(express.json());
 
   app.get(
@@ -223,4 +279,79 @@ export function createPlatformApp(
   app.use(errorHandler);
 
   return app;
+}
+
+/**
+ * Dispatches a verified Stripe event to the billing service. The org id and
+ * plan come from metadata we set when creating the checkout, so they're only
+ * trusted here because the caller already verified the webhook signature.
+ */
+async function handleStripeEvent(
+  billing: BillingService,
+  event: unknown,
+): Promise<void> {
+  const e = event as {
+    type?: string;
+    data?: {
+      object?: Record<string, unknown>;
+    };
+  };
+
+  const obj = e.data?.object ?? {};
+  const meta = (obj.metadata ??
+    {}) as Record<string, unknown>;
+  const organizationId =
+    typeof meta.organizationId ===
+    "string"
+      ? meta.organizationId
+      : undefined;
+
+  if (!organizationId) {
+    return;
+  }
+
+  try {
+    if (
+      e.type ===
+      "checkout.session.completed"
+    ) {
+      const planId =
+        typeof meta.planId === "string"
+          ? meta.planId
+          : undefined;
+
+      if (!planId) {
+        return;
+      }
+
+      await billing.applyCheckoutCompleted(
+        {
+          organizationId,
+          planId,
+          stripeCustomerId:
+            typeof obj.customer ===
+            "string"
+              ? obj.customer
+              : undefined,
+          stripeSubscriptionId:
+            typeof obj.subscription ===
+            "string"
+              ? obj.subscription
+              : undefined,
+        },
+      );
+    } else if (
+      e.type ===
+      "customer.subscription.deleted"
+    ) {
+      await billing.applySubscriptionCanceled(
+        { organizationId },
+      );
+    }
+  } catch (error) {
+    console.error(
+      "Failed to process Stripe event.",
+      error,
+    );
+  }
 }
