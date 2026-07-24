@@ -12,6 +12,7 @@ import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService
 import { createRequirePlatformAdmin } from "./admin/requirePlatformAdmin";
 import { createAuthRouter } from "./auth/authRouter";
 import { createRequireUser } from "./auth/requireUser";
+import { BillingService } from "./billing/BillingService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientService } from "./clients/PlatformClientService";
@@ -38,6 +39,7 @@ export interface PlatformAppDependencies {
   invoices: PlatformInvoiceService;
   signup: PlatformSignupService;
   domains: OrganizationDomainService;
+  billing?: BillingService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
 
@@ -183,6 +185,7 @@ export function createPlatformApp(
       projects: deps.projects,
       invoices: deps.invoices,
       domains: deps.domains,
+      billing: deps.billing,
     }),
   );
 

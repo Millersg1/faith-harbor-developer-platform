@@ -8,6 +8,8 @@ import { OrganizationDomainService } from "../tenancy/OrganizationDomainService"
 import { PlatformAdminRepository } from "./admin/PlatformAdminRepository";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
+import { BillingService } from "./billing/BillingService";
+import { SubscriptionRepository } from "./billing/SubscriptionRepository";
 import { BrandingRepository } from "./branding/BrandingRepository";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
@@ -110,6 +112,10 @@ async function start(): Promise<void> {
         db,
       ),
     );
+  const billing =
+    new BillingService(
+      new SubscriptionRepository(db),
+    );
 
   const admins =
     new PlatformAdminService(
@@ -160,6 +166,7 @@ async function start(): Promise<void> {
     invoices,
     signup,
     domains,
+    billing,
     admins,
     adminSessions,
     baseDomain:

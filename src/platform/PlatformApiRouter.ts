@@ -5,6 +5,11 @@ import {
 
 import type { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
 import { requireRole } from "./auth/requireRole";
+import {
+  BillingService,
+  PlanLimitError,
+} from "./billing/BillingService";
+import { PLANS } from "./billing/Plan";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
@@ -15,6 +20,7 @@ export interface PlatformApiDependencies {
   projects?: PlatformProjectService;
   invoices?: PlatformInvoiceService;
   domains?: OrganizationDomainService;
+  billing?: BillingService;
 }
 
 /**
@@ -28,6 +34,99 @@ export function createPlatformApiRouter(
   deps: PlatformApiDependencies,
 ): Router {
   const router = Router();
+
+  // ---- Billing & plans ----
+  if (deps.billing) {
+    const billing = deps.billing;
+
+    // The public plan catalog (same tiers as the marketing site).
+    router.get(
+      "/billing/plans",
+      (_req, res) => {
+        res.json({ plans: PLANS });
+      },
+    );
+
+    // The acting tenant's current subscription + plan.
+    router.get(
+      "/billing",
+      (_req, res, next) => {
+        Promise.all([
+          billing.getSubscription(),
+          billing.getPlan(),
+        ])
+          .then(
+            ([
+              subscription,
+              plan,
+            ]) =>
+              res.json({
+                subscription,
+                plan,
+              }),
+          )
+          .catch(next);
+      },
+    );
+
+    // Change plan (owner only). Enterprise is contact-sales → 400.
+    router.post(
+      "/billing/plan",
+      requireRole("owner"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.planId,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_PLAN",
+            "A planId is required.",
+          );
+
+          return;
+        }
+
+        billing
+          .changePlan(body.planId)
+          .then((subscription) =>
+            res.json({
+              subscription,
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /unknown plan|contact sales/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_PLAN",
+                  message,
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+  }
 
   // ---- Clients ----
   router.get(
@@ -249,8 +348,26 @@ export function createPlatformApiRouter(
           return;
         }
 
-        domains
-          .add(body.domain)
+        const domainInput = body.domain;
+
+        // Enforce the tenant's plan limit on custom domains before adding
+        // one (white-label domains are a higher-tier feature).
+        const billing = deps.billing;
+        const gate = billing
+          ? domains
+              .listMine()
+              .then((rows) =>
+                billing.assertWithinLimit(
+                  "customDomains",
+                  rows.length,
+                ),
+              )
+          : Promise.resolve();
+
+        gate
+          .then(() =>
+            domains.add(domainInput),
+          )
           .then((domain) =>
             res
               .status(201)
@@ -261,6 +378,18 @@ export function createPlatformApiRouter(
               error instanceof Error
                 ? error.message
                 : "";
+            if (
+              error instanceof
+              PlanLimitError
+            ) {
+              res.status(402).json({
+                error: {
+                  code: "PLAN_LIMIT",
+                  message,
+                },
+              });
+              return;
+            }
             if (
               /already in use/i.test(
                 message,

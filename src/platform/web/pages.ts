@@ -221,6 +221,19 @@ export function dashboardPage(): string {
     </div>
   </div></div>
   <div class="wrap">
+    <div class="panel" id="billingPanel" style="margin-bottom:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
+        <div>
+          <h2 style="margin-bottom:4px;">Plan <span class="pill" id="planStatus"></span></h2>
+          <p class="hint" id="planSummary" style="margin-bottom:0;">Loading…</p>
+        </div>
+        <div id="planPickerWrap" style="display:none;gap:10px;align-items:flex-end;">
+          <div class="f"><label for="planPicker">Change plan</label><select id="planPicker"></select></div>
+          <button class="btn" id="changePlan" style="width:auto;">Update</button>
+        </div>
+      </div>
+      <div class="msg" id="plmsg"></div>
+    </div>
     <div class="grid2">
       <div class="panel">
         <h2>Clients</h2>
@@ -381,6 +394,23 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/domains/'+encodeURIComponent(id),{method:'DELETE'});
     if(r.ok)loadDomains();
   }
+  function planPrice(p){return p.priceCents==null?'Custom pricing':('$'+(p.priceCents/100).toFixed(0)+'/mo');}
+  async function loadBilling(){
+    var r=await api('/api/platform/billing'); if(!r.ok)return;
+    var d=await r.json(); var plan=d.plan||{}; var sub=d.subscription||{};
+    document.getElementById('planStatus').textContent=esc(sub.status||'');
+    document.getElementById('planSummary').textContent='You\\u2019re on '+esc(plan.name||'')+' \\u2014 '+planPrice(plan)+'.';
+    var pr=await api('/api/platform/billing/plans');
+    if(pr.ok){
+      var pd=await pr.json(); var sel=document.getElementById('planPicker'); clear(sel);
+      (pd.plans||[]).forEach(function(p){
+        var o=document.createElement('option'); o.value=p.id;
+        o.textContent=esc(p.name)+' \\u2014 '+planPrice(p)+(p.selfServe?'':' (contact sales)');
+        if(p.id===plan.id)o.selected=true;
+        sel.appendChild(o);
+      });
+    }
+  }
   async function init(){
     var me=await api('/auth/me');
     if(!me.ok){window.location='/login';return;}
@@ -392,8 +422,19 @@ export function dashboardPage(): string {
       document.getElementById('brandPanel').style.display='';
       document.getElementById('domainPanel').style.display='';
     }
-    await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadDomains();
+    if(u.role==='owner'){
+      document.getElementById('planPickerWrap').style.display='flex';
+    }
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadDomains();
   }
+  document.getElementById('changePlan').addEventListener('click',async function(){
+    var pid=document.getElementById('planPicker').value;
+    setMsg('plmsg','','Updating\\u2026');
+    var r=await api('/api/platform/billing/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planId:pid})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('plmsg','ok','Plan updated.');loadBilling();loadDomains();}
+    else{setMsg('plmsg','err',(x.error&&x.error.message)||'Could not change plan.');}
+  });
   document.getElementById('logout').addEventListener('click',async function(){
     await api('/auth/logout',{method:'POST'}); window.location='/login';
   });

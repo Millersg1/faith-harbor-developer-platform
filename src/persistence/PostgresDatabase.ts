@@ -229,6 +229,22 @@ export class PostgresDatabase
       ALTER TABLE organization_domains
         ADD COLUMN IF NOT EXISTS verification_token TEXT NOT NULL DEFAULT '';
     `);
+
+    // One subscription per organization: which plan the tenant is on. The
+    // plan catalog itself lives in code; this stores only the tenant's
+    // choice and (later) its Stripe billing state.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS organization_subscriptions (
+        organization_id        TEXT PRIMARY KEY
+                                 REFERENCES organizations (id) ON DELETE CASCADE,
+        plan_id                TEXT NOT NULL,
+        status                 TEXT NOT NULL DEFAULT 'active',
+        current_period_end     TEXT,
+        stripe_customer_id     TEXT,
+        stripe_subscription_id TEXT,
+        updated_at             TEXT NOT NULL
+      );
+    `);
   }
 
   /**
