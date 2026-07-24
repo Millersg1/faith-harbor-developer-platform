@@ -291,6 +291,51 @@ export function createPlatformApiRouter(
       },
     );
 
+    router.post(
+      "/domains/:id/verify",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        domains
+          .verify(
+            String(req.params.id),
+          )
+          .then((domain) =>
+            res.json({ domain }),
+          )
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "";
+            if (
+              /not found/i.test(message)
+            ) {
+              res.status(404).json({
+                error: {
+                  code: "DOMAIN_NOT_FOUND",
+                  message,
+                },
+              });
+              return;
+            }
+            if (
+              /verification|TXT record/i.test(
+                message,
+              )
+            ) {
+              res.status(409).json({
+                error: {
+                  code: "DOMAIN_UNVERIFIED",
+                  message,
+                },
+              });
+              return;
+            }
+            next(error);
+          });
+      },
+    );
+
     router.delete(
       "/domains/:id",
       requireRole("owner", "admin"),

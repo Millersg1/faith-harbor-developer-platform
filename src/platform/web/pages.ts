@@ -96,6 +96,13 @@ const STYLES = `
     padding: 3px 9px; border-radius: 999px; background: rgba(45,212,191,0.16); color: var(--accent); }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .dns { margin-top: 10px; padding: 12px 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; }
+  .dns .hint { margin-bottom: 10px; }
+  .dns .rec { display: flex; flex-direction: column; gap: 8px; }
+  .dns .rec > div { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .dns .k { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); min-width: 42px; }
+  .dns code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; word-break: break-all; }
 `;
 
 function layout(opts: {
@@ -337,15 +344,38 @@ export function dashboardPage(): string {
     var list=d.domains||[];
     if(!list.length){el.appendChild(emptyMsg('No custom domains yet.'));return;}
     list.forEach(function(dm){
-      var row=document.createElement('div');row.className='item';
-      var left=document.createElement('div');
-      var nm=document.createElement('div');nm.textContent=esc(dm.domain);left.appendChild(nm);
-      row.appendChild(left);
-      var st=document.createElement('span');st.className='pill';st.textContent=dm.verified?'live':'pending DNS';row.appendChild(st);
-      var rm=document.createElement('button');rm.className='btn ghost';rm.style.marginLeft='8px';rm.style.padding='6px 12px';rm.textContent='Remove';
-      rm.addEventListener('click',function(){removeDomain(dm.id);});row.appendChild(rm);
-      el.appendChild(row);
+      var wrap=document.createElement('div');wrap.className='item';wrap.style.flexDirection='column';wrap.style.alignItems='stretch';
+      var row=document.createElement('div');row.style.display='flex';row.style.alignItems='center';row.style.justifyContent='space-between';row.style.gap='8px';
+      var nm=document.createElement('div');nm.textContent=esc(dm.domain);nm.style.fontWeight='600';row.appendChild(nm);
+      var actions=document.createElement('div');actions.style.display='flex';actions.style.alignItems='center';actions.style.gap='8px';
+      var st=document.createElement('span');st.className='pill';st.textContent=dm.verified?'verified':'pending verification';actions.appendChild(st);
+      if(!dm.verified){
+        var vb=document.createElement('button');vb.className='btn';vb.style.width='auto';vb.style.padding='6px 12px';vb.textContent='Verify';
+        vb.addEventListener('click',function(){verifyDomain(dm.id,vb);});actions.appendChild(vb);
+      }
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Remove';
+      rm.addEventListener('click',function(){removeDomain(dm.id);});actions.appendChild(rm);
+      row.appendChild(actions);
+      wrap.appendChild(row);
+      if(!dm.verified){
+        var dns=document.createElement('div');dns.className='dns';
+        var h=document.createElement('div');h.className='hint';h.textContent='To prove you own this domain, add this DNS TXT record, then click Verify:';dns.appendChild(h);
+        var t=document.createElement('div');t.className='rec';
+        var hn=document.createElement('div');var hl=document.createElement('span');hl.className='k';hl.textContent='Host';var hv=document.createElement('code');hv.textContent='_aecloud-verify.'+dm.domain;hn.appendChild(hl);hn.appendChild(hv);
+        var vn=document.createElement('div');var vl=document.createElement('span');vl.className='k';vl.textContent='Value';var vv=document.createElement('code');vv.textContent='aecloud-verify='+esc(dm.verificationToken);vn.appendChild(vl);vn.appendChild(vv);
+        t.appendChild(hn);t.appendChild(vn);dns.appendChild(t);
+        wrap.appendChild(dns);
+      }
+      el.appendChild(wrap);
     });
+  }
+  async function verifyDomain(id,btn){
+    if(btn){btn.disabled=true;btn.textContent='Checking…';}
+    var r=await api('/api/platform/domains/'+encodeURIComponent(id)+'/verify',{method:'POST'});
+    if(r.ok){setMsg('dmsg','ok','Domain verified — it now routes to your workspace.');loadDomains();return;}
+    var e=await r.json().catch(function(){return{};});
+    setMsg('dmsg','err',(e.error&&e.error.message)||'Could not verify yet.');
+    if(btn){btn.disabled=false;btn.textContent='Verify';}
   }
   async function removeDomain(id){
     var r=await api('/api/platform/domains/'+encodeURIComponent(id),{method:'DELETE'});
@@ -413,7 +443,7 @@ export function dashboardPage(): string {
     setMsg('dmsg','','Adding…');
     var r=await api('/api/platform/domains',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:d.value.trim()})});
     var x=await r.json().catch(function(){return {};});
-    if(r.ok){d.value='';setMsg('dmsg','ok','Domain added. Point its DNS at the platform.');loadDomains();}
+    if(r.ok){d.value='';setMsg('dmsg','ok','Domain added. Add the DNS TXT record shown below, then click Verify.');loadDomains();}
     else{setMsg('dmsg','err',(x.error&&x.error.message)||'Could not add domain.');}
   });
   init();`;

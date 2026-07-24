@@ -26,6 +26,12 @@ import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
 async function build() {
+  // A DNS TXT resolver the test controls: `txtRecords` maps a lookup host
+  // to its records, so verification never touches the real network.
+  const txtRecords = new Map<
+    string,
+    string[][]
+  >();
   const organizations =
     new OrganizationService();
   const users =
@@ -65,7 +71,13 @@ async function build() {
       sessions,
     ),
     domains:
-      new OrganizationDomainService(),
+      new OrganizationDomainService(
+        undefined,
+        {
+          txtResolver: async (host) =>
+            txtRecords.get(host) ?? [],
+        },
+      ),
     admins: new PlatformAdminService(),
     adminSessions:
       new PlatformAdminSessionService(),
@@ -83,6 +95,7 @@ async function build() {
   return {
     app,
     users,
+    txtRecords,
     ownerCookie:
       signup.headers["set-cookie"],
     orgId:
@@ -134,17 +147,18 @@ describe("Custom domains", () => {
     ).toHaveLength(0);
   });
 
-  it("resolves a request by its Host to the owning tenant", async () => {
-    const { app, ownerCookie } =
+  it("resolves a request by its Host only after the domain is verified", async () => {
+    const { app, ownerCookie, txtRecords } =
       await build();
 
-    await request(app)
+    const add = await request(app)
       .post("/api/platform/domains")
       .set("Cookie", ownerCookie)
       .send({
         domain:
           "cloud.acme-brand.com",
       });
+    const domain = add.body.domain;
 
     // Give Acme distinctive branding.
     await request(app)
@@ -154,7 +168,39 @@ describe("Custom domains", () => {
         displayName: "Acme Cloud",
       });
 
-    // A request arriving on the custom host resolves to Acme, with no
+    // Before verification the host must NOT resolve — an unproven domain
+    // can't route to a tenant.
+    const before = await request(app)
+      .get("/api/platform/branding")
+      .set(
+        "Host",
+        "cloud.acme-brand.com",
+      );
+    expect(before.status).toBe(400);
+
+    // Publish the expected TXT record, then verify.
+    txtRecords.set(
+      "_aecloud-verify.cloud.acme-brand.com",
+      [
+        [
+          "aecloud-verify=" +
+            domain.verificationToken,
+        ],
+      ],
+    );
+    const verify = await request(app)
+      .post(
+        "/api/platform/domains/" +
+          domain.id +
+          "/verify",
+      )
+      .set("Cookie", ownerCookie);
+    expect(verify.status).toBe(200);
+    expect(
+      verify.body.domain.verified,
+    ).toBe(true);
+
+    // Now a request arriving on the custom host resolves to Acme, with no
     // slug/header — just the domain.
     const byHost = await request(app)
       .get("/api/platform/branding")
@@ -162,7 +208,6 @@ describe("Custom domains", () => {
         "Host",
         "cloud.acme-brand.com",
       );
-
     expect(byHost.status).toBe(200);
     expect(
       byHost.body.branding
@@ -174,6 +219,52 @@ describe("Custom domains", () => {
       .get("/api/platform/branding")
       .set("Host", "nope.example.com");
     expect(unknown.status).toBe(400);
+  });
+
+  it("refuses to verify when the DNS TXT record is missing or wrong", async () => {
+    const { app, ownerCookie, txtRecords } =
+      await build();
+
+    const add = await request(app)
+      .post("/api/platform/domains")
+      .set("Cookie", ownerCookie)
+      .send({
+        domain:
+          "cloud.acme-brand.com",
+      });
+    const domain = add.body.domain;
+
+    // No TXT record at all → 409, stays unverified.
+    const missing = await request(app)
+      .post(
+        "/api/platform/domains/" +
+          domain.id +
+          "/verify",
+      )
+      .set("Cookie", ownerCookie);
+    expect(missing.status).toBe(409);
+
+    // A record with the wrong token → still 409.
+    txtRecords.set(
+      "_aecloud-verify.cloud.acme-brand.com",
+      [["aecloud-verify=not-the-token"]],
+    );
+    const wrong = await request(app)
+      .post(
+        "/api/platform/domains/" +
+          domain.id +
+          "/verify",
+      )
+      .set("Cookie", ownerCookie);
+    expect(wrong.status).toBe(409);
+
+    // Confirm it never flipped to verified.
+    const list = await request(app)
+      .get("/api/platform/domains")
+      .set("Cookie", ownerCookie);
+    expect(
+      list.body.domains[0].verified,
+    ).toBe(false);
   });
 
   it("blocks a domain already claimed by another tenant", async () => {

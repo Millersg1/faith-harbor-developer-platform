@@ -218,8 +218,16 @@ export class PostgresDatabase
                            REFERENCES organizations (id) ON DELETE CASCADE,
         domain           TEXT NOT NULL UNIQUE,
         verified         BOOLEAN NOT NULL DEFAULT FALSE,
+        verification_token TEXT NOT NULL DEFAULT '',
         created_at       TEXT NOT NULL
       );
+    `);
+
+    // Backfill the ownership-verification token column on tables created
+    // before it existed (idempotent; the CREATE above covers fresh DBs).
+    await this.pool.query(`
+      ALTER TABLE organization_domains
+        ADD COLUMN IF NOT EXISTS verification_token TEXT NOT NULL DEFAULT '';
     `);
   }
 

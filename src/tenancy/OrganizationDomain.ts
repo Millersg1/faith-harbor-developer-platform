@@ -12,7 +12,32 @@ export interface OrganizationDomainRecord {
   organizationId: string;
   domain: string;
   verified: boolean;
+  /**
+   * A per-domain secret the tenant publishes as a DNS TXT record to prove
+   * they control the domain. Until the record is found, the domain stays
+   * unverified and does NOT resolve to the tenant.
+   */
+  verificationToken: string;
   createdAt: string;
+}
+
+/**
+ * The DNS host the tenant creates a TXT record on to prove ownership of a
+ * domain, e.g. `_aecloud-verify.cloud.theirbrand.com`.
+ */
+export function verificationHost(
+  domain: string,
+): string {
+  return `_aecloud-verify.${domain}`;
+}
+
+/**
+ * The exact TXT record value the tenant must publish for a given token.
+ */
+export function verificationValue(
+  token: string,
+): string {
+  return `aecloud-verify=${token}`;
 }
 
 /**

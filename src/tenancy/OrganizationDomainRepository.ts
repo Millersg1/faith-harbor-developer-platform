@@ -6,6 +6,7 @@ interface DomainRow {
   organization_id: string;
   domain: string;
   verified: boolean | number;
+  verification_token: string;
   created_at: string;
 }
 
@@ -31,13 +32,14 @@ export class OrganizationDomainRepository {
     if (this.db) {
       await this.db.query(
         `INSERT INTO organization_domains
-           (id, organization_id, domain, verified, created_at)
-         VALUES ($1, $2, $3, $4, $5)`,
+           (id, organization_id, domain, verified, verification_token, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           record.id,
           record.organizationId,
           record.domain,
           record.verified,
+          record.verificationToken,
           record.createdAt,
         ],
       );
@@ -115,6 +117,39 @@ export class OrganizationDomainRepository {
   }
 
   /**
+   * Marks a domain verified (or not), scoped to its organization so a
+   * tenant can never flip the flag on a domain it doesn't own.
+   */
+  async setVerified(
+    id: string,
+    organizationId: string,
+    verified: boolean,
+  ): Promise<void> {
+    if (this.db) {
+      await this.db.query(
+        "UPDATE organization_domains SET verified = $3 WHERE id = $1 AND organization_id = $2",
+        [id, organizationId, verified],
+      );
+
+      return;
+    }
+
+    const existing =
+      this.memory.get(id);
+
+    if (
+      existing &&
+      existing.organizationId ===
+        organizationId
+    ) {
+      this.memory.set(id, {
+        ...existing,
+        verified,
+      });
+    }
+  }
+
+  /**
    * Deletes a domain, but only if it belongs to the given organization —
    * so one tenant can never remove another's domain.
    */
@@ -155,6 +190,8 @@ function mapRow(
     verified:
       row.verified === true ||
       row.verified === 1,
+    verificationToken:
+      row.verification_token,
     createdAt: row.created_at,
   };
 }
