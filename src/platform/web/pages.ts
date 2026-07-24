@@ -271,13 +271,25 @@ export function dashboardPage(): string {
         <div class="msg" id="imsg"></div>
       </div>
       <div class="panel">
-        <h2>Websites <span class="pill">All Elite Hosting</span></h2>
-        <p class="hint">Hosted sites in your organization. New sites start pending until provisioned.</p>
+        <h2>AI Website Builder <span class="pill">AI</span></h2>
+        <p class="hint">Describe a business and generate a complete site. Build for yourself or for your clients on their own domains.</p>
+        <div class="list" id="websites"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="wname">Site name</label><input id="wname" placeholder="Acme Bakery" /></div>
+          <div class="f"><label for="wclient">Client (optional)</label><select id="wclient" class="client-select"></select></div>
+        </div>
+        <div class="f"><label for="wbrief">Describe the business</label><input id="wbrief" placeholder="A family bakery in Miami known for Cuban pastries and custom cakes." /></div>
+        <button class="btn" id="addWebsite" style="width:auto;margin-top:12px;">Create site</button>
+        <div class="msg" id="wmsg"></div>
+      </div>
+      <div class="panel">
+        <h2>Hosting accounts <span class="pill">All Elite Hosting</span></h2>
+        <p class="hint">Hosted sites in your organization. New accounts start pending until provisioned.</p>
         <div class="list" id="hosting"><div class="empty">Loading…</div></div>
         <div class="inline">
           <div class="f"><label for="hdomain">Domain</label><input id="hdomain" placeholder="yoursite.com" /></div>
           <div class="f"><label for="hclient">Client (optional)</label><select id="hclient" class="client-select"></select></div>
-          <button class="btn" id="addHosting" style="width:auto;">Create website</button>
+          <button class="btn" id="addHosting" style="width:auto;">Add account</button>
         </div>
         <div class="msg" id="hmsg"></div>
       </div>
@@ -410,6 +422,46 @@ export function dashboardPage(): string {
     var d=await r.json();
     renderList('hosting',d.hosting||[],function(h){return item(esc(h.domain),esc(h.plan||''),esc(h.status));});
   }
+  var aiReady=true;
+  async function loadWebsites(){
+    var r=await api('/api/platform/websites'); if(!r.ok)return;
+    var d=await r.json(); aiReady=d.generationAvailable!==false;
+    var el=document.getElementById('websites'); clear(el);
+    var list=d.websites||[];
+    if(!list.length){el.appendChild(emptyMsg('No sites yet. Describe a business below to build one.'));return;}
+    list.forEach(function(w){
+      var wrap=document.createElement('div');wrap.className='item';wrap.style.flexDirection='column';wrap.style.alignItems='stretch';
+      var row=document.createElement('div');row.style.display='flex';row.style.alignItems='center';row.style.justifyContent='space-between';row.style.gap='8px';
+      var left=document.createElement('div');
+      var nm=document.createElement('div');nm.textContent=esc(w.name);nm.style.fontWeight='600';left.appendChild(nm);
+      if(w.brief){var s=document.createElement('div');s.className='sub';s.textContent=esc(w.brief);left.appendChild(s);}
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.display='flex';actions.style.alignItems='center';actions.style.gap='8px';actions.style.flex='none';
+      var st=document.createElement('span');st.className='pill';st.textContent=w.hasContent?esc(w.status):'empty';actions.appendChild(st);
+      var gen=document.createElement('button');gen.className='btn';gen.style.width='auto';gen.style.padding='6px 12px';gen.textContent=w.hasContent?'Regenerate':'Generate';
+      gen.addEventListener('click',function(){generateWebsite(w.id,gen);});actions.appendChild(gen);
+      if(w.hasContent){
+        var pv=document.createElement('a');pv.className='btn ghost';pv.style.padding='6px 12px';pv.textContent='Preview';
+        pv.href='/api/platform/websites/'+encodeURIComponent(w.id)+'/preview';pv.target='_blank';pv.rel='noopener';actions.appendChild(pv);
+      }
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Delete';
+      rm.addEventListener('click',function(){removeWebsite(w.id);});actions.appendChild(rm);
+      row.appendChild(actions);wrap.appendChild(row);
+      el.appendChild(wrap);
+    });
+  }
+  async function generateWebsite(id,btn){
+    if(btn){btn.disabled=true;btn.textContent='Generating\\u2026';}
+    var r=await api('/api/platform/websites/'+encodeURIComponent(id)+'/generate',{method:'POST'});
+    if(r.ok){setMsg('wmsg','ok','Site generated. Click Preview to view it.');loadWebsites();return;}
+    var e=await r.json().catch(function(){return {};});
+    setMsg('wmsg','err',(e.error&&e.error.message)||'Could not generate.');
+    if(btn){btn.disabled=false;btn.textContent='Generate';}
+  }
+  async function removeWebsite(id){
+    var r=await api('/api/platform/websites/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok)loadWebsites();
+  }
   function planPrice(p){return p.priceCents==null?'Custom pricing':('$'+(p.priceCents/100).toFixed(0)+'/mo');}
   async function loadBilling(){
     var r=await api('/api/platform/billing'); if(!r.ok)return;
@@ -441,8 +493,18 @@ export function dashboardPage(): string {
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadHosting(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadDomains();
   }
+  document.getElementById('addWebsite').addEventListener('click',async function(){
+    var nm=document.getElementById('wname'),br=document.getElementById('wbrief'),cl=document.getElementById('wclient');
+    if(!nm.value.trim()){setMsg('wmsg','err','A site name is required.');return;}
+    setMsg('wmsg','','Creating\\u2026');
+    var r=await api('/api/platform/websites',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:nm.value.trim(),brief:br.value.trim()||undefined,clientId:cl.value||undefined})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){nm.value='';br.value='';setMsg('wmsg','ok',aiReady?'Site created. Click Generate to build it with AI.':'Site created. AI generation isn\\u2019t enabled yet.');loadWebsites();}
+    else{setMsg('wmsg','err',(x.error&&x.error.message)||'Could not create site.');}
+  });
   document.getElementById('addHosting').addEventListener('click',async function(){
     var dom=document.getElementById('hdomain'),cl=document.getElementById('hclient');
     if(!dom.value.trim()){setMsg('hmsg','err','A domain is required.');return;}

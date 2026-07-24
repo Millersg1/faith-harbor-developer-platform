@@ -17,6 +17,7 @@ import { createBrandingRouter } from "./branding/BrandingRouter";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
+import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApiRouter } from "./PlatformApiRouter";
@@ -41,6 +42,7 @@ export interface PlatformAppDependencies {
   signup: PlatformSignupService;
   domains: OrganizationDomainService;
   hosting?: PlatformHostingService;
+  websites?: PlatformWebsiteService;
   billing?: BillingService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
@@ -188,6 +190,7 @@ export function createPlatformApp(
       invoices: deps.invoices,
       domains: deps.domains,
       hosting: deps.hosting,
+      websites: deps.websites,
       billing: deps.billing,
     }),
   );

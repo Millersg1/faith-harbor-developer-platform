@@ -263,6 +263,26 @@ export class PostgresDatabase
         updated_at       TEXT NOT NULL
       );
     `);
+
+    // AI-generated websites — the website builder. A website owns its
+    // content (the brief and the generated HTML); every row belongs to one
+    // organization, optionally to one of that org's clients.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS websites (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        name             TEXT NOT NULL,
+        brief            TEXT,
+        accent_color     TEXT,
+        html             TEXT,
+        status           TEXT NOT NULL DEFAULT 'draft',
+        domain           TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
   }
 
   /**

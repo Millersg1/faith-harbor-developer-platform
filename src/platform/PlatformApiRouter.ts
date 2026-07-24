@@ -15,6 +15,9 @@ import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import type { PlatformProjectService } from "./projects/PlatformProjectService";
+import { GeneratorUnavailableError } from "./websites/PlatformWebsiteService";
+import type { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
+import type { PlatformWebsiteRecord } from "./websites/PlatformWebsite";
 
 export interface PlatformApiDependencies {
   clients: PlatformClientService;
@@ -22,6 +25,7 @@ export interface PlatformApiDependencies {
   invoices?: PlatformInvoiceService;
   domains?: OrganizationDomainService;
   hosting?: PlatformHostingService;
+  websites?: PlatformWebsiteService;
   billing?: BillingService;
 }
 
@@ -717,7 +721,388 @@ export function createPlatformApiRouter(
     );
   }
 
+  // ---- Website builder (AI-generated sites) ----
+  if (deps.websites) {
+    const websites = deps.websites;
+
+    router.get(
+      "/websites",
+      (_req, res, next) => {
+        websites
+          .list()
+          .then((list) =>
+            res.json({
+              generationAvailable:
+                websites.generationAvailable(),
+              websites: list.map(
+                websiteSummary,
+              ),
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/websites",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(body.name)
+        ) {
+          badRequest(
+            res,
+            "INVALID_WEBSITE",
+            "A website needs a name.",
+          );
+
+          return;
+        }
+
+        const name = body.name;
+
+        // Websites count against the plan's site limit.
+        const billing = deps.billing;
+        const gate = billing
+          ? websites
+              .count()
+              .then((count) =>
+                billing.assertWithinLimit(
+                  "sites",
+                  count,
+                ),
+              )
+          : Promise.resolve();
+
+        gate
+          .then(() =>
+            websites.create({
+              name,
+              brief: optionalString(
+                body.brief,
+              ),
+              accentColor:
+                optionalString(
+                  body.accentColor,
+                ),
+              clientId:
+                optionalString(
+                  body.clientId,
+                ),
+            }),
+          )
+          .then((website) =>
+            res
+              .status(201)
+              .json({
+                website:
+                  websiteSummary(
+                    website,
+                  ),
+              }),
+          )
+          .catch(
+            (error: unknown) => {
+              if (
+                error instanceof
+                PlanLimitError
+              ) {
+                res
+                  .status(402)
+                  .json({
+                    error: {
+                      code: "PLAN_LIMIT",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.post(
+      "/websites/:id/generate",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        websites
+          .generate(
+            String(req.params.id),
+          )
+          .then((website) =>
+            res.json({
+              website:
+                websiteSummary(
+                  website,
+                ),
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              if (
+                error instanceof
+                GeneratorUnavailableError
+              ) {
+                res
+                  .status(503)
+                  .json({
+                    error: {
+                      code: "AI_NOT_CONFIGURED",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "WEBSITE_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    // Serves the generated HTML for preview (authenticated, tenant-scoped).
+    router.get(
+      "/websites/:id/preview",
+      (req, res, next) => {
+        websites
+          .get(String(req.params.id))
+          .then((website) => {
+            // The body is AI-generated HTML. Serve it fully sandboxed so
+            // nothing in it can run script or reach the platform origin —
+            // it renders as an isolated static document only.
+            sandboxPreview(res);
+
+            if (!website.html) {
+              res
+                .status(404)
+                .type("html")
+                .send(
+                  "<!doctype html><meta charset=utf-8><body style=\"font-family:sans-serif;padding:40px\">Nothing generated yet. Click Generate to build this site.</body>",
+                );
+
+              return;
+            }
+
+            res
+              .type("html")
+              .send(website.html);
+          })
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .type("html")
+                  .send(
+                    "<!doctype html><meta charset=utf-8><body>Not found.</body>",
+                  );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/websites/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        websites
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              brief: optionalString(
+                body.brief,
+              ),
+              status:
+                optionalString(
+                  body.status,
+                ) as
+                  | undefined
+                  | "draft"
+                  | "published",
+              domain: optionalString(
+                body.domain,
+              ),
+            },
+          )
+          .then((website) =>
+            res.json({
+              website:
+                websiteSummary(
+                  website,
+                ),
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "WEBSITE_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/websites/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        websites
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
   return router;
+}
+
+/**
+ * Locks down a website-preview response so the AI-generated body cannot run
+ * script or reach the platform origin. The CSP `sandbox` directive gives the
+ * document a unique opaque origin with scripts/forms disabled, so even a
+ * malicious generated page renders as an inert static document. `nosniff`
+ * and an inline Content-Disposition harden it further.
+ */
+function sandboxPreview(
+  res: Response,
+): void {
+  res.setHeader(
+    "Content-Security-Policy",
+    "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:",
+  );
+  res.setHeader(
+    "X-Content-Type-Options",
+    "nosniff",
+  );
+  res.setHeader(
+    "Content-Disposition",
+    'inline; filename="preview.html"',
+  );
+}
+
+/**
+ * A website without its (potentially large) HTML body — for lists and
+ * mutation responses. Whether content exists is surfaced as a flag.
+ */
+function websiteSummary(
+  website: PlatformWebsiteRecord,
+): Record<string, unknown> {
+  return {
+    id: website.id,
+    name: website.name,
+    brief: website.brief,
+    accentColor: website.accentColor,
+    clientId: website.clientId,
+    status: website.status,
+    domain: website.domain,
+    hasContent: Boolean(
+      website.html,
+    ),
+    createdAt: website.createdAt,
+    updatedAt: website.updatedAt,
+  };
 }
 
 function asObject(

@@ -16,6 +16,13 @@ import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformHostingRepository } from "./hosting/PlatformHostingRepository";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
+import { PlatformWebsiteRepository } from "./websites/PlatformWebsiteRepository";
+import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
+import {
+  DisconnectedWebsiteGenerator,
+  OpenAiWebsiteGenerator,
+  type WebsiteGenerator,
+} from "./websites/WebsiteGenerator";
 import { PlatformInvoiceRepository } from "./invoices/PlatformInvoiceRepository";
 import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { PlatformProjectRepository } from "./projects/PlatformProjectRepository";
@@ -126,6 +133,30 @@ async function start(): Promise<void> {
       clients,
     );
 
+  // The website builder's AI generator: live when an OpenAI key is present
+  // in the platform env, otherwise a disconnected stub that reports "not
+  // configured" (so the platform runs fine keyless).
+  const openAiKey =
+    process.env.OPENAI_API_KEY?.trim();
+  const websiteGenerator: WebsiteGenerator =
+    openAiKey
+      ? new OpenAiWebsiteGenerator({
+          apiKey: openAiKey,
+          model:
+            process.env
+              .OPENAI_MODEL ||
+            undefined,
+        })
+      : new DisconnectedWebsiteGenerator();
+  const websites =
+    new PlatformWebsiteService(
+      new PlatformWebsiteRepository(
+        db,
+      ),
+      websiteGenerator,
+      clients,
+    );
+
   const admins =
     new PlatformAdminService(
       new PlatformAdminRepository(db),
@@ -176,6 +207,7 @@ async function start(): Promise<void> {
     signup,
     domains,
     hosting,
+    websites,
     billing,
     admins,
     adminSessions,
