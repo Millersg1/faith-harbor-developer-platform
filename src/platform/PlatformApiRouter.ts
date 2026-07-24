@@ -11,6 +11,7 @@ import {
 } from "./billing/BillingService";
 import { PLANS } from "./billing/Plan";
 import type { PlatformClientService } from "./clients/PlatformClientService";
+import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import type { PlatformProjectService } from "./projects/PlatformProjectService";
@@ -20,6 +21,7 @@ export interface PlatformApiDependencies {
   projects?: PlatformProjectService;
   invoices?: PlatformInvoiceService;
   domains?: OrganizationDomainService;
+  hosting?: PlatformHostingService;
   billing?: BillingService;
 }
 
@@ -471,6 +473,240 @@ export function createPlatformApiRouter(
       (req, res, next) => {
         domains
           .remove(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Hosting (All Elite Hosting — websites) ----
+  if (deps.hosting) {
+    const hosting = deps.hosting;
+
+    router.get(
+      "/hosting",
+      (_req, res, next) => {
+        hosting
+          .list()
+          .then((accounts) =>
+            res.json({
+              hosting: accounts,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/hosting",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.domain,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_HOSTING",
+            "A website domain is required.",
+          );
+
+          return;
+        }
+
+        // Enforce the tenant's plan limit on websites before creating one.
+        const billing = deps.billing;
+        const gate = billing
+          ? hosting
+              .count()
+              .then((count) =>
+                billing.assertWithinLimit(
+                  "sites",
+                  count,
+                ),
+              )
+          : Promise.resolve();
+
+        gate
+          .then(() =>
+            hosting.create({
+              domain: String(
+                body.domain,
+              ),
+              clientId:
+                optionalString(
+                  body.clientId,
+                ),
+              plan: optionalString(
+                body.plan,
+              ),
+              notes: optionalString(
+                body.notes,
+              ),
+            }),
+          )
+          .then((account) =>
+            res
+              .status(201)
+              .json({
+                hosting: account,
+              }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                error instanceof
+                PlanLimitError
+              ) {
+                res
+                  .status(402)
+                  .json({
+                    error: {
+                      code: "PLAN_LIMIT",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              if (
+                /valid domain/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_HOSTING",
+                  message,
+                );
+
+                return;
+              }
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/hosting/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        hosting
+          .update(
+            String(req.params.id),
+            {
+              domain: optionalString(
+                body.domain,
+              ),
+              plan: optionalString(
+                body.plan,
+              ),
+              status:
+                optionalString(
+                  body.status,
+                ) as
+                  | undefined
+                  | "pending"
+                  | "active"
+                  | "suspended"
+                  | "cancelled",
+              notes: optionalString(
+                body.notes,
+              ),
+            },
+          )
+          .then((account) =>
+            res.json({
+              hosting: account,
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "HOSTING_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              if (
+                /valid domain/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_HOSTING",
+                  message,
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/hosting/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        hosting
+          .delete(
             String(req.params.id),
           )
           .then(() =>

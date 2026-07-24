@@ -14,6 +14,8 @@ import { BrandingRepository } from "./branding/BrandingRepository";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
+import { PlatformHostingRepository } from "./hosting/PlatformHostingRepository";
+import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformInvoiceRepository } from "./invoices/PlatformInvoiceRepository";
 import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { PlatformProjectRepository } from "./projects/PlatformProjectRepository";
@@ -116,6 +118,13 @@ async function start(): Promise<void> {
     new BillingService(
       new SubscriptionRepository(db),
     );
+  const hosting =
+    new PlatformHostingService(
+      new PlatformHostingRepository(
+        db,
+      ),
+      clients,
+    );
 
   const admins =
     new PlatformAdminService(
@@ -166,6 +175,7 @@ async function start(): Promise<void> {
     invoices,
     signup,
     domains,
+    hosting,
     billing,
     admins,
     adminSessions,

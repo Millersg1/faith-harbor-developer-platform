@@ -245,6 +245,24 @@ export class PostgresDatabase
         updated_at             TEXT NOT NULL
       );
     `);
+
+    // Hosting accounts (hosted websites) — the featured All Elite Hosting
+    // product, ported onto the tenant template. Every row belongs to one
+    // organization; a client_id (when set) is the tenant's own client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS hosting_accounts (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        domain           TEXT NOT NULL,
+        plan             TEXT,
+        status           TEXT NOT NULL DEFAULT 'pending',
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
   }
 
   /**

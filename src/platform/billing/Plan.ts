@@ -22,6 +22,8 @@ export interface PlanLimits {
   seats: number | null;
   /** Verified white-label custom domains the organization may add. */
   customDomains: number | null;
+  /** Hosted websites (hosting accounts) the organization may create. */
+  sites: number | null;
   /** Projects the organization may create. */
   projects: number | null;
   /** Clients the organization may create. */
@@ -64,6 +66,7 @@ export const PLANS: Plan[] = [
     limits: {
       seats: 2,
       customDomains: 0,
+      sites: 1,
       projects: 5,
       clients: 25,
     },
@@ -84,6 +87,7 @@ export const PLANS: Plan[] = [
     limits: {
       seats: 5,
       customDomains: 1,
+      sites: 10,
       projects: 25,
       clients: 200,
     },
@@ -104,6 +108,7 @@ export const PLANS: Plan[] = [
     limits: {
       seats: 15,
       customDomains: 3,
+      sites: 50,
       projects: 100,
       clients: 1000,
     },
@@ -124,6 +129,7 @@ export const PLANS: Plan[] = [
     limits: {
       seats: 50,
       customDomains: 25,
+      sites: null,
       projects: null,
       clients: null,
     },
@@ -144,6 +150,7 @@ export const PLANS: Plan[] = [
     limits: {
       seats: null,
       customDomains: null,
+      sites: null,
       projects: null,
       clients: null,
     },

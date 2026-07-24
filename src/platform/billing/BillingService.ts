@@ -155,6 +155,7 @@ function limitMessage(
     seats: "team members",
     customDomains:
       "custom domains",
+    sites: "websites",
     projects: "projects",
     clients: "clients",
   };

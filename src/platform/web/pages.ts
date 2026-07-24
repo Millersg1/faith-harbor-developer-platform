@@ -270,6 +270,17 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="imsg"></div>
       </div>
+      <div class="panel">
+        <h2>Websites <span class="pill">All Elite Hosting</span></h2>
+        <p class="hint">Hosted sites in your organization. New sites start pending until provisioned.</p>
+        <div class="list" id="hosting"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="hdomain">Domain</label><input id="hdomain" placeholder="yoursite.com" /></div>
+          <div class="f"><label for="hclient">Client (optional)</label><select id="hclient" class="client-select"></select></div>
+          <button class="btn" id="addHosting" style="width:auto;">Create website</button>
+        </div>
+        <div class="msg" id="hmsg"></div>
+      </div>
       <div class="panel" id="brandPanel" style="display:none;">
         <h2>Branding <span class="pill">owner/admin</span></h2>
         <p class="hint">White-label your workspace. Changes are live instantly.</p>
@@ -394,6 +405,11 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/domains/'+encodeURIComponent(id),{method:'DELETE'});
     if(r.ok)loadDomains();
   }
+  async function loadHosting(){
+    var r=await api('/api/platform/hosting'); if(!r.ok)return;
+    var d=await r.json();
+    renderList('hosting',d.hosting||[],function(h){return item(esc(h.domain),esc(h.plan||''),esc(h.status));});
+  }
   function planPrice(p){return p.priceCents==null?'Custom pricing':('$'+(p.priceCents/100).toFixed(0)+'/mo');}
   async function loadBilling(){
     var r=await api('/api/platform/billing'); if(!r.ok)return;
@@ -425,8 +441,18 @@ export function dashboardPage(): string {
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadHosting(); await loadDomains();
   }
+  document.getElementById('addHosting').addEventListener('click',async function(){
+    var dom=document.getElementById('hdomain'),cl=document.getElementById('hclient');
+    if(!dom.value.trim()){setMsg('hmsg','err','A domain is required.');return;}
+    setMsg('hmsg','','Creating\\u2026');
+    var r=await api('/api/platform/hosting',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({domain:dom.value.trim(),clientId:cl.value||undefined})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){dom.value='';setMsg('hmsg','ok','Website created (pending provisioning).');loadHosting();}
+    else{setMsg('hmsg','err',(x.error&&x.error.message)||'Could not create website.');}
+  });
   document.getElementById('changePlan').addEventListener('click',async function(){
     var pid=document.getElementById('planPicker').value;
     setMsg('plmsg','','Updating\\u2026');
