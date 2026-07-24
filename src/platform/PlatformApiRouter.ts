@@ -919,6 +919,23 @@ export function createPlatformApiRouter(
                 return;
               }
 
+              if (
+                error instanceof
+                PlanLimitError
+              ) {
+                res
+                  .status(402)
+                  .json({
+                    error: {
+                      code: "AI_ALLOWANCE_REACHED",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
               const message =
                 error instanceof
                 Error
@@ -1185,19 +1202,37 @@ export function createPlatformApiRouter(
           ),
         ).toISOString();
 
-        aiUsage
-          .summarySince(since)
-          .then((summary) =>
-            res.json({
-              periodStart: since,
-              usage: summary,
-              costUsd:
-                summary.costMicros /
-                1_000_000,
-              platformCostUsd:
-                summary.platformCostMicros /
-                1_000_000,
-            }),
+        Promise.all([
+          aiUsage.summarySince(since),
+          aiUsage.platformCountSince(
+            "website_generation",
+            since,
+          ),
+          deps.billing?.getPlan(),
+        ])
+          .then(
+            ([
+              summary,
+              platformGenerations,
+              plan,
+            ]) =>
+              res.json({
+                periodStart: since,
+                usage: summary,
+                costUsd:
+                  summary.costMicros /
+                  1_000_000,
+                platformCostUsd:
+                  summary.platformCostMicros /
+                  1_000_000,
+                // Plan's monthly included-AI allowance + how much is used.
+                aiAllowance: plan
+                  ? plan.limits
+                      .aiGenerations
+                  : null,
+                platformGenerationsUsed:
+                  platformGenerations,
+              }),
           )
           .catch(next);
       },

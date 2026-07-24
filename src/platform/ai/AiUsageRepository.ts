@@ -195,4 +195,50 @@ export class AiUsageRepository extends TenantScopedRepository {
         e.createdAt >= sinceIso,
     ).length;
   }
+
+  /**
+   * Counts only PLATFORM-key events (own_key = false) of a kind since
+   * `sinceIso` — i.e. usage that counts against the plan's included AI
+   * allowance. Tenant-key usage is the tenant's own spend and isn't counted.
+   */
+  async platformCountSince(
+    kind: string,
+    sinceIso: string,
+  ): Promise<number> {
+    const organizationId =
+      this.tenantId();
+
+    if (this.db) {
+      const result =
+        await this.db.query(
+          `SELECT COUNT(*) AS n FROM ai_usage_events
+           WHERE organization_id = $1 AND kind = $2
+             AND created_at >= $3 AND own_key = FALSE`,
+          [
+            organizationId,
+            kind,
+            sinceIso,
+          ],
+        );
+
+      return Number(
+        (
+          result.rows[0] as
+            | Record<string, unknown>
+            | undefined
+        )?.n ?? 0,
+      );
+    }
+
+    return Array.from(
+      this.memory.values(),
+    ).filter(
+      (e) =>
+        e.organizationId ===
+          organizationId &&
+        e.kind === kind &&
+        e.createdAt >= sinceIso &&
+        !e.ownKey,
+    ).length;
+  }
 }

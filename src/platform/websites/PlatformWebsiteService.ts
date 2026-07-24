@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { estimateCostMicros } from "../ai/AiUsageEvent";
 import type { AiUsageRepository } from "../ai/AiUsageRepository";
 import type { OrganizationAiSettingsService } from "../ai/OrganizationAiSettingsService";
+import type { BillingService } from "../billing/BillingService";
 import type { PlatformClientService } from "../clients/PlatformClientService";
 import type {
   CreatePlatformWebsiteRequest,
@@ -49,6 +50,7 @@ export class PlatformWebsiteService {
     private readonly clients?: PlatformClientService,
     private readonly aiSettings?: OrganizationAiSettingsService,
     private readonly aiUsage?: AiUsageRepository,
+    private readonly billing?: BillingService,
     private readonly generatorFactory: GeneratorFactory =
       createWebsiteGenerator,
   ) {}
@@ -164,6 +166,29 @@ export class PlatformWebsiteService {
     if (!generator.isConnected()) {
       throw new GeneratorUnavailableError(
         "AI website generation isn't set up yet. Add your own AI key in settings to enable it.",
+      );
+    }
+
+    // Enforce the plan's monthly AI allowance — but ONLY for the platform's
+    // included AI. A tenant on their own key spends their own money, so it's
+    // never capped. Throws PlanLimitError (→ 402) when the allowance is used
+    // up. The metering below is what this count reads from.
+    if (
+      !ownKey &&
+      this.billing &&
+      this.aiUsage
+    ) {
+      const monthStart =
+        startOfUtcMonth();
+      const used =
+        await this.aiUsage.platformCountSince(
+          "website_generation",
+          monthStart,
+        );
+
+      await this.billing.assertWithinLimit(
+        "aiGenerations",
+        used,
       );
     }
 
@@ -297,4 +322,17 @@ export class PlatformWebsiteService {
 
     await this.clients.get(clientId);
   }
+}
+
+/** ISO timestamp for the first instant of the current UTC month. */
+export function startOfUtcMonth(): string {
+  const now = new Date();
+
+  return new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      1,
+    ),
+  ).toISOString();
 }

@@ -24,6 +24,8 @@ export interface PlanLimits {
   customDomains: number | null;
   /** Hosted websites (hosting accounts) the organization may create. */
   sites: number | null;
+  /** AI website generations per month on the platform's included AI. */
+  aiGenerations: number | null;
   /** Projects the organization may create. */
   projects: number | null;
   /** Clients the organization may create. */
@@ -67,6 +69,7 @@ export const PLANS: Plan[] = [
       seats: 2,
       customDomains: 0,
       sites: 1,
+      aiGenerations: 15,
       projects: 5,
       clients: 25,
     },
@@ -88,6 +91,7 @@ export const PLANS: Plan[] = [
       seats: 5,
       customDomains: 1,
       sites: 10,
+      aiGenerations: 100,
       projects: 25,
       clients: 200,
     },
@@ -109,6 +113,7 @@ export const PLANS: Plan[] = [
       seats: 15,
       customDomains: 3,
       sites: 50,
+      aiGenerations: 500,
       projects: 100,
       clients: 1000,
     },
@@ -130,6 +135,7 @@ export const PLANS: Plan[] = [
       seats: 50,
       customDomains: 25,
       sites: null,
+      aiGenerations: 2000,
       projects: null,
       clients: null,
     },
@@ -151,6 +157,7 @@ export const PLANS: Plan[] = [
       seats: null,
       customDomains: null,
       sites: null,
+      aiGenerations: null,
       projects: null,
       clients: null,
     },

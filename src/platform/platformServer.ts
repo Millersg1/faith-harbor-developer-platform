@@ -189,6 +189,7 @@ async function start(): Promise<void> {
       clients,
       aiSettings,
       aiUsage,
+      billing,
     );
 
   const admins =

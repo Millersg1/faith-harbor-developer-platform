@@ -347,6 +347,8 @@ function limitMessage(
     customDomains:
       "custom domains",
     sites: "websites",
+    aiGenerations:
+      "AI generations this month",
     projects: "projects",
     clients: "clients",
   };

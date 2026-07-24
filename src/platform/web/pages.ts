@@ -486,7 +486,8 @@ export function dashboardPage(): string {
       else{el.textContent='Using the platform\\u2019s included AI (billed to the platform).';}}
     var u=await api('/api/platform/ai-usage');
     if(u.ok){var ud=await u.json();var us=ud.usage||{};
-      document.getElementById('aiUsage').textContent='This month: '+(us.generations||0)+' generations · '+((us.inputTokens||0)+(us.outputTokens||0))+' tokens · ~$'+(Number(ud.costUsd||0)).toFixed(4)+' estimated.';}
+      var allow=(ud.aiAllowance==null)?'unlimited':(ud.platformGenerationsUsed+'/'+ud.aiAllowance);
+      document.getElementById('aiUsage').textContent='This month: '+(us.generations||0)+' generations · '+((us.inputTokens||0)+(us.outputTokens||0))+' tokens · ~$'+(Number(ud.costUsd||0)).toFixed(4)+' est. · Included AI: '+allow;}
   }
   function planPrice(p){return p.priceCents==null?'Custom pricing':('$'+(p.priceCents/100).toFixed(0)+'/mo');}
   async function loadBilling(){
