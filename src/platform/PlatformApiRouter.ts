@@ -3,6 +3,7 @@ import {
   type Response,
 } from "express";
 
+import { normalizeDomain } from "../tenancy/OrganizationDomain";
 import type { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
 import { requireRole } from "./auth/requireRole";
 import {
@@ -1087,6 +1088,157 @@ export function createPlatformApiRouter(
               next(error);
             },
           );
+      },
+    );
+
+    // Publish a generated site to one of the tenant's VERIFIED custom
+    // domains, so it serves live at that domain.
+    router.post(
+      "/websites/:id/publish",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.domain,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_DOMAIN",
+            "A domain is required.",
+          );
+
+          return;
+        }
+
+        const domain =
+          normalizeDomain(
+            String(body.domain),
+          );
+
+        const domainsSvc =
+          deps.domains;
+
+        const check = domainsSvc
+          ? domainsSvc
+              .listMine()
+              .then((list) => {
+                const ok = list.some(
+                  (d) =>
+                    d.domain ===
+                      domain &&
+                    d.verified,
+                );
+
+                if (!ok) {
+                  throw new Error(
+                    "DOMAIN_NOT_VERIFIED",
+                  );
+                }
+              })
+          : Promise.reject(
+              new Error(
+                "DOMAIN_NOT_VERIFIED",
+              ),
+            );
+
+        check
+          .then(() =>
+            websites.publish(
+              String(
+                req.params.id,
+              ),
+              domain,
+            ),
+          )
+          .then((website) =>
+            res.json({
+              website:
+                websiteSummary(
+                  website,
+                ),
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /DOMAIN_NOT_VERIFIED/.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "DOMAIN_NOT_VERIFIED",
+                  "Publish to one of your verified custom domains — add and verify the domain first.",
+                );
+
+                return;
+              }
+
+              if (
+                /before publishing/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "NO_CONTENT",
+                  message,
+                );
+
+                return;
+              }
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "WEBSITE_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.post(
+      "/websites/:id/unpublish",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        websites
+          .unpublish(
+            String(req.params.id),
+          )
+          .then((website) =>
+            res.json({
+              website:
+                websiteSummary(
+                  website,
+                ),
+            }),
+          )
+          .catch(next);
       },
     );
 

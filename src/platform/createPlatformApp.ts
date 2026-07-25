@@ -2,8 +2,10 @@ import express, {
   type ErrorRequestHandler,
 } from "express";
 
+import { normalizeDomain } from "../tenancy/OrganizationDomain";
 import { OrganizationService } from "../tenancy/OrganizationService";
 import { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
+import { runWithTenant } from "../tenancy/TenantContext";
 import { createTenantMiddleware } from "../tenancy/tenantMiddleware";
 import { adminConsolePage } from "./admin/adminPage";
 import { createAdminRouter } from "./admin/adminRouter";
@@ -160,11 +162,36 @@ export function createPlatformApp(
     },
   );
 
-  // Web UI (self-contained HTML that calls the API below).
-  app.get("/", (_req, res) => {
-    res.type("html").send(
-      landingPage(),
-    );
+  // Web UI (self-contained HTML that calls the API below). On a tenant's
+  // VERIFIED custom domain that has a published website, "/" serves that
+  // live site instead of the platform landing page.
+  app.get("/", (req, res) => {
+    resolvePublishedHtml(
+      req.headers.host,
+      deps,
+    )
+      .then((html) => {
+        if (html) {
+          res.setHeader(
+            "X-Content-Type-Options",
+            "nosniff",
+          );
+          res
+            .type("html")
+            .send(html);
+
+          return;
+        }
+
+        res
+          .type("html")
+          .send(landingPage());
+      })
+      .catch(() => {
+        res
+          .type("html")
+          .send(landingPage());
+      });
   });
   app.get("/login", (_req, res) => {
     res
@@ -285,6 +312,46 @@ export function createPlatformApp(
   app.use(errorHandler);
 
   return app;
+}
+
+/**
+ * If `host` is a tenant's verified custom domain that has a published
+ * website, returns that site's HTML — otherwise null. This is how a
+ * published AI site serves live on its own domain.
+ */
+async function resolvePublishedHtml(
+  host: string | undefined,
+  deps: PlatformAppDependencies,
+): Promise<string | null> {
+  const domains = deps.domains;
+  const websites = deps.websites;
+
+  if (!host || !domains || !websites) {
+    return null;
+  }
+
+  const domain = normalizeDomain(host);
+
+  if (!domain) {
+    return null;
+  }
+
+  const organizationId =
+    await domains.resolve(host);
+
+  if (!organizationId) {
+    return null;
+  }
+
+  const html = await runWithTenant(
+    { organizationId },
+    () =>
+      websites.findPublishedHtmlByDomain(
+        domain,
+      ),
+  );
+
+  return html ?? null;
 }
 
 /**

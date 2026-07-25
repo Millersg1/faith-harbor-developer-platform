@@ -189,6 +189,49 @@ export class PlatformWebsiteRepository extends TenantScopedRepository {
     return website;
   }
 
+  /**
+   * Returns the HTML of the current tenant's PUBLISHED website served on
+   * `domain`, or undefined. Used to serve a live site on its custom domain.
+   */
+  async findPublishedHtmlByDomain(
+    domain: string,
+  ): Promise<string | undefined> {
+    const organizationId =
+      this.tenantId();
+
+    if (this.db) {
+      const result =
+        await this.db.query(
+          `SELECT html FROM websites
+            WHERE organization_id = $1 AND domain = $2
+              AND status = 'published' AND html IS NOT NULL
+            LIMIT 1`,
+          [organizationId, domain],
+        );
+
+      const row = result.rows[0] as
+        | { html?: string }
+        | undefined;
+
+      return row?.html || undefined;
+    }
+
+    for (const record of this.memory.values()) {
+      if (
+        record.organizationId ===
+          organizationId &&
+        record.domain === domain &&
+        record.status ===
+          "published" &&
+        record.html
+      ) {
+        return record.html;
+      }
+    }
+
+    return undefined;
+  }
+
   async delete(
     id: string,
   ): Promise<void> {

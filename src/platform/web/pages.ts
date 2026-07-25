@@ -443,6 +443,9 @@ export function dashboardPage(): string {
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
     var d=await r.json(); aiReady=d.generationAvailable!==false;
+    var verified=[];
+    var dr=await api('/api/platform/domains');
+    if(dr.ok){var dd=await dr.json();(dd.domains||[]).forEach(function(x){if(x.verified)verified.push(x.domain);});}
     var el=document.getElementById('websites'); clear(el);
     var list=d.websites||[];
     if(!list.length){el.appendChild(emptyMsg('No sites yet. Describe a business below to build one.'));return;}
@@ -464,8 +467,38 @@ export function dashboardPage(): string {
       var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Delete';
       rm.addEventListener('click',function(){removeWebsite(w.id);});actions.appendChild(rm);
       row.appendChild(actions);wrap.appendChild(row);
+      if(w.hasContent){
+        var pub=document.createElement('div');pub.style.marginTop='10px';pub.style.display='flex';pub.style.alignItems='center';pub.style.gap='8px';pub.style.flexWrap='wrap';
+        if(w.status==='published'&&w.domain){
+          var live=document.createElement('a');live.className='btn';live.style.width='auto';live.style.padding='6px 12px';live.textContent='Live at '+esc(w.domain)+' \\u2197';
+          live.href='https://'+w.domain;live.target='_blank';live.rel='noopener';pub.appendChild(live);
+          var unp=document.createElement('button');unp.className='btn ghost';unp.style.padding='6px 12px';unp.textContent='Unpublish';
+          unp.addEventListener('click',function(){unpublishWebsite(w.id);});pub.appendChild(unp);
+        }else if(verified.length){
+          var lbl=document.createElement('span');lbl.className='hint';lbl.textContent='Publish to:';pub.appendChild(lbl);
+          var sel=document.createElement('select');sel.style.width='auto';
+          verified.forEach(function(dn){var o=document.createElement('option');o.value=dn;o.textContent=dn;sel.appendChild(o);});pub.appendChild(sel);
+          var pb=document.createElement('button');pb.className='btn';pb.style.width='auto';pb.style.padding='6px 12px';pb.textContent='Publish';
+          pb.addEventListener('click',function(){publishWebsite(w.id,sel.value);});pub.appendChild(pb);
+        }else{
+          var hint=document.createElement('div');hint.className='hint';hint.textContent='Add & verify a custom domain (panel below) to publish this site live.';pub.appendChild(hint);
+        }
+        wrap.appendChild(pub);
+      }
       el.appendChild(wrap);
     });
+  }
+  async function publishWebsite(id,domain){
+    if(!domain){setMsg('wmsg','err','Choose a verified domain.');return;}
+    setMsg('wmsg','','Publishing\\u2026');
+    var r=await api('/api/platform/websites/'+encodeURIComponent(id)+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:domain})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('wmsg','ok','Published — live at '+domain+'.');loadWebsites();}
+    else{setMsg('wmsg','err',(x.error&&x.error.message)||'Could not publish.');}
+  }
+  async function unpublishWebsite(id){
+    var r=await api('/api/platform/websites/'+encodeURIComponent(id)+'/unpublish',{method:'POST'});
+    if(r.ok){setMsg('wmsg','ok','Unpublished.');loadWebsites();}
   }
   async function generateWebsite(id,btn){
     if(btn){btn.disabled=true;btn.textContent='Generating\\u2026';}

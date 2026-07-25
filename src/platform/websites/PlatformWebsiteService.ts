@@ -305,6 +305,46 @@ export class PlatformWebsiteService {
     );
   }
 
+  /**
+   * Publishes a generated site to a domain (which the caller must already
+   * have verified belongs to this tenant). Refuses to publish an empty site.
+   */
+  async publish(
+    id: string,
+    domain: string,
+  ): Promise<PlatformWebsiteRecord> {
+    const website =
+      await this.get(id);
+
+    if (!website.html) {
+      throw new Error(
+        "Generate the site before publishing it.",
+      );
+    }
+
+    return this.update(id, {
+      status: "published",
+      domain,
+    });
+  }
+
+  async unpublish(
+    id: string,
+  ): Promise<PlatformWebsiteRecord> {
+    return this.update(id, {
+      status: "draft",
+    });
+  }
+
+  /** The HTML of this tenant's published site on `domain` (or undefined). */
+  async findPublishedHtmlByDomain(
+    domain: string,
+  ): Promise<string | undefined> {
+    return this.repository.findPublishedHtmlByDomain(
+      domain,
+    );
+  }
+
   async delete(
     id: string,
   ): Promise<void> {
