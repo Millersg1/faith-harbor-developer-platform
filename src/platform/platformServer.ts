@@ -28,6 +28,8 @@ import { PlatformLeadRepository } from "./crm/PlatformLeadRepository";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformCampaignRepository } from "./marketing/PlatformCampaignRepository";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import { PlatformProposalRepository } from "./proposals/PlatformProposalRepository";
+import { PlatformProposalService } from "./proposals/PlatformProposalService";
 import { PlatformReviewRepository } from "./reviews/PlatformReviewRepository";
 import { PlatformReviewService } from "./reviews/PlatformReviewService";
 import { PlatformHostingRepository } from "./hosting/PlatformHostingRepository";
@@ -178,6 +180,13 @@ async function start(): Promise<void> {
       new PlatformLeadRepository(db),
       clients,
     );
+  const proposals =
+    new PlatformProposalService(
+      new PlatformProposalRepository(
+        db,
+      ),
+      clients,
+    );
   const campaigns =
     new PlatformCampaignService(
       new PlatformCampaignRepository(
@@ -284,6 +293,7 @@ async function start(): Promise<void> {
     hosting,
     tickets,
     leads,
+    proposals,
     campaigns,
     reviews,
     brands,

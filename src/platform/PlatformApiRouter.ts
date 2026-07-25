@@ -28,6 +28,7 @@ import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import type { PlatformProjectService } from "./projects/PlatformProjectService";
+import type { PlatformProposalService } from "./proposals/PlatformProposalService";
 import type { PlatformTicketService } from "./support/PlatformTicketService";
 import { GeneratorUnavailableError } from "./websites/PlatformWebsiteService";
 import type { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
@@ -42,6 +43,7 @@ export interface PlatformApiDependencies {
   hosting?: PlatformHostingService;
   tickets?: PlatformTicketService;
   leads?: PlatformLeadService;
+  proposals?: PlatformProposalService;
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
   brands?: PlatformBrandService;
@@ -1452,6 +1454,185 @@ export function createPlatformApiRouter(
       requireRole("owner", "admin"),
       (req, res, next) => {
         leads
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Sales proposals ----
+  if (deps.proposals) {
+    const proposals = deps.proposals;
+
+    router.get(
+      "/proposals",
+      (_req, res, next) => {
+        proposals
+          .list()
+          .then((rows) =>
+            res.json({
+              proposals: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/proposals",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.title,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_PROPOSAL",
+            "A proposal needs a title.",
+          );
+
+          return;
+        }
+
+        proposals
+          .create({
+            title: String(
+              body.title,
+            ),
+            summary: optionalString(
+              body.summary,
+            ),
+            body: optionalString(
+              body.body,
+            ),
+            amount:
+              body.amount == null
+                ? undefined
+                : Number(
+                    body.amount,
+                  ),
+            status: optionalString(
+              body.status,
+            ) as never,
+            clientId: optionalString(
+              body.clientId,
+            ),
+          })
+          .then((proposal) =>
+            res
+              .status(201)
+              .json({ proposal }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/proposals/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        proposals
+          .update(
+            String(req.params.id),
+            {
+              title: optionalString(
+                body.title,
+              ),
+              summary:
+                optionalString(
+                  body.summary,
+                ),
+              body: optionalString(
+                body.body,
+              ),
+              amount:
+                body.amount == null
+                  ? undefined
+                  : Number(
+                      body.amount,
+                    ),
+              status:
+                optionalString(
+                  body.status,
+                ) as never,
+            },
+          )
+          .then((proposal) =>
+            res.json({ proposal }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "PROPOSAL_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/proposals/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        proposals
           .delete(
             String(req.params.id),
           )

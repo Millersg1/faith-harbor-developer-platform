@@ -338,6 +338,24 @@ export class PostgresDatabase
       );
     `);
 
+    // Sales proposals — a tenant's quotes. Every row belongs to one
+    // organization; a client_id (when set) is the tenant's own client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS proposals (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        title            TEXT NOT NULL,
+        summary          TEXT,
+        body             TEXT,
+        amount           INTEGER,
+        status           TEXT NOT NULL DEFAULT 'draft',
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
     // Brands — a tenant can run several brands under one workspace.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS brands (

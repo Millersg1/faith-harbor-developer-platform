@@ -319,6 +319,18 @@ export function dashboardPage(): string {
         <div class="msg" id="lmsg"></div>
       </div>
       <div class="panel">
+        <h2>Proposals</h2>
+        <p class="hint">Quotes from lead to accepted. Change stage from the dropdown.</p>
+        <div class="list" id="proposals"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="prtitle">Title</label><input id="prtitle" placeholder="Website redesign" /></div>
+          <div class="f"><label for="prclient">Client (optional)</label><select id="prclient" class="client-select"></select></div>
+          <div class="f" style="max-width:120px;"><label for="pramount">Amount $</label><input id="pramount" type="number" min="0" placeholder="2500" /></div>
+          <button class="btn" id="addProposal" style="width:auto;">Add proposal</button>
+        </div>
+        <div class="msg" id="prmsg"></div>
+      </div>
+      <div class="panel">
         <h2>Marketing campaigns</h2>
         <p class="hint">Plan and track campaigns. Change stage from the dropdown.</p>
         <div class="list" id="campaigns"><div class="empty">Loading…</div></div>
@@ -563,6 +575,29 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/leads/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
     if(r.ok)loadLeads();
   }
+  async function loadProposals(){
+    var r=await api('/api/platform/proposals'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('proposals'); clear(el);
+    var list=d.proposals||[];
+    if(!list.length){el.appendChild(emptyMsg('No proposals yet.'));return;}
+    var STAGES=['draft','sent','accepted','declined'];
+    list.forEach(function(p){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(p.title);t.style.fontWeight='600';left.appendChild(t);
+      if(p.amount){var s=document.createElement('div');s.className='sub';s.textContent='$'+Number(p.amount).toLocaleString();left.appendChild(s);}
+      row.appendChild(left);
+      var sel=document.createElement('select');sel.style.width='auto';
+      STAGES.forEach(function(st){var o=document.createElement('option');o.value=st;o.textContent=st;if(st===p.status)o.selected=true;sel.appendChild(o);});
+      sel.addEventListener('change',function(){setProposalStatus(p.id,sel.value);});
+      row.appendChild(sel);el.appendChild(row);
+    });
+  }
+  async function setProposalStatus(id,status){
+    var r=await api('/api/platform/proposals/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
+    if(r.ok)loadProposals();
+  }
   async function loadCampaigns(){
     var r=await api('/api/platform/campaigns'); if(!r.ok)return;
     var d=await r.json();
@@ -760,7 +795,7 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadCampaigns(); await loadReviews(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
   document.getElementById('addMember').addEventListener('click',async function(){
@@ -792,6 +827,17 @@ export function dashboardPage(): string {
     var x=await r.json().catch(function(){return {};});
     if(r.ok){a.value='';sc.value='';cm.value='';setMsg('rmsg','ok','Review added.');loadReviews();}
     else{setMsg('rmsg','err',(x.error&&x.error.message)||'Could not add review.');}
+  });
+  document.getElementById('addProposal').addEventListener('click',async function(){
+    var t=document.getElementById('prtitle'),c=document.getElementById('prclient'),a=document.getElementById('pramount');
+    if(!t.value.trim()){setMsg('prmsg','err','Title is required.');return;}
+    setMsg('prmsg','','Adding\\u2026');
+    var body={title:t.value.trim(),clientId:c.value||undefined};
+    if(a.value)body.amount=Number(a.value);
+    var r=await api('/api/platform/proposals',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){t.value='';a.value='';setMsg('prmsg','ok','Proposal added.');loadProposals();}
+    else{setMsg('prmsg','err',(x.error&&x.error.message)||'Could not add proposal.');}
   });
   document.getElementById('addCampaign').addEventListener('click',async function(){
     var n=document.getElementById('mname'),c=document.getElementById('mchannel'),b=document.getElementById('mbudget');
