@@ -338,6 +338,25 @@ export class PostgresDatabase
       );
     `);
 
+    // Customer reviews — a tenant's reputation management. Every row belongs
+    // to one organization; a client_id (when set) is the tenant's own client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        author           TEXT NOT NULL,
+        rating           INTEGER NOT NULL DEFAULT 5,
+        comment          TEXT,
+        source           TEXT,
+        replied          BOOLEAN NOT NULL DEFAULT FALSE,
+        reply_text       TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
     // Marketing campaigns — a tenant's campaigns. Every row belongs to one
     // organization; a client_id (when set) is the tenant's own client.
     await this.pool.query(`

@@ -23,6 +23,7 @@ import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import { PlatformReviewService } from "./reviews/PlatformReviewService";
 import { PlatformTicketService } from "./support/PlatformTicketService";
 import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
@@ -52,6 +53,7 @@ export interface PlatformAppDependencies {
   tickets?: PlatformTicketService;
   leads?: PlatformLeadService;
   campaigns?: PlatformCampaignService;
+  reviews?: PlatformReviewService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -286,6 +288,7 @@ export function createPlatformApp(
       tickets: deps.tickets,
       leads: deps.leads,
       campaigns: deps.campaigns,
+      reviews: deps.reviews,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

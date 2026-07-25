@@ -16,6 +16,7 @@ import { PLANS } from "./billing/Plan";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformLeadService } from "./crm/PlatformLeadService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
@@ -34,6 +35,7 @@ export interface PlatformApiDependencies {
   tickets?: PlatformTicketService;
   leads?: PlatformLeadService;
   campaigns?: PlatformCampaignService;
+  reviews?: PlatformReviewService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1352,6 +1354,185 @@ export function createPlatformApiRouter(
       requireRole("owner", "admin"),
       (req, res, next) => {
         campaigns
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Reviews (reputation management) ----
+  if (deps.reviews) {
+    const reviews = deps.reviews;
+
+    router.get(
+      "/reviews",
+      (_req, res, next) => {
+        reviews
+          .list()
+          .then((rows) =>
+            res.json({
+              reviews: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/reviews",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.author,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_REVIEW",
+            "A review needs an author.",
+          );
+
+          return;
+        }
+
+        reviews
+          .create({
+            author: String(
+              body.author,
+            ),
+            rating:
+              body.rating == null
+                ? 5
+                : Number(body.rating),
+            comment: optionalString(
+              body.comment,
+            ),
+            source: optionalString(
+              body.source,
+            ),
+            replyText:
+              optionalString(
+                body.replyText,
+              ),
+            clientId: optionalString(
+              body.clientId,
+            ),
+          })
+          .then((review) =>
+            res
+              .status(201)
+              .json({ review }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/reviews/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        reviews
+          .update(
+            String(req.params.id),
+            {
+              author: optionalString(
+                body.author,
+              ),
+              rating:
+                body.rating == null
+                  ? undefined
+                  : Number(
+                      body.rating,
+                    ),
+              comment:
+                optionalString(
+                  body.comment,
+                ),
+              source:
+                optionalString(
+                  body.source,
+                ),
+              replyText:
+                optionalString(
+                  body.replyText,
+                ),
+            },
+          )
+          .then((review) =>
+            res.json({ review }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "REVIEW_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/reviews/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        reviews
           .delete(
             String(req.params.id),
           )

@@ -26,6 +26,8 @@ import { PlatformLeadRepository } from "./crm/PlatformLeadRepository";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformCampaignRepository } from "./marketing/PlatformCampaignRepository";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import { PlatformReviewRepository } from "./reviews/PlatformReviewRepository";
+import { PlatformReviewService } from "./reviews/PlatformReviewService";
 import { PlatformHostingRepository } from "./hosting/PlatformHostingRepository";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformTicketRepository } from "./support/PlatformTicketRepository";
@@ -181,6 +183,13 @@ async function start(): Promise<void> {
       ),
       clients,
     );
+  const reviews =
+    new PlatformReviewService(
+      new PlatformReviewRepository(
+        db,
+      ),
+      clients,
+    );
 
   // The website builder's AI generator: live when an OpenAI key is present
   // in the platform env, otherwise a disconnected stub that reports "not
@@ -270,6 +279,7 @@ async function start(): Promise<void> {
     tickets,
     leads,
     campaigns,
+    reviews,
     websites,
     aiSettings,
     aiUsage,

@@ -330,6 +330,19 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="mmsg"></div>
       </div>
+      <div class="panel">
+        <h2>Reviews</h2>
+        <p class="hint">Track customer reviews and your reputation.</p>
+        <div class="list" id="reviews"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="rauthor">Author</label><input id="rauthor" placeholder="Happy Customer" /></div>
+          <div class="f" style="max-width:90px;"><label for="rrating">Rating</label><select id="rrating"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
+          <div class="f"><label for="rsource">Source</label><input id="rsource" placeholder="Google" /></div>
+          <div class="f"><label for="rcomment">Comment</label><input id="rcomment" placeholder="Great service!" /></div>
+          <button class="btn" id="addReview" style="width:auto;">Add review</button>
+        </div>
+        <div class="msg" id="rmsg"></div>
+      </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
         <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
@@ -550,6 +563,15 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/campaigns/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
     if(r.ok)loadCampaigns();
   }
+  async function loadReviews(){
+    var r=await api('/api/platform/reviews'); if(!r.ok)return;
+    var d=await r.json();
+    renderList('reviews',d.reviews||[],function(rv){
+      var stars='';for(var i=0;i<(rv.rating||0);i++){stars+='\\u2605';}
+      var title=stars+' '+esc(rv.author)+(rv.source?' ('+esc(rv.source)+')':'');
+      return item(title,esc(rv.comment||''),rv.replied?'replied':'');
+    });
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -665,9 +687,19 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadCampaigns(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadCampaigns(); await loadReviews(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('addReview').addEventListener('click',async function(){
+    var a=document.getElementById('rauthor'),rt=document.getElementById('rrating'),sc=document.getElementById('rsource'),cm=document.getElementById('rcomment');
+    if(!a.value.trim()){setMsg('rmsg','err','Author is required.');return;}
+    setMsg('rmsg','','Adding\\u2026');
+    var body={author:a.value.trim(),rating:Number(rt.value),source:sc.value.trim()||undefined,comment:cm.value.trim()||undefined};
+    var r=await api('/api/platform/reviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){a.value='';sc.value='';cm.value='';setMsg('rmsg','ok','Review added.');loadReviews();}
+    else{setMsg('rmsg','err',(x.error&&x.error.message)||'Could not add review.');}
+  });
   document.getElementById('addCampaign').addEventListener('click',async function(){
     var n=document.getElementById('mname'),c=document.getElementById('mchannel'),b=document.getElementById('mbudget');
     if(!n.value.trim()){setMsg('mmsg','err','Name is required.');return;}
