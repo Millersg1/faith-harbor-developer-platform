@@ -338,6 +338,33 @@ export class PostgresDatabase
       );
     `);
 
+    // Client-portal logins — one per client contact, scoped to an org+client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS portal_users (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT NOT NULL,
+        email            TEXT NOT NULL,
+        password_hash    TEXT NOT NULL,
+        created_at       TEXT NOT NULL,
+        UNIQUE (organization_id, email)
+      );
+    `);
+
+    // Client-portal sessions (looked up by token).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS portal_sessions (
+        token            TEXT PRIMARY KEY,
+        client_user_id   TEXT NOT NULL,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT NOT NULL,
+        expires_at       TEXT NOT NULL,
+        created_at       TEXT NOT NULL
+      );
+    `);
+
     // Products — a tenant's software products / repositories.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS products (

@@ -28,6 +28,10 @@ import { PlatformLeadRepository } from "./crm/PlatformLeadRepository";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformCampaignRepository } from "./marketing/PlatformCampaignRepository";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import { ClientUserRepository } from "./portal/ClientUserRepository";
+import { ClientUserService } from "./portal/ClientUserService";
+import { PortalSessionRepository } from "./portal/PortalSessionRepository";
+import { PortalSessionService } from "./portal/PortalSessionService";
 import { PlatformProductRepository } from "./products/PlatformProductRepository";
 import { PlatformProductService } from "./products/PlatformProductService";
 import { PlatformProgramRepository } from "./programs/PlatformProgramRepository";
@@ -212,6 +216,15 @@ async function start(): Promise<void> {
       ),
       clients,
     );
+  const clientUsers =
+    new ClientUserService(
+      new ClientUserRepository(db),
+      clients,
+    );
+  const portalSessions =
+    new PortalSessionService(
+      new PortalSessionRepository(db),
+    );
   const campaigns =
     new PlatformCampaignService(
       new PlatformCampaignRepository(
@@ -325,6 +338,8 @@ async function start(): Promise<void> {
     products,
     books,
     programs,
+    clientUsers,
+    portalSessions,
     websites,
     aiSettings,
     aiUsage,

@@ -28,6 +28,10 @@ import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
+import {
+  toPublicClientUser,
+} from "./portal/ClientUser";
+import type { ClientUserService } from "./portal/ClientUserService";
 import type { PlatformProductService } from "./products/PlatformProductService";
 import type { PlatformBookService } from "./publishing/PlatformBookService";
 import type { PlatformProgramService } from "./programs/PlatformProgramService";
@@ -54,6 +58,7 @@ export interface PlatformApiDependencies {
   products?: PlatformProductService;
   books?: PlatformBookService;
   programs?: PlatformProgramService;
+  clientUsers?: ClientUserService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -2634,6 +2639,151 @@ export function createPlatformApiRouter(
       requireRole("owner", "admin"),
       (req, res, next) => {
         programs
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Client portal logins (owner/admin manage) ----
+  if (deps.clientUsers) {
+    const clientUsers =
+      deps.clientUsers;
+
+    router.get(
+      "/portal-users",
+      requireRole("owner", "admin"),
+      (_req, res, next) => {
+        clientUsers
+          .list()
+          .then((rows) =>
+            res.json({
+              portalUsers: rows.map(
+                toPublicClientUser,
+              ),
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/portal-users",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.clientId,
+          ) ||
+          !isNonEmptyString(
+            body.email,
+          ) ||
+          !isNonEmptyString(
+            body.password,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_PORTAL_USER",
+            "A client, email, and password (8+ chars) are required.",
+          );
+
+          return;
+        }
+
+        clientUsers
+          .create({
+            clientId: String(
+              body.clientId,
+            ),
+            email: String(
+              body.email,
+            ),
+            password: String(
+              body.password,
+            ),
+          })
+          .then((user) =>
+            res.status(201).json({
+              portalUser:
+                toPublicClientUser(
+                  user,
+                ),
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /already exists/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(409)
+                  .json({
+                    error: {
+                      code: "EMAIL_TAKEN",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              if (
+                /valid email|at least 8/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_PORTAL_USER",
+                  message,
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/portal-users/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        clientUsers
           .delete(
             String(req.params.id),
           )

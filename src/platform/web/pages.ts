@@ -413,6 +413,18 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="tmmsg"></div>
       </div>
+      <div class="panel" id="portalPanel" style="display:none;">
+        <h2>Client portal logins <span class="pill">owner/admin</span></h2>
+        <p class="hint">Give a client a login to your client portal (at <strong>/portal</strong>) to see their projects, invoices, tickets, and proposals.</p>
+        <div class="list" id="portalUsers"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="puclient">Client</label><select id="puclient" class="client-select"></select></div>
+          <div class="f"><label for="puemail">Email</label><input id="puemail" type="email" placeholder="client@company.com" /></div>
+          <div class="f" style="max-width:150px;"><label for="pupass">Temp password</label><input id="pupass" type="text" placeholder="8+ chars" /></div>
+          <button class="btn" id="addPortalUser" style="width:auto;">Create login</button>
+        </div>
+        <div class="msg" id="pumsg"></div>
+      </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
         <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
@@ -736,6 +748,25 @@ export function dashboardPage(): string {
     if(r.ok){setMsg('tmmsg','ok','Removed.');}else{setMsg('tmmsg','err',(e.error&&e.error.message)||'Could not remove.');}
     loadTeam();
   }
+  async function loadPortalUsers(){
+    var r=await api('/api/platform/portal-users'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('portalUsers'); clear(el);
+    var list=d.portalUsers||[];
+    if(!list.length){el.appendChild(emptyMsg('No portal logins yet.'));return;}
+    list.forEach(function(u){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');var e=document.createElement('div');e.textContent=esc(u.email);e.style.fontWeight='600';left.appendChild(e);
+      row.appendChild(left);
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Remove';
+      rm.addEventListener('click',function(){removePortalUser(u.id);});row.appendChild(rm);
+      el.appendChild(row);
+    });
+  }
+  async function removePortalUser(id){
+    var r=await api('/api/platform/portal-users/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok){setMsg('pumsg','ok','Removed.');loadPortalUsers();}
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -849,8 +880,10 @@ export function dashboardPage(): string {
       document.getElementById('domainPanel').style.display='';
       document.getElementById('brandsPanel').style.display='';
       document.getElementById('teamPanel').style.display='';
+      document.getElementById('portalPanel').style.display='';
       loadBrands();
       loadTeam();
+      loadPortalUsers();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
@@ -859,6 +892,15 @@ export function dashboardPage(): string {
     await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('addPortalUser').addEventListener('click',async function(){
+    var c=document.getElementById('puclient'),e=document.getElementById('puemail'),p=document.getElementById('pupass');
+    if(!c.value||!e.value.trim()||!p.value.trim()){setMsg('pumsg','err','Client, email, and temp password are required.');return;}
+    setMsg('pumsg','','Creating\\u2026');
+    var r=await api('/api/platform/portal-users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:c.value,email:e.value.trim(),password:p.value})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){e.value='';p.value='';setMsg('pumsg','ok','Login created — share the temp password with your client.');loadPortalUsers();}
+    else{setMsg('pumsg','err',(x.error&&x.error.message)||'Could not create login.');}
+  });
   document.getElementById('addMember').addEventListener('click',async function(){
     var em=document.getElementById('tmemail'),nm=document.getElementById('tmname'),rl=document.getElementById('tmrole'),pw=document.getElementById('tmpass');
     if(!em.value.trim()||!pw.value.trim()){setMsg('tmmsg','err','Email and a temp password (8+ chars) are required.');return;}

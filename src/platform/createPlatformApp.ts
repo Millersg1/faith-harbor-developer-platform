@@ -24,6 +24,10 @@ import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import { ClientUserService } from "./portal/ClientUserService";
+import { portalPage } from "./portal/portalPage";
+import { createPortalRouter } from "./portal/portalRouter";
+import { PortalSessionService } from "./portal/PortalSessionService";
 import { PlatformProductService } from "./products/PlatformProductService";
 import { PlatformProgramService } from "./programs/PlatformProgramService";
 import { PlatformProposalService } from "./proposals/PlatformProposalService";
@@ -64,6 +68,8 @@ export interface PlatformAppDependencies {
   products?: PlatformProductService;
   books?: PlatformBookService;
   programs?: PlatformProgramService;
+  clientUsers?: ClientUserService;
+  portalSessions?: PortalSessionService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -227,6 +233,40 @@ export function createPlatformApp(
       .send(dashboardPage());
   });
 
+  // Client portal UI (self-contained; talks to /portal/api).
+  app.get(
+    ["/portal", "/portal/login"],
+    (_req, res) => {
+      res
+        .type("html")
+        .send(portalPage());
+    },
+  );
+
+  // Client portal API (own auth surface for tenants' clients).
+  if (
+    deps.clientUsers &&
+    deps.portalSessions
+  ) {
+    app.use(
+      "/portal/api",
+      createPortalRouter({
+        tenantMiddleware,
+        clientUsers:
+          deps.clientUsers,
+        portalSessions:
+          deps.portalSessions,
+        clients: deps.clients,
+        projects: deps.projects,
+        invoices: deps.invoices,
+        tickets: deps.tickets,
+        proposals: deps.proposals,
+        secureCookie:
+          deps.secureCookie,
+      }),
+    );
+  }
+
   // Platform administration (All Elite Cloud, cross-tenant).
   const requireAdmin =
     createRequirePlatformAdmin({
@@ -305,6 +345,7 @@ export function createPlatformApp(
       products: deps.products,
       books: deps.books,
       programs: deps.programs,
+      clientUsers: deps.clientUsers,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,
