@@ -216,6 +216,33 @@ export class PlatformUserRepository extends TenantScopedRepository {
 
     return user;
   }
+
+  async delete(
+    id: string,
+  ): Promise<void> {
+    const organizationId =
+      this.tenantId();
+
+    if (this.db) {
+      await this.db.query(
+        "DELETE FROM users WHERE id = $1 AND organization_id = $2",
+        [id, organizationId],
+      );
+
+      return;
+    }
+
+    const existing =
+      this.memory.get(id);
+
+    if (
+      existing &&
+      existing.organizationId ===
+        organizationId
+    ) {
+      this.memory.delete(id);
+    }
+  }
 }
 
 function asRow(

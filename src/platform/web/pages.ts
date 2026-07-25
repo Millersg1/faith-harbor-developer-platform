@@ -355,6 +355,19 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="bnmsg"></div>
       </div>
+      <div class="panel" id="teamPanel" style="display:none;">
+        <h2>Team <span class="pill">owner/admin</span></h2>
+        <p class="hint">Invite teammates. Seats are limited by your plan; owners manage roles.</p>
+        <div class="list" id="team"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="tmemail">Email</label><input id="tmemail" type="email" placeholder="teammate@company.com" /></div>
+          <div class="f"><label for="tmname">Name</label><input id="tmname" placeholder="Jane" /></div>
+          <div class="f" style="max-width:120px;"><label for="tmrole">Role</label><select id="tmrole"><option value="member" selected>Member</option><option value="admin">Admin</option><option value="owner">Owner</option></select></div>
+          <div class="f" style="max-width:150px;"><label for="tmpass">Temp password</label><input id="tmpass" type="text" placeholder="8+ chars" /></div>
+          <button class="btn" id="addMember" style="width:auto;">Invite</button>
+        </div>
+        <div class="msg" id="tmmsg"></div>
+      </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
         <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
@@ -396,7 +409,7 @@ export function dashboardPage(): string {
     </div>
   </div>`;
   const script = `
-  var slug='', clientsCache=[];
+  var slug='', clientsCache=[], myRole='';
   function esc(s){return s==null?'':String(s);}
   function money(n){return '$'+(Number(n||0)).toFixed(2);}
   function clear(el){while(el.firstChild){el.removeChild(el.firstChild);}}
@@ -589,6 +602,44 @@ export function dashboardPage(): string {
     var d=await r.json();
     renderList('brands',d.brands||[],function(b){return item(esc(b.name),esc(b.domain||''),'');});
   }
+  async function loadTeam(){
+    var r=await api('/api/platform/team'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('team'); clear(el);
+    var list=d.team||[];
+    if(!list.length){el.appendChild(emptyMsg('No team members yet.'));return;}
+    var ROLES=['owner','admin','member'];
+    list.forEach(function(m){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var e=document.createElement('div');e.textContent=esc(m.email);e.style.fontWeight='600';left.appendChild(e);
+      if(m.name){var nm=document.createElement('div');nm.className='sub';nm.textContent=esc(m.name);left.appendChild(nm);}
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.display='flex';actions.style.gap='8px';actions.style.alignItems='center';
+      if(myRole==='owner'){
+        var sel=document.createElement('select');sel.style.width='auto';
+        ROLES.forEach(function(rl){var o=document.createElement('option');o.value=rl;o.textContent=rl;if(rl===m.role)o.selected=true;sel.appendChild(o);});
+        sel.addEventListener('change',function(){setMemberRole(m.id,sel.value);});actions.appendChild(sel);
+        var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Remove';
+        rm.addEventListener('click',function(){removeMember(m.id);});actions.appendChild(rm);
+      }else{
+        var p=document.createElement('span');p.className='pill';p.textContent=esc(m.role);actions.appendChild(p);
+      }
+      row.appendChild(actions);el.appendChild(row);
+    });
+  }
+  async function setMemberRole(id,role){
+    var r=await api('/api/platform/team/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:role})});
+    var e=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('tmmsg','ok','Role updated.');}else{setMsg('tmmsg','err',(e.error&&e.error.message)||'Could not update.');}
+    loadTeam();
+  }
+  async function removeMember(id){
+    var r=await api('/api/platform/team/'+encodeURIComponent(id),{method:'DELETE'});
+    var e=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('tmmsg','ok','Removed.');}else{setMsg('tmmsg','err',(e.error&&e.error.message)||'Could not remove.');}
+    loadTeam();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -696,11 +747,14 @@ export function dashboardPage(): string {
     slug=org.slug||'';
     document.getElementById('who').textContent=esc(u.email)+' · '+esc(u.role);
     if(org.name){document.getElementById('orgName').textContent=esc(org.name);}
+    myRole=u.role||'';
     if(u.role==='owner'||u.role==='admin'){
       document.getElementById('brandPanel').style.display='';
       document.getElementById('domainPanel').style.display='';
       document.getElementById('brandsPanel').style.display='';
+      document.getElementById('teamPanel').style.display='';
       loadBrands();
+      loadTeam();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
@@ -709,6 +763,16 @@ export function dashboardPage(): string {
     await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadCampaigns(); await loadReviews(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('addMember').addEventListener('click',async function(){
+    var em=document.getElementById('tmemail'),nm=document.getElementById('tmname'),rl=document.getElementById('tmrole'),pw=document.getElementById('tmpass');
+    if(!em.value.trim()||!pw.value.trim()){setMsg('tmmsg','err','Email and a temp password (8+ chars) are required.');return;}
+    setMsg('tmmsg','','Inviting\\u2026');
+    var body={email:em.value.trim(),name:nm.value.trim()||undefined,role:rl.value,password:pw.value};
+    var r=await api('/api/platform/team',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){em.value='';nm.value='';pw.value='';setMsg('tmmsg','ok','Invited — share the temp password with them.');loadTeam();}
+    else{setMsg('tmmsg','err',(x.error&&x.error.message)||'Could not invite.');}
+  });
   document.getElementById('addBrand').addEventListener('click',async function(){
     var n=document.getElementById('bnname'),dm=document.getElementById('bndomain'),em=document.getElementById('bnemail');
     if(!n.value.trim()){setMsg('bnmsg','err','Name is required.');return;}

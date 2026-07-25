@@ -6,6 +6,12 @@ import {
 import { normalizeDomain } from "../tenancy/OrganizationDomain";
 import type { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
 import { requireRole } from "./auth/requireRole";
+import type { AuthedRequest } from "./auth/requireUser";
+import {
+  toPublicUser,
+  type PlatformUserRole,
+} from "./users/PlatformUser";
+import type { PlatformUserService } from "./users/PlatformUserService";
 import {
   BillingService,
   PlanLimitError,
@@ -29,6 +35,7 @@ import type { PlatformWebsiteRecord } from "./websites/PlatformWebsite";
 
 export interface PlatformApiDependencies {
   clients: PlatformClientService;
+  users?: PlatformUserService;
   projects?: PlatformProjectService;
   invoices?: PlatformInvoiceService;
   domains?: OrganizationDomainService;
@@ -168,6 +175,311 @@ export function createPlatformApiRouter(
                   "INVALID_PLAN",
                   message,
                 );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+  }
+
+  // ---- Team members ----
+  if (deps.users) {
+    const users = deps.users;
+
+    const isRole = (
+      value: unknown,
+    ): value is PlatformUserRole =>
+      value === "owner" ||
+      value === "admin" ||
+      value === "member";
+
+    router.get(
+      "/team",
+      requireRole("owner", "admin"),
+      (_req, res, next) => {
+        users
+          .list()
+          .then((list) =>
+            res.json({
+              team: list.map(
+                toPublicUser,
+              ),
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/team",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.email,
+          ) ||
+          !isNonEmptyString(
+            body.password,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_MEMBER",
+            "An email and a password (8+ chars) are required.",
+          );
+
+          return;
+        }
+
+        const email = String(
+          body.email,
+        );
+        const password = String(
+          body.password,
+        );
+        const role = isRole(body.role)
+          ? body.role
+          : "member";
+        const name = optionalString(
+          body.name,
+        );
+
+        // Team members count against the plan's seat limit.
+        const billing = deps.billing;
+        const gate = billing
+          ? users
+              .list()
+              .then((list) =>
+                billing.assertWithinLimit(
+                  "seats",
+                  list.length,
+                ),
+              )
+          : Promise.resolve();
+
+        gate
+          .then(() =>
+            users.create({
+              email,
+              password,
+              role,
+              name,
+            }),
+          )
+          .then((user) =>
+            res.status(201).json({
+              member:
+                toPublicUser(user),
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              if (
+                error instanceof
+                PlanLimitError
+              ) {
+                res
+                  .status(402)
+                  .json({
+                    error: {
+                      code: "PLAN_LIMIT",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /already exists/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(409)
+                  .json({
+                    error: {
+                      code: "EMAIL_TAKEN",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              if (
+                /valid email|at least 8/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_MEMBER",
+                  message,
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/team/:id",
+      requireRole("owner"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (!isRole(body.role)) {
+          badRequest(
+            res,
+            "INVALID_ROLE",
+            "Role must be owner, admin, or member.",
+          );
+
+          return;
+        }
+
+        users
+          .updateRole(
+            String(req.params.id),
+            body.role,
+          )
+          .then((user) =>
+            res.json({
+              member:
+                toPublicUser(user),
+            }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /last owner/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "LAST_OWNER",
+                  message,
+                );
+
+                return;
+              }
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "MEMBER_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/team/:id",
+      requireRole("owner"),
+      (req, res, next) => {
+        const id = String(
+          req.params.id,
+        );
+        const acting = (
+          req as AuthedRequest
+        ).auth?.user;
+
+        if (
+          acting &&
+          acting.id === id
+        ) {
+          badRequest(
+            res,
+            "CANNOT_REMOVE_SELF",
+            "You can't remove your own account.",
+          );
+
+          return;
+        }
+
+        users
+          .remove(id)
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /last owner/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "LAST_OWNER",
+                  message,
+                );
+
+                return;
+              }
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "MEMBER_NOT_FOUND",
+                      message,
+                    },
+                  });
 
                 return;
               }

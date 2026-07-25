@@ -140,4 +140,58 @@ export class PlatformUserService {
   > {
     return this.repository.list();
   }
+
+  /**
+   * Changes a user's role. Refuses to demote the last remaining owner, so an
+   * organization can never be left with no owner.
+   */
+  async updateRole(
+    id: string,
+    role: PlatformUserRecord["role"],
+  ): Promise<PlatformUserRecord> {
+    const user = await this.get(id);
+
+    if (
+      user.role === "owner" &&
+      role !== "owner"
+    ) {
+      await this.assertNotLastOwner();
+    }
+
+    return this.repository.update({
+      ...user,
+      role,
+      updatedAt:
+        new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Removes a user from the organization. Refuses to remove the last owner.
+   */
+  async remove(
+    id: string,
+  ): Promise<void> {
+    const user = await this.get(id);
+
+    if (user.role === "owner") {
+      await this.assertNotLastOwner();
+    }
+
+    await this.repository.delete(id);
+  }
+
+  private async assertNotLastOwner(): Promise<void> {
+    const owners = (
+      await this.repository.list()
+    ).filter(
+      (u) => u.role === "owner",
+    );
+
+    if (owners.length <= 1) {
+      throw new Error(
+        "Cannot remove the last owner. Assign another owner first.",
+      );
+    }
+  }
 }

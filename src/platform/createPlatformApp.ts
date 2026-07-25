@@ -283,6 +283,7 @@ export function createPlatformApp(
     requireUser,
     createPlatformApiRouter({
       clients: deps.clients,
+      users: deps.users,
       projects: deps.projects,
       invoices: deps.invoices,
       domains: deps.domains,
