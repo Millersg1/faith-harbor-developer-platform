@@ -15,6 +15,7 @@ import type { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsS
 import { PLANS } from "./billing/Plan";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformLeadService } from "./crm/PlatformLeadService";
+import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
@@ -32,6 +33,7 @@ export interface PlatformApiDependencies {
   hosting?: PlatformHostingService;
   tickets?: PlatformTicketService;
   leads?: PlatformLeadService;
+  campaigns?: PlatformCampaignService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1134,6 +1136,222 @@ export function createPlatformApiRouter(
       requireRole("owner", "admin"),
       (req, res, next) => {
         leads
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Marketing campaigns ----
+  if (deps.campaigns) {
+    const campaigns = deps.campaigns;
+
+    router.get(
+      "/campaigns",
+      (_req, res, next) => {
+        campaigns
+          .list()
+          .then((rows) =>
+            res.json({
+              campaigns: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/campaigns",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_CAMPAIGN",
+            "A campaign needs a name.",
+          );
+
+          return;
+        }
+
+        campaigns
+          .create({
+            name: String(body.name),
+            channel: optionalString(
+              body.channel,
+            ),
+            status: optionalString(
+              body.status,
+            ) as never,
+            audience:
+              optionalString(
+                body.audience,
+              ),
+            budget:
+              body.budget == null
+                ? undefined
+                : Number(
+                    body.budget,
+                  ),
+            spend:
+              body.spend == null
+                ? undefined
+                : Number(body.spend),
+            startDate:
+              optionalString(
+                body.startDate,
+              ),
+            endDate: optionalString(
+              body.endDate,
+            ),
+            owner: optionalString(
+              body.owner,
+            ),
+            notes: optionalString(
+              body.notes,
+            ),
+            clientId: optionalString(
+              body.clientId,
+            ),
+          })
+          .then((campaign) =>
+            res
+              .status(201)
+              .json({ campaign }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/campaigns/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        campaigns
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              channel:
+                optionalString(
+                  body.channel,
+                ),
+              status:
+                optionalString(
+                  body.status,
+                ) as never,
+              audience:
+                optionalString(
+                  body.audience,
+                ),
+              budget:
+                body.budget == null
+                  ? undefined
+                  : Number(
+                      body.budget,
+                    ),
+              spend:
+                body.spend == null
+                  ? undefined
+                  : Number(
+                      body.spend,
+                    ),
+              startDate:
+                optionalString(
+                  body.startDate,
+                ),
+              endDate:
+                optionalString(
+                  body.endDate,
+                ),
+              owner: optionalString(
+                body.owner,
+              ),
+              notes: optionalString(
+                body.notes,
+              ),
+            },
+          )
+          .then((campaign) =>
+            res.json({ campaign }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "CAMPAIGN_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/campaigns/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        campaigns
           .delete(
             String(req.params.id),
           )

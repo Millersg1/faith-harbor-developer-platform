@@ -338,6 +338,29 @@ export class PostgresDatabase
       );
     `);
 
+    // Marketing campaigns — a tenant's campaigns. Every row belongs to one
+    // organization; a client_id (when set) is the tenant's own client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS campaigns (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        name             TEXT NOT NULL,
+        channel          TEXT,
+        status           TEXT NOT NULL DEFAULT 'planned',
+        audience         TEXT,
+        budget           INTEGER,
+        spend            INTEGER,
+        start_date       TEXT,
+        end_date         TEXT,
+        owner            TEXT,
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
     // Sales leads — a tenant's CRM pipeline. Every row belongs to one
     // organization; a client_id (when set) is the tenant's own client.
     await this.pool.query(`

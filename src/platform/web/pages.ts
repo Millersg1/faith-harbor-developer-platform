@@ -318,6 +318,18 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="lmsg"></div>
       </div>
+      <div class="panel">
+        <h2>Marketing campaigns</h2>
+        <p class="hint">Plan and track campaigns. Change stage from the dropdown.</p>
+        <div class="list" id="campaigns"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="mname">Name</label><input id="mname" placeholder="Spring promo" /></div>
+          <div class="f"><label for="mchannel">Channel</label><input id="mchannel" placeholder="Email" /></div>
+          <div class="f" style="max-width:120px;"><label for="mbudget">Budget $</label><input id="mbudget" type="number" min="0" placeholder="1000" /></div>
+          <button class="btn" id="addCampaign" style="width:auto;">Add campaign</button>
+        </div>
+        <div class="msg" id="mmsg"></div>
+      </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
         <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
@@ -513,6 +525,31 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/leads/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
     if(r.ok)loadLeads();
   }
+  async function loadCampaigns(){
+    var r=await api('/api/platform/campaigns'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('campaigns'); clear(el);
+    var list=d.campaigns||[];
+    if(!list.length){el.appendChild(emptyMsg('No campaigns yet.'));return;}
+    var STAGES=['planned','active','paused','completed'];
+    list.forEach(function(cp){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var nm=document.createElement('div');nm.textContent=esc(cp.name);nm.style.fontWeight='600';left.appendChild(nm);
+      var parts=[];if(cp.channel)parts.push(esc(cp.channel));if(cp.budget)parts.push('$'+Number(cp.budget).toLocaleString()+' budget');
+      if(parts.length){var sub=document.createElement('div');sub.className='sub';sub.textContent=parts.join(' \\u00b7 ');left.appendChild(sub);}
+      row.appendChild(left);
+      var sel=document.createElement('select');sel.style.width='auto';
+      STAGES.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=s;if(s===cp.status)o.selected=true;sel.appendChild(o);});
+      sel.addEventListener('change',function(){setCampaignStatus(cp.id,sel.value);});
+      row.appendChild(sel);
+      el.appendChild(row);
+    });
+  }
+  async function setCampaignStatus(id,status){
+    var r=await api('/api/platform/campaigns/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
+    if(r.ok)loadCampaigns();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -628,9 +665,20 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadCampaigns(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('addCampaign').addEventListener('click',async function(){
+    var n=document.getElementById('mname'),c=document.getElementById('mchannel'),b=document.getElementById('mbudget');
+    if(!n.value.trim()){setMsg('mmsg','err','Name is required.');return;}
+    setMsg('mmsg','','Adding\\u2026');
+    var body={name:n.value.trim(),channel:c.value.trim()||undefined};
+    if(b.value)body.budget=Number(b.value);
+    var r=await api('/api/platform/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';c.value='';b.value='';setMsg('mmsg','ok','Campaign added.');loadCampaigns();}
+    else{setMsg('mmsg','err',(x.error&&x.error.message)||'Could not add campaign.');}
+  });
   document.getElementById('addLead').addEventListener('click',async function(){
     var n=document.getElementById('lname'),c=document.getElementById('lcompany'),v=document.getElementById('lvalue'),s=document.getElementById('lstatus');
     if(!n.value.trim()){setMsg('lmsg','err','Name is required.');return;}
