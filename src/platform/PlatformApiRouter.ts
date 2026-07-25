@@ -14,6 +14,7 @@ import type { AiUsageRepository } from "./ai/AiUsageRepository";
 import type { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { PLANS } from "./billing/Plan";
 import type { PlatformClientService } from "./clients/PlatformClientService";
+import type { PlatformLeadService } from "./crm/PlatformLeadService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
@@ -30,6 +31,7 @@ export interface PlatformApiDependencies {
   domains?: OrganizationDomainService;
   hosting?: PlatformHostingService;
   tickets?: PlatformTicketService;
+  leads?: PlatformLeadService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -920,6 +922,218 @@ export function createPlatformApiRouter(
       requireRole("owner", "admin"),
       (req, res, next) => {
         tickets
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- CRM: sales leads ----
+  if (deps.leads) {
+    const leads = deps.leads;
+
+    router.get(
+      "/leads",
+      (_req, res, next) => {
+        leads
+          .list()
+          .then((rows) =>
+            res.json({
+              leads: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/leads",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_LEAD",
+            "A lead needs a name.",
+          );
+
+          return;
+        }
+
+        leads
+          .create({
+            name: String(body.name),
+            company: optionalString(
+              body.company,
+            ),
+            email: optionalString(
+              body.email,
+            ),
+            phone: optionalString(
+              body.phone,
+            ),
+            source: optionalString(
+              body.source,
+            ),
+            serviceInterest:
+              optionalString(
+                body.serviceInterest,
+              ),
+            estimatedValue:
+              body.estimatedValue ==
+              null
+                ? undefined
+                : Number(
+                    body.estimatedValue,
+                  ),
+            status: optionalString(
+              body.status,
+            ) as never,
+            owner: optionalString(
+              body.owner,
+            ),
+            notes: optionalString(
+              body.notes,
+            ),
+            clientId: optionalString(
+              body.clientId,
+            ),
+          })
+          .then((lead) =>
+            res
+              .status(201)
+              .json({ lead }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/leads/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        leads
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              company:
+                optionalString(
+                  body.company,
+                ),
+              email: optionalString(
+                body.email,
+              ),
+              phone: optionalString(
+                body.phone,
+              ),
+              source:
+                optionalString(
+                  body.source,
+                ),
+              serviceInterest:
+                optionalString(
+                  body.serviceInterest,
+                ),
+              estimatedValue:
+                body.estimatedValue ==
+                null
+                  ? undefined
+                  : Number(
+                      body.estimatedValue,
+                    ),
+              status:
+                optionalString(
+                  body.status,
+                ) as never,
+              owner: optionalString(
+                body.owner,
+              ),
+              notes: optionalString(
+                body.notes,
+              ),
+            },
+          )
+          .then((lead) =>
+            res.json({ lead }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "LEAD_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/leads/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        leads
           .delete(
             String(req.params.id),
           )

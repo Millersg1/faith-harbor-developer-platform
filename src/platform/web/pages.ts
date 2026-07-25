@@ -305,6 +305,19 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="tmsg"></div>
       </div>
+      <div class="panel">
+        <h2>Sales pipeline <span class="pill">CRM</span></h2>
+        <p class="hint">Track leads from new to won. Change a lead's stage from the dropdown.</p>
+        <div class="list" id="leads"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="lname">Name</label><input id="lname" placeholder="Jane Doe" /></div>
+          <div class="f"><label for="lcompany">Company</label><input id="lcompany" placeholder="Acme Co" /></div>
+          <div class="f" style="max-width:120px;"><label for="lvalue">Est. value $</label><input id="lvalue" type="number" min="0" placeholder="5000" /></div>
+          <div class="f" style="max-width:130px;"><label for="lstatus">Stage</label><select id="lstatus"><option value="new" selected>New</option><option value="contacted">Contacted</option><option value="qualified">Qualified</option><option value="proposal">Proposal</option><option value="won">Won</option><option value="lost">Lost</option></select></div>
+          <button class="btn" id="addLead" style="width:auto;">Add lead</button>
+        </div>
+        <div class="msg" id="lmsg"></div>
+      </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
         <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
@@ -475,6 +488,31 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/tickets/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
     if(r.ok)loadTickets();
   }
+  async function loadLeads(){
+    var r=await api('/api/platform/leads'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('leads'); clear(el);
+    var list=d.leads||[];
+    if(!list.length){el.appendChild(emptyMsg('No leads yet.'));return;}
+    var STAGES=['new','contacted','qualified','proposal','won','lost'];
+    list.forEach(function(l){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var nm=document.createElement('div');nm.textContent=esc(l.name);nm.style.fontWeight='600';left.appendChild(nm);
+      var parts=[];if(l.company)parts.push(esc(l.company));if(l.estimatedValue)parts.push('$'+Number(l.estimatedValue).toLocaleString());
+      if(parts.length){var sub=document.createElement('div');sub.className='sub';sub.textContent=parts.join(' \\u00b7 ');left.appendChild(sub);}
+      row.appendChild(left);
+      var sel=document.createElement('select');sel.style.width='auto';
+      STAGES.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=s;if(s===l.status)o.selected=true;sel.appendChild(o);});
+      sel.addEventListener('change',function(){setLeadStatus(l.id,sel.value);});
+      row.appendChild(sel);
+      el.appendChild(row);
+    });
+  }
+  async function setLeadStatus(id,status){
+    var r=await api('/api/platform/leads/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
+    if(r.ok)loadLeads();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -590,9 +628,20 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('addLead').addEventListener('click',async function(){
+    var n=document.getElementById('lname'),c=document.getElementById('lcompany'),v=document.getElementById('lvalue'),s=document.getElementById('lstatus');
+    if(!n.value.trim()){setMsg('lmsg','err','Name is required.');return;}
+    setMsg('lmsg','','Adding\\u2026');
+    var body={name:n.value.trim(),company:c.value.trim()||undefined,status:s.value};
+    if(v.value)body.estimatedValue=Number(v.value);
+    var r=await api('/api/platform/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';c.value='';v.value='';setMsg('lmsg','ok','Lead added.');loadLeads();}
+    else{setMsg('lmsg','err',(x.error&&x.error.message)||'Could not add lead.');}
+  });
   document.getElementById('addTicket').addEventListener('click',async function(){
     var s=document.getElementById('tsubject'),c=document.getElementById('tclient'),p=document.getElementById('tpriority');
     if(!s.value.trim()){setMsg('tmsg','err','Subject is required.');return;}

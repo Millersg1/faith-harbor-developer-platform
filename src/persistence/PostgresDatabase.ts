@@ -337,6 +337,29 @@ export class PostgresDatabase
         updated_at       TEXT NOT NULL
       );
     `);
+
+    // Sales leads — a tenant's CRM pipeline. Every row belongs to one
+    // organization; a client_id (when set) is the tenant's own client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS leads (
+        id                TEXT PRIMARY KEY,
+        organization_id   TEXT NOT NULL
+                            REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id         TEXT,
+        name              TEXT NOT NULL,
+        company           TEXT,
+        email             TEXT,
+        phone             TEXT,
+        source            TEXT,
+        service_interest  TEXT,
+        estimated_value   INTEGER,
+        status            TEXT NOT NULL DEFAULT 'new',
+        owner             TEXT,
+        notes             TEXT,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL
+      );
+    `);
   }
 
   /**
