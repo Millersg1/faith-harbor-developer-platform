@@ -293,6 +293,18 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="hmsg"></div>
       </div>
+      <div class="panel">
+        <h2>Support tickets</h2>
+        <p class="hint">Track support requests for your organization.</p>
+        <div class="list" id="tickets"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="tsubject">Subject</label><input id="tsubject" placeholder="Site is down" /></div>
+          <div class="f"><label for="tclient">Client (optional)</label><select id="tclient" class="client-select"></select></div>
+          <div class="f" style="max-width:120px;"><label for="tpriority">Priority</label><select id="tpriority"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></div>
+          <button class="btn" id="addTicket" style="width:auto;">Add ticket</button>
+        </div>
+        <div class="msg" id="tmsg"></div>
+      </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
         <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
@@ -439,6 +451,30 @@ export function dashboardPage(): string {
     var d=await r.json();
     renderList('hosting',d.hosting||[],function(h){return item(esc(h.domain),esc(h.plan||''),esc(h.status));});
   }
+  async function loadTickets(){
+    var r=await api('/api/platform/tickets'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('tickets'); clear(el);
+    var list=d.tickets||[];
+    if(!list.length){el.appendChild(emptyMsg('No tickets yet.'));return;}
+    list.forEach(function(t){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var s=document.createElement('div');s.textContent=esc(t.subject);s.style.fontWeight='600';left.appendChild(s);
+      var sub=document.createElement('div');sub.className='sub';sub.textContent=esc(t.priority)+' priority';left.appendChild(sub);
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.display='flex';actions.style.alignItems='center';actions.style.gap='8px';
+      var st=document.createElement('span');st.className='pill';st.textContent=esc(t.status);actions.appendChild(st);
+      var closed=(t.status==='resolved'||t.status==='closed');
+      var tog=document.createElement('button');tog.className='btn ghost';tog.style.padding='6px 12px';tog.textContent=closed?'Reopen':'Resolve';
+      tog.addEventListener('click',function(){setTicketStatus(t.id,closed?'open':'resolved');});actions.appendChild(tog);
+      row.appendChild(actions);el.appendChild(row);
+    });
+  }
+  async function setTicketStatus(id,status){
+    var r=await api('/api/platform/tickets/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
+    if(r.ok)loadTickets();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -554,9 +590,18 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('addTicket').addEventListener('click',async function(){
+    var s=document.getElementById('tsubject'),c=document.getElementById('tclient'),p=document.getElementById('tpriority');
+    if(!s.value.trim()){setMsg('tmsg','err','Subject is required.');return;}
+    setMsg('tmsg','','Adding\\u2026');
+    var r=await api('/api/platform/tickets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject:s.value.trim(),clientId:c.value||undefined,priority:p.value})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){s.value='';setMsg('tmsg','ok','Ticket created.');loadTickets();}
+    else{setMsg('tmsg','err',(x.error&&x.error.message)||'Could not add ticket.');}
+  });
   document.getElementById('saveAi').addEventListener('click',async function(){
     var p=document.getElementById('aiProvider').value,k=document.getElementById('aiKey').value.trim(),m=document.getElementById('aiModel').value.trim();
     if(!k){setMsg('aimsg','err','Enter an API key.');return;}

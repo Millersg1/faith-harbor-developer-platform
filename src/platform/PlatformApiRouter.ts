@@ -18,6 +18,7 @@ import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import type { PlatformProjectService } from "./projects/PlatformProjectService";
+import type { PlatformTicketService } from "./support/PlatformTicketService";
 import { GeneratorUnavailableError } from "./websites/PlatformWebsiteService";
 import type { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import type { PlatformWebsiteRecord } from "./websites/PlatformWebsite";
@@ -28,6 +29,7 @@ export interface PlatformApiDependencies {
   invoices?: PlatformInvoiceService;
   domains?: OrganizationDomainService;
   hosting?: PlatformHostingService;
+  tickets?: PlatformTicketService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -745,6 +747,179 @@ export function createPlatformApiRouter(
       requireRole("owner", "admin"),
       (req, res, next) => {
         hosting
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Support tickets ----
+  if (deps.tickets) {
+    const tickets = deps.tickets;
+
+    router.get(
+      "/tickets",
+      (_req, res, next) => {
+        tickets
+          .list()
+          .then((rows) =>
+            res.json({
+              tickets: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/tickets",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.subject,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_TICKET",
+            "A ticket needs a subject.",
+          );
+
+          return;
+        }
+
+        tickets
+          .create({
+            subject: String(
+              body.subject,
+            ),
+            description:
+              optionalString(
+                body.description,
+              ),
+            clientId: optionalString(
+              body.clientId,
+            ),
+            priority: optionalString(
+              body.priority,
+            ) as never,
+            assignee: optionalString(
+              body.assignee,
+            ),
+          })
+          .then((ticket) =>
+            res
+              .status(201)
+              .json({ ticket }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /client not found/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "UNKNOWN_CLIENT",
+                  "That client isn't in your organization.",
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.patch(
+      "/tickets/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        tickets
+          .update(
+            String(req.params.id),
+            {
+              subject:
+                optionalString(
+                  body.subject,
+                ),
+              description:
+                optionalString(
+                  body.description,
+                ),
+              status: optionalString(
+                body.status,
+              ) as never,
+              priority:
+                optionalString(
+                  body.priority,
+                ) as never,
+              assignee:
+                optionalString(
+                  body.assignee,
+                ),
+            },
+          )
+          .then((ticket) =>
+            res.json({ ticket }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "TICKET_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/tickets/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        tickets
           .delete(
             String(req.params.id),
           )

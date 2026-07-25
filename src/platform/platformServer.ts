@@ -24,6 +24,8 @@ import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformHostingRepository } from "./hosting/PlatformHostingRepository";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
+import { PlatformTicketRepository } from "./support/PlatformTicketRepository";
+import { PlatformTicketService } from "./support/PlatformTicketService";
 import { PlatformWebsiteRepository } from "./websites/PlatformWebsiteRepository";
 import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import {
@@ -156,6 +158,13 @@ async function start(): Promise<void> {
       ),
       clients,
     );
+  const tickets =
+    new PlatformTicketService(
+      new PlatformTicketRepository(
+        db,
+      ),
+      clients,
+    );
 
   // The website builder's AI generator: live when an OpenAI key is present
   // in the platform env, otherwise a disconnected stub that reports "not
@@ -242,6 +251,7 @@ async function start(): Promise<void> {
     signup,
     domains,
     hosting,
+    tickets,
     websites,
     aiSettings,
     aiUsage,

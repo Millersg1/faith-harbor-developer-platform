@@ -319,6 +319,24 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS ai_usage_events_org_created
         ON ai_usage_events (organization_id, created_at);
     `);
+
+    // Support tickets — a tenant's help desk. Every row belongs to one
+    // organization; a client_id (when set) is the tenant's own client.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS support_tickets (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        subject          TEXT NOT NULL,
+        description      TEXT,
+        status           TEXT NOT NULL DEFAULT 'open',
+        priority         TEXT NOT NULL DEFAULT 'medium',
+        assignee         TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
   }
 
   /**
