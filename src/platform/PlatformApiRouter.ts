@@ -1,5 +1,6 @@
 import {
   Router,
+  type NextFunction,
   type Response,
 } from "express";
 
@@ -27,6 +28,9 @@ import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
+import type { PlatformProductService } from "./products/PlatformProductService";
+import type { PlatformBookService } from "./publishing/PlatformBookService";
+import type { PlatformProgramService } from "./programs/PlatformProgramService";
 import type { PlatformProjectService } from "./projects/PlatformProjectService";
 import type { PlatformProposalService } from "./proposals/PlatformProposalService";
 import type { PlatformTicketService } from "./support/PlatformTicketService";
@@ -47,6 +51,9 @@ export interface PlatformApiDependencies {
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
   brands?: PlatformBrandService;
+  products?: PlatformProductService;
+  books?: PlatformBookService;
+  programs?: PlatformProgramService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -2181,6 +2188,463 @@ export function createPlatformApiRouter(
     );
   }
 
+  // ---- Products ----
+  if (deps.products) {
+    const products = deps.products;
+
+    router.get(
+      "/products",
+      (_req, res, next) => {
+        products
+          .list()
+          .then((rows) =>
+            res.json({
+              products: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/products",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_PRODUCT",
+            "A product needs a name.",
+          );
+
+          return;
+        }
+
+        products
+          .create({
+            name: String(body.name),
+            description:
+              optionalString(
+                body.description,
+              ),
+            status: optionalString(
+              body.status,
+            ) as never,
+            repoUrl: optionalString(
+              body.repoUrl,
+            ),
+            language:
+              optionalString(
+                body.language,
+              ),
+            version: optionalString(
+              body.version,
+            ),
+            owner: optionalString(
+              body.owner,
+            ),
+            notes: optionalString(
+              body.notes,
+            ),
+            clientId: optionalString(
+              body.clientId,
+            ),
+          })
+          .then((product) =>
+            res
+              .status(201)
+              .json({ product }),
+          )
+          .catch((error: unknown) =>
+            clientOrNext(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    router.patch(
+      "/products/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        products
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              description:
+                optionalString(
+                  body.description,
+                ),
+              status:
+                optionalString(
+                  body.status,
+                ) as never,
+              repoUrl:
+                optionalString(
+                  body.repoUrl,
+                ),
+              language:
+                optionalString(
+                  body.language,
+                ),
+              version:
+                optionalString(
+                  body.version,
+                ),
+              owner: optionalString(
+                body.owner,
+              ),
+              notes: optionalString(
+                body.notes,
+              ),
+            },
+          )
+          .then((product) =>
+            res.json({ product }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "PRODUCT_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    router.delete(
+      "/products/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        products
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Books (publishing) ----
+  if (deps.books) {
+    const books = deps.books;
+
+    router.get(
+      "/books",
+      (_req, res, next) => {
+        books
+          .list()
+          .then((rows) =>
+            res.json({
+              books: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/books",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.title,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_BOOK",
+            "A book needs a title.",
+          );
+
+          return;
+        }
+
+        books
+          .create({
+            title: String(
+              body.title,
+            ),
+            subtitle:
+              optionalString(
+                body.subtitle,
+              ),
+            author: optionalString(
+              body.author,
+            ),
+            status: optionalString(
+              body.status,
+            ) as never,
+            format: optionalString(
+              body.format,
+            ),
+            isbn: optionalString(
+              body.isbn,
+            ),
+            notes: optionalString(
+              body.notes,
+            ),
+            clientId: optionalString(
+              body.clientId,
+            ),
+          })
+          .then((book) =>
+            res
+              .status(201)
+              .json({ book }),
+          )
+          .catch((error: unknown) =>
+            clientOrNext(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    router.patch(
+      "/books/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        books
+          .update(
+            String(req.params.id),
+            {
+              title: optionalString(
+                body.title,
+              ),
+              subtitle:
+                optionalString(
+                  body.subtitle,
+                ),
+              author:
+                optionalString(
+                  body.author,
+                ),
+              status:
+                optionalString(
+                  body.status,
+                ) as never,
+              format:
+                optionalString(
+                  body.format,
+                ),
+              isbn: optionalString(
+                body.isbn,
+              ),
+              notes: optionalString(
+                body.notes,
+              ),
+            },
+          )
+          .then((book) =>
+            res.json({ book }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "BOOK_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    router.delete(
+      "/books/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        books
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Programs ----
+  if (deps.programs) {
+    const programs = deps.programs;
+
+    router.get(
+      "/programs",
+      (_req, res, next) => {
+        programs
+          .list()
+          .then((rows) =>
+            res.json({
+              programs: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/programs",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_PROGRAM",
+            "A program needs a name.",
+          );
+
+          return;
+        }
+
+        programs
+          .create({
+            name: String(body.name),
+            category:
+              optionalString(
+                body.category,
+              ),
+            status: optionalString(
+              body.status,
+            ) as never,
+            leader: optionalString(
+              body.leader,
+            ),
+            schedule:
+              optionalString(
+                body.schedule,
+              ),
+            description:
+              optionalString(
+                body.description,
+              ),
+            notes: optionalString(
+              body.notes,
+            ),
+            clientId: optionalString(
+              body.clientId,
+            ),
+          })
+          .then((program) =>
+            res
+              .status(201)
+              .json({ program }),
+          )
+          .catch((error: unknown) =>
+            clientOrNext(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    router.patch(
+      "/programs/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        programs
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              category:
+                optionalString(
+                  body.category,
+                ),
+              status:
+                optionalString(
+                  body.status,
+                ) as never,
+              leader:
+                optionalString(
+                  body.leader,
+                ),
+              schedule:
+                optionalString(
+                  body.schedule,
+                ),
+              description:
+                optionalString(
+                  body.description,
+                ),
+              notes: optionalString(
+                body.notes,
+              ),
+            },
+          )
+          .then((program) =>
+            res.json({ program }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "PROGRAM_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    router.delete(
+      "/programs/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        programs
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
   // ---- Website builder (AI-generated sites) ----
   if (deps.websites) {
     const websites = deps.websites;
@@ -2885,6 +3349,57 @@ function isNonEmptyString(
     typeof value === "string" &&
     value.trim().length > 0
   );
+}
+
+/** Maps a "client not found" error to 400 UNKNOWN_CLIENT, else passes on. */
+function clientOrNext(
+  res: Response,
+  next: NextFunction,
+  error: unknown,
+): void {
+  const message =
+    error instanceof Error
+      ? error.message
+      : "";
+
+  if (
+    /client not found/i.test(message)
+  ) {
+    badRequest(
+      res,
+      "UNKNOWN_CLIENT",
+      "That client isn't in your organization.",
+    );
+
+    return;
+  }
+
+  next(error);
+}
+
+/** Maps a "not found" error to 404 with `code`, else passes on. */
+function notFoundOrNext(
+  res: Response,
+  next: NextFunction,
+  error: unknown,
+  code: string,
+): void {
+  const message =
+    error instanceof Error
+      ? error.message
+      : "";
+
+  if (/not found/i.test(message)) {
+    res
+      .status(404)
+      .json({
+        error: { code, message },
+      });
+
+    return;
+  }
+
+  next(error);
 }
 
 function optionalString(

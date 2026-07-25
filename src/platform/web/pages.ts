@@ -355,6 +355,39 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="rmsg"></div>
       </div>
+      <div class="panel">
+        <h2>Products</h2>
+        <p class="hint">Software products / repositories.</p>
+        <div class="list" id="products"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="pdname">Name</label><input id="pdname" placeholder="My App" /></div>
+          <div class="f"><label for="pdlang">Language</label><input id="pdlang" placeholder="TypeScript" /></div>
+          <button class="btn" id="addProduct" style="width:auto;">Add product</button>
+        </div>
+        <div class="msg" id="pdmsg"></div>
+      </div>
+      <div class="panel">
+        <h2>Books <span class="pill">Publishing</span></h2>
+        <p class="hint">Titles in your publishing pipeline.</p>
+        <div class="list" id="books"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="bktitle">Title</label><input id="bktitle" placeholder="My Book" /></div>
+          <div class="f"><label for="bkauthor">Author</label><input id="bkauthor" placeholder="Author name" /></div>
+          <button class="btn" id="addBook" style="width:auto;">Add book</button>
+        </div>
+        <div class="msg" id="bkmsg"></div>
+      </div>
+      <div class="panel">
+        <h2>Programs <span class="pill">Ministry</span></h2>
+        <p class="hint">Programs, classes, and recurring events.</p>
+        <div class="list" id="programs"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="pgname">Name</label><input id="pgname" placeholder="Youth Group" /></div>
+          <div class="f"><label for="pgleader">Leader</label><input id="pgleader" placeholder="Leader name" /></div>
+          <button class="btn" id="addProgram" style="width:auto;">Add program</button>
+        </div>
+        <div class="msg" id="pgmsg"></div>
+      </div>
       <div class="panel" id="brandsPanel" style="display:none;">
         <h2>Brands <span class="pill">owner/admin</span></h2>
         <p class="hint">Run several brands under one workspace, each with its own domain and email voice.</p>
@@ -632,6 +665,34 @@ export function dashboardPage(): string {
       return item(title,esc(rv.comment||''),rv.replied?'replied':'');
     });
   }
+  function stageRows(elId,list,stages,mapFn,path,reload){
+    var el=document.getElementById(elId); clear(el);
+    if(!list.length){el.appendChild(emptyMsg('Nothing yet.'));return;}
+    list.forEach(function(x){
+      var m=mapFn(x);
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=m.title;t.style.fontWeight='600';left.appendChild(t);
+      if(m.sub){var s=document.createElement('div');s.className='sub';s.textContent=m.sub;left.appendChild(s);}
+      row.appendChild(left);
+      var sel=document.createElement('select');sel.style.width='auto';
+      stages.forEach(function(st){var o=document.createElement('option');o.value=st;o.textContent=st;if(st===m.status)o.selected=true;sel.appendChild(o);});
+      sel.addEventListener('change',function(){api('/api/platform/'+path+'/'+encodeURIComponent(m.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:sel.value})}).then(function(){if(reload)reload();});});
+      row.appendChild(sel);el.appendChild(row);
+    });
+  }
+  async function loadProducts(){
+    var r=await api('/api/platform/products'); if(!r.ok)return; var d=await r.json();
+    stageRows('products',d.products||[],['planning','active','maintenance','archived'],function(p){return{title:esc(p.name),sub:esc(p.language||''),status:p.status,id:p.id};},'products',loadProducts);
+  }
+  async function loadBooks(){
+    var r=await api('/api/platform/books'); if(!r.ok)return; var d=await r.json();
+    stageRows('books',d.books||[],['draft','editing','design','proof','published','archived'],function(b){return{title:esc(b.title),sub:esc(b.author||''),status:b.status,id:b.id};},'books',loadBooks);
+  }
+  async function loadPrograms(){
+    var r=await api('/api/platform/programs'); if(!r.ok)return; var d=await r.json();
+    stageRows('programs',d.programs||[],['planned','active','paused','completed'],function(p){return{title:esc(p.name),sub:esc(p.leader||''),status:p.status,id:p.id};},'programs',loadPrograms);
+  }
   async function loadBrands(){
     var r=await api('/api/platform/brands'); if(!r.ok)return;
     var d=await r.json();
@@ -795,7 +856,7 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
   document.getElementById('addMember').addEventListener('click',async function(){
@@ -817,6 +878,27 @@ export function dashboardPage(): string {
     var x=await r.json().catch(function(){return {};});
     if(r.ok){n.value='';dm.value='';em.value='';setMsg('bnmsg','ok','Brand added.');loadBrands();}
     else{setMsg('bnmsg','err',(x.error&&x.error.message)||'Could not add brand.');}
+  });
+  document.getElementById('addProduct').addEventListener('click',async function(){
+    var n=document.getElementById('pdname'),l=document.getElementById('pdlang');
+    if(!n.value.trim()){setMsg('pdmsg','err','Name is required.');return;}
+    var r=await api('/api/platform/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n.value.trim(),language:l.value.trim()||undefined})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';l.value='';setMsg('pdmsg','ok','Product added.');loadProducts();}else{setMsg('pdmsg','err',(x.error&&x.error.message)||'Could not add.');}
+  });
+  document.getElementById('addBook').addEventListener('click',async function(){
+    var t=document.getElementById('bktitle'),a=document.getElementById('bkauthor');
+    if(!t.value.trim()){setMsg('bkmsg','err','Title is required.');return;}
+    var r=await api('/api/platform/books',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t.value.trim(),author:a.value.trim()||undefined})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){t.value='';a.value='';setMsg('bkmsg','ok','Book added.');loadBooks();}else{setMsg('bkmsg','err',(x.error&&x.error.message)||'Could not add.');}
+  });
+  document.getElementById('addProgram').addEventListener('click',async function(){
+    var n=document.getElementById('pgname'),l=document.getElementById('pgleader');
+    if(!n.value.trim()){setMsg('pgmsg','err','Name is required.');return;}
+    var r=await api('/api/platform/programs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n.value.trim(),leader:l.value.trim()||undefined})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';l.value='';setMsg('pgmsg','ok','Program added.');loadPrograms();}else{setMsg('pgmsg','err',(x.error&&x.error.message)||'Could not add.');}
   });
   document.getElementById('addReview').addEventListener('click',async function(){
     var a=document.getElementById('rauthor'),rt=document.getElementById('rrating'),sc=document.getElementById('rsource'),cm=document.getElementById('rcomment');

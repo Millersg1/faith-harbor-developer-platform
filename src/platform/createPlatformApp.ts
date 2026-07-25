@@ -24,7 +24,10 @@ import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import { PlatformProductService } from "./products/PlatformProductService";
+import { PlatformProgramService } from "./programs/PlatformProgramService";
 import { PlatformProposalService } from "./proposals/PlatformProposalService";
+import { PlatformBookService } from "./publishing/PlatformBookService";
 import { PlatformReviewService } from "./reviews/PlatformReviewService";
 import { PlatformTicketService } from "./support/PlatformTicketService";
 import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
@@ -58,6 +61,9 @@ export interface PlatformAppDependencies {
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
   brands?: PlatformBrandService;
+  products?: PlatformProductService;
+  books?: PlatformBookService;
+  programs?: PlatformProgramService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -296,6 +302,9 @@ export function createPlatformApp(
       campaigns: deps.campaigns,
       reviews: deps.reviews,
       brands: deps.brands,
+      products: deps.products,
+      books: deps.books,
+      programs: deps.programs,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

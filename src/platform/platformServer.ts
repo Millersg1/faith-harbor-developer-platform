@@ -28,8 +28,14 @@ import { PlatformLeadRepository } from "./crm/PlatformLeadRepository";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformCampaignRepository } from "./marketing/PlatformCampaignRepository";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import { PlatformProductRepository } from "./products/PlatformProductRepository";
+import { PlatformProductService } from "./products/PlatformProductService";
+import { PlatformProgramRepository } from "./programs/PlatformProgramRepository";
+import { PlatformProgramService } from "./programs/PlatformProgramService";
 import { PlatformProposalRepository } from "./proposals/PlatformProposalRepository";
 import { PlatformProposalService } from "./proposals/PlatformProposalService";
+import { PlatformBookRepository } from "./publishing/PlatformBookRepository";
+import { PlatformBookService } from "./publishing/PlatformBookService";
 import { PlatformReviewRepository } from "./reviews/PlatformReviewRepository";
 import { PlatformReviewService } from "./reviews/PlatformReviewService";
 import { PlatformHostingRepository } from "./hosting/PlatformHostingRepository";
@@ -187,6 +193,25 @@ async function start(): Promise<void> {
       ),
       clients,
     );
+  const products =
+    new PlatformProductService(
+      new PlatformProductRepository(
+        db,
+      ),
+      clients,
+    );
+  const books =
+    new PlatformBookService(
+      new PlatformBookRepository(db),
+      clients,
+    );
+  const programs =
+    new PlatformProgramService(
+      new PlatformProgramRepository(
+        db,
+      ),
+      clients,
+    );
   const campaigns =
     new PlatformCampaignService(
       new PlatformCampaignRepository(
@@ -297,6 +322,9 @@ async function start(): Promise<void> {
     campaigns,
     reviews,
     brands,
+    products,
+    books,
+    programs,
     websites,
     aiSettings,
     aiUsage,

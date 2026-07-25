@@ -338,6 +338,64 @@ export class PostgresDatabase
       );
     `);
 
+    // Products — a tenant's software products / repositories.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        name             TEXT NOT NULL,
+        description      TEXT,
+        status           TEXT NOT NULL DEFAULT 'planning',
+        repo_url         TEXT,
+        language         TEXT,
+        version          TEXT,
+        owner            TEXT,
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
+    // Books — a tenant's publishing pipeline.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS books (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        title            TEXT NOT NULL,
+        subtitle         TEXT,
+        author           TEXT,
+        status           TEXT NOT NULL DEFAULT 'draft',
+        format           TEXT,
+        isbn             TEXT,
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
+    // Programs — a tenant's programs / classes / recurring events.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS programs (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        client_id        TEXT,
+        name             TEXT NOT NULL,
+        category         TEXT,
+        status           TEXT NOT NULL DEFAULT 'planned',
+        leader           TEXT,
+        schedule         TEXT,
+        description      TEXT,
+        notes            TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
     // Sales proposals — a tenant's quotes. Every row belongs to one
     // organization; a client_id (when set) is the tenant's own client.
     await this.pool.query(`
