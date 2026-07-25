@@ -343,6 +343,18 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="rmsg"></div>
       </div>
+      <div class="panel" id="brandsPanel" style="display:none;">
+        <h2>Brands <span class="pill">owner/admin</span></h2>
+        <p class="hint">Run several brands under one workspace, each with its own domain and email voice.</p>
+        <div class="list" id="brands"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="bnname">Name</label><input id="bnname" placeholder="All Elite Hosting" /></div>
+          <div class="f"><label for="bndomain">Domain</label><input id="bndomain" placeholder="allelitehosting.com" /></div>
+          <div class="f"><label for="bnemail">From email</label><input id="bnemail" placeholder="hello@allelitehosting.com" /></div>
+          <button class="btn" id="addBrand" style="width:auto;">Add brand</button>
+        </div>
+        <div class="msg" id="bnmsg"></div>
+      </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
         <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
@@ -572,6 +584,11 @@ export function dashboardPage(): string {
       return item(title,esc(rv.comment||''),rv.replied?'replied':'');
     });
   }
+  async function loadBrands(){
+    var r=await api('/api/platform/brands'); if(!r.ok)return;
+    var d=await r.json();
+    renderList('brands',d.brands||[],function(b){return item(esc(b.name),esc(b.domain||''),'');});
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -682,6 +699,8 @@ export function dashboardPage(): string {
     if(u.role==='owner'||u.role==='admin'){
       document.getElementById('brandPanel').style.display='';
       document.getElementById('domainPanel').style.display='';
+      document.getElementById('brandsPanel').style.display='';
+      loadBrands();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
@@ -690,6 +709,16 @@ export function dashboardPage(): string {
     await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadCampaigns(); await loadReviews(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
   }
+  document.getElementById('addBrand').addEventListener('click',async function(){
+    var n=document.getElementById('bnname'),dm=document.getElementById('bndomain'),em=document.getElementById('bnemail');
+    if(!n.value.trim()){setMsg('bnmsg','err','Name is required.');return;}
+    setMsg('bnmsg','','Adding\\u2026');
+    var body={name:n.value.trim(),domain:dm.value.trim()||undefined,fromEmail:em.value.trim()||undefined};
+    var r=await api('/api/platform/brands',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';dm.value='';em.value='';setMsg('bnmsg','ok','Brand added.');loadBrands();}
+    else{setMsg('bnmsg','err',(x.error&&x.error.message)||'Could not add brand.');}
+  });
   document.getElementById('addReview').addEventListener('click',async function(){
     var a=document.getElementById('rauthor'),rt=document.getElementById('rrating'),sc=document.getElementById('rsource'),cm=document.getElementById('rcomment');
     if(!a.value.trim()){setMsg('rmsg','err','Author is required.');return;}

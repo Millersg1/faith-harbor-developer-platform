@@ -13,6 +13,7 @@ import {
 import type { AiUsageRepository } from "./ai/AiUsageRepository";
 import type { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { PLANS } from "./billing/Plan";
+import type { PlatformBrandService } from "./brands/PlatformBrandService";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformLeadService } from "./crm/PlatformLeadService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -36,6 +37,7 @@ export interface PlatformApiDependencies {
   leads?: PlatformLeadService;
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
+  brands?: PlatformBrandService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1533,6 +1535,148 @@ export function createPlatformApiRouter(
       requireRole("owner", "admin"),
       (req, res, next) => {
         reviews
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Brands ----
+  if (deps.brands) {
+    const brands = deps.brands;
+
+    router.get(
+      "/brands",
+      (_req, res, next) => {
+        brands
+          .list()
+          .then((rows) =>
+            res.json({
+              brands: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/brands",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_BRAND",
+            "A brand needs a name.",
+          );
+
+          return;
+        }
+
+        brands
+          .create({
+            name: String(body.name),
+            domain: optionalString(
+              body.domain,
+            ),
+            fromEmail:
+              optionalString(
+                body.fromEmail,
+              ),
+            emailSignature:
+              optionalString(
+                body.emailSignature,
+              ),
+          })
+          .then((brand) =>
+            res
+              .status(201)
+              .json({ brand }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.patch(
+      "/brands/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        brands
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              domain: optionalString(
+                body.domain,
+              ),
+              fromEmail:
+                optionalString(
+                  body.fromEmail,
+                ),
+              emailSignature:
+                optionalString(
+                  body.emailSignature,
+                ),
+            },
+          )
+          .then((brand) =>
+            res.json({ brand }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /not found/i.test(
+                  message,
+                )
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "BRAND_NOT_FOUND",
+                      message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.delete(
+      "/brands/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        brands
           .delete(
             String(req.params.id),
           )

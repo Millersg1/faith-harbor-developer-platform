@@ -19,6 +19,7 @@ import { createRequireUser } from "./auth/requireUser";
 import { BillingService } from "./billing/BillingService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
 import { BrandingService } from "./branding/BrandingService";
+import { PlatformBrandService } from "./brands/PlatformBrandService";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -54,6 +55,7 @@ export interface PlatformAppDependencies {
   leads?: PlatformLeadService;
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
+  brands?: PlatformBrandService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -289,6 +291,7 @@ export function createPlatformApp(
       leads: deps.leads,
       campaigns: deps.campaigns,
       reviews: deps.reviews,
+      brands: deps.brands,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

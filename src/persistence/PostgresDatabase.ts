@@ -338,6 +338,21 @@ export class PostgresDatabase
       );
     `);
 
+    // Brands — a tenant can run several brands under one workspace.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS brands (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        domain           TEXT,
+        from_email       TEXT,
+        email_signature  TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+
     // Customer reviews — a tenant's reputation management. Every row belongs
     // to one organization; a client_id (when set) is the tenant's own client.
     await this.pool.query(`

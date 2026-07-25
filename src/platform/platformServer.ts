@@ -20,6 +20,8 @@ import {
 } from "./billing/StripeSubscriptionGateway";
 import { BrandingRepository } from "./branding/BrandingRepository";
 import { BrandingService } from "./branding/BrandingService";
+import { PlatformBrandRepository } from "./brands/PlatformBrandRepository";
+import { PlatformBrandService } from "./brands/PlatformBrandService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadRepository } from "./crm/PlatformLeadRepository";
@@ -190,6 +192,10 @@ async function start(): Promise<void> {
       ),
       clients,
     );
+  const brands =
+    new PlatformBrandService(
+      new PlatformBrandRepository(db),
+    );
 
   // The website builder's AI generator: live when an OpenAI key is present
   // in the platform env, otherwise a disconnected stub that reports "not
@@ -280,6 +286,7 @@ async function start(): Promise<void> {
     leads,
     campaigns,
     reviews,
+    brands,
     websites,
     aiSettings,
     aiUsage,
