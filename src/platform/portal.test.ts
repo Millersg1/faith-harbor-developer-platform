@@ -104,7 +104,7 @@ async function makeClient(
   app: ReturnType<
     typeof createPlatformApp
   >,
-  cookie: string[],
+  cookie: string,
   name: string,
 ): Promise<string> {
   const res = await request(app)

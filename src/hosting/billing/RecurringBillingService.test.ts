@@ -153,14 +153,14 @@ function setup(
       clientId: client.id,
       domain: "acme.com",
       username: "acme123",
-      plan: plan.name,
+      plan: plan!.name,
       status: "active",
     });
 
     const order: HostingOrderRecord = {
       id: "order-1",
       clientId: client.id,
-      planId: plan.id,
+      planId: plan!.id,
       domain: "acme.com",
       contactEmail: "pat@acme.com",
       billingCycle: "monthly",

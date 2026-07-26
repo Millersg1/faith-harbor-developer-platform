@@ -163,7 +163,7 @@ async function makeAndGenerate(
   app: ReturnType<
     typeof createPlatformApp
   >,
-  cookie: string[],
+  cookie: string,
 ): Promise<void> {
   const created = await request(app)
     .post("/api/platform/websites")

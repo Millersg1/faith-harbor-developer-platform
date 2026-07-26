@@ -124,7 +124,7 @@ async function verifiedDomain(
   app: ReturnType<
     typeof createPlatformApp
   >,
-  cookie: string[],
+  cookie: string,
   txtRecords: Map<string, string[][]>,
   domain: string,
 ): Promise<void> {
@@ -156,7 +156,7 @@ async function makeSite(
   app: ReturnType<
     typeof createPlatformApp
   >,
-  cookie: string[],
+  cookie: string,
   generate: boolean,
 ): Promise<string> {
   const created = await request(app)
