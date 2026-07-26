@@ -517,6 +517,20 @@ export function dashboardPage(): string {
         <button class="btn" id="sendEmail" style="width:auto;margin-top:12px;">Send email</button>
         <div class="msg" id="emmsg"></div>
       </div>
+      <div class="panel" id="dripPanel" style="display:none;">
+        <h2>Autoresponders <span class="pill">owner/admin</span></h2>
+        <p class="hint">Automated email sequences. Steps send after a delay; enroll people manually or auto-enroll new leads. Use {{name}} in a step to personalize.</p>
+        <div class="list" id="dripSequences"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="dsname">New sequence</label><input id="dsname" placeholder="Welcome series" /></div>
+          <div class="f" style="max-width:170px;"><label for="dstrigger">Trigger</label><select id="dstrigger"><option value="manual">Manual</option><option value="lead_created">New lead</option></select></div>
+          <button class="btn" id="addSequence" style="width:auto;">Create</button>
+        </div>
+        <div class="msg" id="dsmsg"></div>
+        <h2 style="margin-top:22px;">Enrollments</h2>
+        <p class="hint">Recipients moving through your sequences.</p>
+        <div class="list" id="dripEnrollments"><div class="empty">Loading…</div></div>
+      </div>
       <div class="panel">
         <h2>Account</h2>
         <p class="hint">Change your password.</p>
@@ -875,6 +889,99 @@ export function dashboardPage(): string {
     document.getElementById('emailStatus').textContent=d.connected?'Email is connected — messages are delivered.':'No mail server configured yet — messages are recorded in your outbox but not delivered.';
     renderList('emails',(d.emails||[]).slice(0,20),function(m){return item(esc(m.subject),esc(m.to),esc(m.status));});
   }
+  async function loadDrip(){
+    var r=await api('/api/platform/drip/sequences'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('dripSequences'); clear(el);
+    var list=d.sequences||[];
+    if(!list.length){el.appendChild(emptyMsg('No sequences yet. Create one below.'));return;}
+    list.forEach(function(seq){
+      var wrap=document.createElement('div');wrap.className='item';wrap.style.flexDirection='column';wrap.style.alignItems='stretch';wrap.style.gap='8px';
+      var row=document.createElement('div');row.style.display='flex';row.style.alignItems='center';row.style.justifyContent='space-between';row.style.gap='8px';
+      var left=document.createElement('div');
+      var nm=document.createElement('div');nm.textContent=esc(seq.name);nm.style.fontWeight='600';left.appendChild(nm);
+      var sub=document.createElement('div');sub.className='sub';sub.textContent=(seq.trigger==='lead_created'?'Auto: new lead':'Manual')+' \\u00b7 '+((seq.steps||[]).length)+' step(s)';left.appendChild(sub);
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.display='flex';actions.style.alignItems='center';actions.style.gap='8px';actions.style.flex='none';
+      var st=document.createElement('span');st.className='pill';st.textContent=esc(seq.status);actions.appendChild(st);
+      var tog=document.createElement('button');tog.className='btn ghost';tog.style.padding='6px 12px';tog.textContent=seq.status==='active'?'Pause':'Resume';
+      tog.addEventListener('click',function(){setSeqStatus(seq.id,seq.status==='active'?'paused':'active');});actions.appendChild(tog);
+      row.appendChild(actions);
+      wrap.appendChild(row);
+      // Steps summary
+      (seq.steps||[]).forEach(function(s,i){
+        var sr=document.createElement('div');sr.className='sub';sr.style.paddingLeft='4px';
+        sr.textContent=(i+1)+'. after '+esc(s.delayHours)+'h — '+esc(s.subject);wrap.appendChild(sr);
+      });
+      // Add-step row
+      var addRow=document.createElement('div');addRow.className='inline';addRow.style.marginTop='4px';
+      var delayF=field('Delay (h)',80); var subF=field('Subject',0); var bodyF=field('Message',0);
+      delayF.input.type='number';delayF.input.min='0';delayF.input.value='0';
+      subF.input.placeholder='Step subject';bodyF.input.placeholder='Step message ({{name}} allowed)';
+      var addBtn=document.createElement('button');addBtn.className='btn';addBtn.style.width='auto';addBtn.textContent='Add step';
+      addBtn.addEventListener('click',function(){addStep(seq.id,delayF.input.value,subF.input.value,bodyF.input.value);});
+      addRow.appendChild(delayF.wrap);addRow.appendChild(subF.wrap);addRow.appendChild(bodyF.wrap);addRow.appendChild(addBtn);
+      wrap.appendChild(addRow);
+      // Enroll row
+      var enrRow=document.createElement('div');enrRow.className='inline';
+      var emF=field('Enroll email',0); var nmF=field('Name (optional)',160);
+      emF.input.type='email';emF.input.placeholder='someone@example.com';
+      var enrBtn=document.createElement('button');enrBtn.className='btn';enrBtn.style.width='auto';enrBtn.textContent='Enroll';
+      enrBtn.addEventListener('click',function(){enrollDrip(seq.id,emF.input.value,nmF.input.value);});
+      enrRow.appendChild(emF.wrap);enrRow.appendChild(nmF.wrap);enrRow.appendChild(enrBtn);
+      wrap.appendChild(enrRow);
+      el.appendChild(wrap);
+    });
+  }
+  function field(label,maxw){
+    var wrap=document.createElement('div');wrap.className='f';if(maxw)wrap.style.maxWidth=maxw+'px';
+    var l=document.createElement('label');l.textContent=label;wrap.appendChild(l);
+    var input=document.createElement('input');wrap.appendChild(input);
+    return {wrap:wrap,input:input};
+  }
+  async function setSeqStatus(id,status){
+    var r=await api('/api/platform/drip/sequences/'+encodeURIComponent(id)+'/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
+    if(r.ok)loadDrip();
+  }
+  async function addStep(id,delay,subject,body){
+    if(!subject.trim()||!body.trim()){setMsg('dsmsg','err','A step needs a subject and a message.');return;}
+    var r=await api('/api/platform/drip/sequences/'+encodeURIComponent(id)+'/steps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({delayHours:Number(delay||0),subject:subject.trim(),body:body.trim()})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('dsmsg','ok','Step added.');loadDrip();}
+    else{setMsg('dsmsg','err',(x.error&&x.error.message)||'Could not add step.');}
+  }
+  async function enrollDrip(id,email,name){
+    if(!email.trim()){setMsg('dsmsg','err','A recipient email is required.');return;}
+    var r=await api('/api/platform/drip/sequences/'+encodeURIComponent(id)+'/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),name:name.trim()||undefined})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('dsmsg','ok','Enrolled '+esc(email.trim())+'.');loadDripEnrollments();}
+    else{setMsg('dsmsg','err',(x.error&&x.error.message)||'Could not enroll.');}
+  }
+  async function loadDripEnrollments(){
+    var r=await api('/api/platform/drip/enrollments'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('dripEnrollments'); clear(el);
+    var list=d.enrollments||[];
+    if(!list.length){el.appendChild(emptyMsg('No enrollments yet.'));return;}
+    list.forEach(function(e){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(e.email);t.style.fontWeight='600';left.appendChild(t);
+      var s=document.createElement('div');s.className='sub';s.textContent='step '+((e.stepIndex||0)+1)+' \\u00b7 '+esc(e.status);left.appendChild(s);
+      row.appendChild(left);
+      if(e.status==='active'){
+        var cancel=document.createElement('button');cancel.className='btn ghost';cancel.style.padding='6px 12px';cancel.textContent='Cancel';
+        cancel.addEventListener('click',function(){cancelEnrollment(e.id);});row.appendChild(cancel);
+      }else{
+        var st=document.createElement('span');st.className='pill';st.textContent=esc(e.status);row.appendChild(st);
+      }
+      el.appendChild(row);
+    });
+  }
+  async function cancelEnrollment(id){
+    var r=await api('/api/platform/drip/enrollments/'+encodeURIComponent(id)+'/cancel',{method:'POST'});
+    if(r.ok)loadDripEnrollments();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -1001,10 +1108,13 @@ export function dashboardPage(): string {
       document.getElementById('teamPanel').style.display='';
       document.getElementById('portalPanel').style.display='';
       document.getElementById('emailPanel').style.display='';
+      document.getElementById('dripPanel').style.display='';
       loadBrands();
       loadTeam();
       loadPortalUsers();
       loadEmails();
+      loadDrip();
+      loadDripEnrollments();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
@@ -1022,6 +1132,15 @@ export function dashboardPage(): string {
     var x=await r.json().catch(function(){return {};});
     if(r.ok){to.value='';su.value='';bo.value='';var st=(x.email&&x.email.status)||'';setMsg('emmsg','ok',st==='sent'?'Sent.':'Recorded ('+st+').');loadEmails();}
     else{setMsg('emmsg','err',(x.error&&x.error.message)||'Could not send.');}
+  });
+  document.getElementById('addSequence').addEventListener('click',async function(){
+    var n=document.getElementById('dsname'),tr=document.getElementById('dstrigger');
+    if(!n.value.trim()){setMsg('dsmsg','err','A sequence needs a name.');return;}
+    setMsg('dsmsg','','Creating\\u2026');
+    var r=await api('/api/platform/drip/sequences',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n.value.trim(),trigger:tr.value})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';setMsg('dsmsg','ok','Sequence created. Add steps below.');loadDrip();}
+    else{setMsg('dsmsg','err',(x.error&&x.error.message)||'Could not create sequence.');}
   });
   document.getElementById('changePw').addEventListener('click',async function(){
     var c=document.getElementById('cpcur'),n=document.getElementById('cpnew');

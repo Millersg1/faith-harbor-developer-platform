@@ -23,6 +23,7 @@ import { BrandingService } from "./branding/BrandingService";
 import { PlatformBrandService } from "./brands/PlatformBrandService";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
+import type { DripService } from "./drip/DripService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -76,6 +77,7 @@ export interface PlatformAppDependencies {
   clientUsers?: ClientUserService;
   portalSessions?: PortalSessionService;
   email?: PlatformEmailService;
+  drip?: DripService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -367,6 +369,7 @@ export function createPlatformApp(
       programs: deps.programs,
       clientUsers: deps.clientUsers,
       email: deps.email,
+      drip: deps.drip,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

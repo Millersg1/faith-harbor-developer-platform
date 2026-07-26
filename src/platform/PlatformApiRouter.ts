@@ -24,6 +24,7 @@ import type { PlatformBrandService } from "./brands/PlatformBrandService";
 import type { PlatformEmailService } from "./email/PlatformEmailService";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformLeadService } from "./crm/PlatformLeadService";
+import type { DripService } from "./drip/DripService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -61,6 +62,7 @@ export interface PlatformApiDependencies {
   programs?: PlatformProgramService;
   clientUsers?: ClientUserService;
   email?: PlatformEmailService;
+  drip?: DripService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1352,11 +1354,19 @@ export function createPlatformApiRouter(
               body.clientId,
             ),
           })
-          .then((lead) =>
+          .then((lead) => {
+            // Fire any drip sequences triggered by a new lead. Best-effort:
+            // the enrollment must never affect the lead-creation response.
+            void deps.drip?.enrollByTrigger(
+              "lead_created",
+              lead.email,
+              lead.name,
+            );
+
             res
               .status(201)
-              .json({ lead }),
-          )
+              .json({ lead });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -1482,6 +1492,295 @@ export function createPlatformApiRouter(
             res.json({ ok: true }),
           )
           .catch(next);
+      },
+    );
+  }
+
+  // ---- Autoresponder / drip ----
+  if (deps.drip) {
+    const drip = deps.drip;
+
+    // Sequences, each with its steps (for the dashboard).
+    router.get(
+      "/drip/sequences",
+      (_req, res, next) => {
+        drip
+          .listSequences()
+          .then((sequences) =>
+            Promise.all(
+              sequences.map((s) =>
+                drip
+                  .listSteps(s.id)
+                  .then((steps) => ({
+                    ...s,
+                    steps,
+                  })),
+              ),
+            ),
+          )
+          .then((sequences) =>
+            res.json({ sequences }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/drip/sequences",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(body.name)
+        ) {
+          badRequest(
+            res,
+            "INVALID_SEQUENCE",
+            "A sequence needs a name.",
+          );
+
+          return;
+        }
+
+        drip
+          .createSequence({
+            name: String(body.name),
+            trigger: optionalString(
+              body.trigger,
+            ),
+          })
+          .then((sequence) =>
+            res
+              .status(201)
+              .json({ sequence }),
+          )
+          .catch((error: unknown) =>
+            validationOrNext(
+              error,
+              res,
+              "INVALID_SEQUENCE",
+              next,
+            ),
+          );
+      },
+    );
+
+    // Pause / resume a sequence.
+    router.post(
+      "/drip/sequences/:id/status",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+        const status =
+          body.status === "paused"
+            ? "paused"
+            : body.status === "active"
+              ? "active"
+              : undefined;
+
+        if (!status) {
+          badRequest(
+            res,
+            "INVALID_STATUS",
+            "Status must be active or paused.",
+          );
+
+          return;
+        }
+
+        drip
+          .setStatus(
+            String(req.params.id),
+            status,
+          )
+          .then((sequence) =>
+            res.json({ sequence }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "SEQUENCE_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    // Add a step to a sequence.
+    router.post(
+      "/drip/sequences/:id/steps",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.subject,
+          ) ||
+          !isNonEmptyString(body.body)
+        ) {
+          badRequest(
+            res,
+            "INVALID_STEP",
+            "A step needs a subject and a body.",
+          );
+
+          return;
+        }
+
+        drip
+          .addStep(
+            String(req.params.id),
+            {
+              delayHours: Number(
+                body.delayHours ?? 0,
+              ),
+              subject: String(
+                body.subject,
+              ),
+              body: String(body.body),
+            },
+          )
+          .then((step) =>
+            res
+              .status(201)
+              .json({ step }),
+          )
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "";
+
+            if (
+              /not found/i.test(
+                message,
+              )
+            ) {
+              notFoundOrNext(
+                res,
+                next,
+                error,
+                "SEQUENCE_NOT_FOUND",
+              );
+
+              return;
+            }
+
+            validationOrNext(
+              error,
+              res,
+              "INVALID_STEP",
+              next,
+            );
+          });
+      },
+    );
+
+    // Enroll a recipient manually.
+    router.post(
+      "/drip/sequences/:id/enroll",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(body.email)
+        ) {
+          badRequest(
+            res,
+            "INVALID_ENROLLMENT",
+            "A recipient email is required.",
+          );
+
+          return;
+        }
+
+        drip
+          .enroll(
+            String(req.params.id),
+            String(body.email),
+            optionalString(body.name),
+          )
+          .then((enrollment) =>
+            res
+              .status(201)
+              .json({ enrollment }),
+          )
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "";
+
+            if (
+              /not found/i.test(
+                message,
+              )
+            ) {
+              notFoundOrNext(
+                res,
+                next,
+                error,
+                "SEQUENCE_NOT_FOUND",
+              );
+
+              return;
+            }
+
+            validationOrNext(
+              error,
+              res,
+              "INVALID_ENROLLMENT",
+              next,
+            );
+          });
+      },
+    );
+
+    router.get(
+      "/drip/enrollments",
+      (_req, res, next) => {
+        drip
+          .listEnrollments()
+          .then((enrollments) =>
+            res.json({
+              enrollments,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/drip/enrollments/:id/cancel",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        drip
+          .cancelEnrollment(
+            String(req.params.id),
+          )
+          .then((enrollment) =>
+            res.json({ enrollment }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "ENROLLMENT_NOT_FOUND",
+            ),
+          );
       },
     );
   }

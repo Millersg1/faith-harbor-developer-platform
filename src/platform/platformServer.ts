@@ -70,6 +70,8 @@ import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PasswordResetService } from "./auth/PasswordResetService";
 import { PasswordResetRepository } from "./auth/PasswordResetRepository";
+import { DripService } from "./drip/DripService";
+import { DripRepository } from "./drip/DripRepository";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -265,6 +267,10 @@ async function start(): Promise<void> {
           undefined,
       },
     );
+  const drip = new DripService(
+    new DripRepository(db),
+    email,
+  );
   const clientUsers =
     new ClientUserService(
       new ClientUserRepository(db),
@@ -391,6 +397,7 @@ async function start(): Promise<void> {
     clientUsers,
     portalSessions,
     email,
+    drip,
     websites,
     aiSettings,
     aiUsage,
@@ -420,6 +427,23 @@ async function start(): Promise<void> {
     },
   );
 
+  // Drip worker: every minute, send any due autoresponder steps across all
+  // tenants. unref() so it never keeps the process alive on shutdown.
+  const DRIP_TICK_MS = Number(
+    process.env.DRIP_TICK_MS ?? 60_000,
+  );
+  const dripTimer = setInterval(() => {
+    drip
+      .runDue()
+      .catch((error: unknown) => {
+        console.error(
+          "Drip worker tick failed.",
+          error,
+        );
+      });
+  }, DRIP_TICK_MS);
+  dripTimer.unref();
+
   let shuttingDown = false;
 
   const shutdown = (
@@ -433,6 +457,8 @@ async function start(): Promise<void> {
     console.log(
       `Received ${signal}. Shutting down platform.`,
     );
+
+    clearInterval(dripTimer);
 
     server.close(() => {
       void db

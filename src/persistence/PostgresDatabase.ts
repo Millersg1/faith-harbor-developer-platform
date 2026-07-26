@@ -372,6 +372,59 @@ export class PostgresDatabase
         ON password_reset_tokens (organization_id, user_id);
     `);
 
+    // Autoresponder / drip: sequences, their steps, and enrollments.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS drip_sequences (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        trigger          TEXT NOT NULL DEFAULT 'manual',
+        status           TEXT NOT NULL DEFAULT 'active',
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS drip_steps (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        sequence_id      TEXT NOT NULL
+                           REFERENCES drip_sequences (id) ON DELETE CASCADE,
+        position         INTEGER NOT NULL,
+        delay_hours      DOUBLE PRECISION NOT NULL DEFAULT 0,
+        subject          TEXT NOT NULL,
+        body             TEXT NOT NULL,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS drip_steps_sequence_idx
+        ON drip_steps (organization_id, sequence_id, position);
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS drip_enrollments (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        sequence_id      TEXT NOT NULL
+                           REFERENCES drip_sequences (id) ON DELETE CASCADE,
+        email            TEXT NOT NULL,
+        name             TEXT,
+        step_index       INTEGER NOT NULL DEFAULT 0,
+        status           TEXT NOT NULL DEFAULT 'active',
+        next_run_at      TEXT NOT NULL,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    // The worker scans this index every tick to find due enrollments.
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS drip_enrollments_due_idx
+        ON drip_enrollments (status, next_run_at);
+    `);
+
     // Client-portal logins — one per client contact, scoped to an org+client.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS portal_users (
