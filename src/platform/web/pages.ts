@@ -713,6 +713,11 @@ export function dashboardPage(): string {
         <p class="hint">Recipients moving through your sequences.</p>
         <div class="list" id="dripEnrollments"><div class="empty">Loading…</div></div>
       </div>
+      <div class="panel" id="auditPanel" style="display:none;">
+        <h2>Security audit log <span class="pill">owner/admin</span></h2>
+        <p class="hint">Sign-ins, password changes, and role changes across your workspace.</p>
+        <div class="list" id="auditLog"><div class="empty">Loading…</div></div>
+      </div>
       <div class="panel">
         <h2>Account</h2>
         <p class="hint">Change your password.</p>
@@ -1416,6 +1421,23 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/knowledge/documents/'+encodeURIComponent(id),{method:'DELETE'});
     if(r.ok)loadKbDocs();
   }
+  async function loadAudit(){
+    var r=await api('/api/platform/audit?limit=50'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('auditLog'); clear(el);
+    var list=d.events||[];
+    if(!list.length){el.appendChild(emptyMsg('No security events yet.'));return;}
+    list.forEach(function(e){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(e.action);t.style.fontWeight='600';left.appendChild(t);
+      var parts=[];if(e.actorLabel)parts.push(esc(e.actorLabel));if(e.ip)parts.push(esc(e.ip));parts.push(timeAgo(e.createdAt));
+      var s=document.createElement('div');s.className='sub';s.textContent=parts.join(' \\u00b7 ');left.appendChild(s);
+      row.appendChild(left);
+      if(e.outcome){var p=document.createElement('span');p.className='pill';p.textContent=esc(e.outcome);if(e.outcome==='failure')p.style.color='#e5484d';row.appendChild(p);}
+      el.appendChild(row);
+    });
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -1545,6 +1567,7 @@ export function dashboardPage(): string {
       document.getElementById('dripPanel').style.display='';
       document.getElementById('formsPanel').style.display='';
       document.getElementById('knowledgePanel').style.display='';
+      document.getElementById('auditPanel').style.display='';
       loadBrands();
       loadTeam();
       loadPortalUsers();
@@ -1553,6 +1576,7 @@ export function dashboardPage(): string {
       loadDripEnrollments();
       loadForms();
       loadCollections();
+      loadAudit();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';

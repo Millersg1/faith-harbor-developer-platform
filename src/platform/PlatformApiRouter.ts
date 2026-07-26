@@ -48,6 +48,7 @@ import {
   KnowledgeValidationError,
   type KnowledgeService,
 } from "./knowledge/KnowledgeService";
+import type { AuditService } from "./audit/AuditService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -93,6 +94,7 @@ export interface PlatformApiDependencies {
   forms?: PlatformFormService;
   calendar?: CalendarService;
   knowledge?: KnowledgeService;
+  audit?: AuditService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1093,6 +1095,29 @@ export function createPlatformApiRouter(
     );
   }
 
+  // ---- Audit log (owner/admin) ----
+  if (deps.audit) {
+    const audit = deps.audit;
+
+    router.get(
+      "/audit",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const limit =
+          req.query.limit == null
+            ? undefined
+            : Number(req.query.limit);
+
+        audit
+          .list(limit)
+          .then((events) =>
+            res.json({ events }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
   // ---- Activity timeline ----
   if (deps.activity) {
     const activity = deps.activity;
@@ -1445,12 +1470,25 @@ export function createPlatformApiRouter(
             String(req.params.id),
             body.role,
           )
-          .then((user) =>
+          .then((user) => {
+            void deps.audit?.record({
+              ...auditActor(req),
+              action:
+                "user.role_changed",
+              targetType: "user",
+              targetId: user.id,
+              outcome: "success",
+              ip: req.ip,
+              metadata: {
+                role: user.role,
+              },
+            });
+
             res.json({
               member:
                 toPublicUser(user),
-            }),
-          )
+            });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -1522,9 +1560,18 @@ export function createPlatformApiRouter(
 
         users
           .remove(id)
-          .then(() =>
-            res.json({ ok: true }),
-          )
+          .then(() => {
+            void deps.audit?.record({
+              ...auditActor(req),
+              action: "user.removed",
+              targetType: "user",
+              targetId: id,
+              outcome: "success",
+              ip: req.ip,
+            });
+
+            res.json({ ok: true });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -5078,6 +5125,27 @@ function publicFile(
     subjectId: file.subjectId,
     uploadedBy: file.uploadedBy,
     createdAt: file.createdAt,
+  };
+}
+
+/**
+ * Audit actor fields from the authenticated request (uses `actorLabel`, the
+ * shape the audit service expects).
+ */
+function auditActor(req: unknown): {
+  actorType: "user";
+  actorId?: string;
+  actorLabel?: string;
+} {
+  const auth = (req as AuthedRequest)
+    .auth;
+
+  return {
+    actorType: "user",
+    actorId: auth?.user.id,
+    actorLabel:
+      auth?.user.name ||
+      auth?.user.email,
   };
 }
 

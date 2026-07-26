@@ -11,6 +11,7 @@ import type { PlatformSessionRecord } from "../sessions/PlatformSession";
 import type { PlatformSessionService } from "../sessions/PlatformSessionService";
 import type { PlatformSignupService } from "../signup/PlatformSignupService";
 import type { PasswordResetService } from "./PasswordResetService";
+import type { AuditService } from "../audit/AuditService";
 import {
   RateLimiter,
   rateLimit,
@@ -57,6 +58,11 @@ export interface AuthRouterDependencies {
    * Sends the reset link. Required for /forgot-password to deliver mail.
    */
   email?: PlatformEmailService;
+
+  /**
+   * Records security audit events (login success/failure, password changes).
+   */
+  audit?: AuditService;
 
   /**
    * Platform base domain (e.g. "allelitecloud.com"). Used to build reset
@@ -303,6 +309,17 @@ export function createAuthRouter(
                 secure,
               );
 
+              void deps.audit?.record({
+                action: "auth.login",
+                actorType: "user",
+                actorId: user.id,
+                actorLabel:
+                  user.name ||
+                  user.email,
+                outcome: "success",
+                ip: req.ip,
+              });
+
               res.json({
                 user: toPublicUser(
                   user,
@@ -322,6 +339,21 @@ export function createAuthRouter(
               message,
             )
           ) {
+            void deps.audit?.record({
+              action:
+                "auth.login_failed",
+              actorType: "system",
+              outcome: "failure",
+              ip: req.ip,
+              metadata: {
+                email: String(
+                  body.email,
+                )
+                  .trim()
+                  .toLowerCase(),
+              },
+            });
+
             res.status(401).json({
               error: {
                 code: "INVALID_LOGIN",
@@ -444,9 +476,17 @@ export function createAuthRouter(
             body.token,
             body.newPassword,
           )
-          .then(() =>
-            res.json({ ok: true }),
-          )
+          .then(() => {
+            void deps.audit?.record({
+              action:
+                "auth.password_reset",
+              actorType: "user",
+              outcome: "success",
+              ip: req.ip,
+            });
+
+            res.json({ ok: true });
+          })
           .catch((error: unknown) => {
             const message =
               error instanceof Error
@@ -537,9 +577,21 @@ export function createAuthRouter(
           body.currentPassword,
           body.newPassword,
         )
-        .then(() =>
-          res.json({ ok: true }),
-        )
+        .then(() => {
+          void deps.audit?.record({
+            action:
+              "auth.password_changed",
+            actorType: "user",
+            actorId: auth.user.id,
+            actorLabel:
+              auth.user.name ||
+              auth.user.email,
+            outcome: "success",
+            ip: req.ip,
+          });
+
+          res.json({ ok: true });
+        })
         .catch((error: unknown) => {
           const message =
             error instanceof Error

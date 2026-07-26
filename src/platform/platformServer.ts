@@ -87,6 +87,8 @@ import { CalendarService } from "./calendar/CalendarService";
 import { CalendarEventRepository } from "./calendar/CalendarEventRepository";
 import { KnowledgeService } from "./knowledge/KnowledgeService";
 import { KnowledgeRepository } from "./knowledge/KnowledgeRepository";
+import { AuditService } from "./audit/AuditService";
+import { AuditRepository } from "./audit/AuditRepository";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -438,6 +440,9 @@ async function start(): Promise<void> {
     new KnowledgeService(
       new KnowledgeRepository(db),
     );
+  const audit = new AuditService(
+    new AuditRepository(db),
+  );
 
   const search = new SearchService({
     clients,
@@ -488,6 +493,7 @@ async function start(): Promise<void> {
     forms,
     calendar,
     knowledge,
+    audit,
     websites,
     aiSettings,
     aiUsage,

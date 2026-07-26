@@ -113,9 +113,17 @@ multi-instance deployment swaps the store behind the same interface.
 
 ## Audit logging
 
-The activity event spine records business events, but a dedicated
-security/audit log (auth events, permission changes, admin actions) is
-**outstanding** and part of the hardening pass.
+A dedicated, **append-only** security audit trail
+(`src/platform/audit/`) records who did what, when, and from where —
+distinct from the business activity spine. Recorded actions include
+`auth.login` / `auth.login_failed` (with IP), `auth.password_changed`,
+`auth.password_reset`, `user.role_changed`, and `user.removed`. Records are
+tenant-scoped and never updated or deleted (tamper-evident). Owners/admins view
+them at `GET /api/platform/audit` and in the dashboard's Security audit log
+panel. Recording is best-effort — it never blocks or fails the audited action.
+*Why:* accountability and incident investigation require a trustworthy trail
+separate from mutable business data. **Still to expand:** admin cross-tenant
+actions, more mutation coverage.
 
 ## Secret management
 
@@ -129,6 +137,7 @@ storage keys.
    endpoints as needed).
 2. Postgres **Row-Level Security** as a defense-in-depth backstop under the
    app-layer isolation.
-3. Comprehensive **audit logging**.
+3. ~~Audit logging~~ ✅ done for auth + team actions (expand coverage over
+   time).
 4. CSRF tokens for state-changing tenant routes.
 5. Automated **backups** + tested restore.

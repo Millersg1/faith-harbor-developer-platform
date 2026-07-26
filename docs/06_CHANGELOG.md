@@ -37,6 +37,10 @@ Faith Harbor OS is unaffected.
   `884497a`.
 
 ### Security
+- **Audit logging** — append-only, tenant-scoped security trail
+  (`auth.login`/`login_failed`/`password_changed`/`password_reset`,
+  `user.role_changed`/`removed`); `GET /api/platform/audit` + dashboard panel
+  (owner/admin). Hardening pass item 2.
 - **Login + forgot-password rate limiting** (in-memory `RateLimiter`, keyed by
   IP + email; 429 + `Retry-After`) — first item of the hardening pass.
   `trust proxy` enabled so the real client IP is used.

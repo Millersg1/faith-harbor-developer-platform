@@ -478,6 +478,29 @@ export class PostgresDatabase
         ON form_submissions (organization_id, form_id, created_at DESC);
     `);
 
+    // Audit log — append-only security trail, tenant-scoped.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS audit_events (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        action           TEXT NOT NULL,
+        actor_type       TEXT NOT NULL DEFAULT 'user',
+        actor_id         TEXT,
+        actor_label      TEXT,
+        target_type      TEXT,
+        target_id        TEXT,
+        outcome          TEXT,
+        ip               TEXT,
+        metadata         JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS audit_events_org_idx
+        ON audit_events (organization_id, created_at DESC);
+    `);
+
     // Files — tenant-scoped metadata; bytes live in a StorageProvider.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS files (
