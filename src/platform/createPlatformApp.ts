@@ -36,6 +36,7 @@ import {
 import type { CalendarService } from "./calendar/CalendarService";
 import type { KnowledgeService } from "./knowledge/KnowledgeService";
 import type { AuditService } from "./audit/AuditService";
+import type { WorkflowService } from "./workflows/WorkflowService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -99,6 +100,7 @@ export interface PlatformAppDependencies {
   calendar?: CalendarService;
   knowledge?: KnowledgeService;
   audit?: AuditService;
+  workflows?: WorkflowService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -532,6 +534,7 @@ export function createPlatformApp(
       calendar: deps.calendar,
       knowledge: deps.knowledge,
       audit: deps.audit,
+      workflows: deps.workflows,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

@@ -478,6 +478,49 @@ export class PostgresDatabase
         ON form_submissions (organization_id, form_id, created_at DESC);
     `);
 
+    // Workflows — tenant automations, and their runs (advanced by the worker).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS workflows (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        trigger          TEXT NOT NULL,
+        status           TEXT NOT NULL DEFAULT 'active',
+        steps            JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS workflows_trigger_idx
+        ON workflows (organization_id, status, trigger);
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS workflow_runs (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        workflow_id      TEXT NOT NULL
+                           REFERENCES workflows (id) ON DELETE CASCADE,
+        trigger_type     TEXT NOT NULL,
+        subject_type     TEXT,
+        subject_id       TEXT,
+        context_email    TEXT,
+        context_name     TEXT,
+        step_index       INTEGER NOT NULL DEFAULT 0,
+        status           TEXT NOT NULL DEFAULT 'running',
+        next_run_at      TEXT NOT NULL,
+        log              JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS workflow_runs_due_idx
+        ON workflow_runs (status, next_run_at);
+    `);
+
     // Audit log — append-only security trail, tenant-scoped.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS audit_events (

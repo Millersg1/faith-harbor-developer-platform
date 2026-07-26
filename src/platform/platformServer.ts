@@ -89,6 +89,8 @@ import { KnowledgeService } from "./knowledge/KnowledgeService";
 import { KnowledgeRepository } from "./knowledge/KnowledgeRepository";
 import { AuditService } from "./audit/AuditService";
 import { AuditRepository } from "./audit/AuditRepository";
+import { WorkflowService } from "./workflows/WorkflowService";
+import { WorkflowRepository } from "./workflows/WorkflowRepository";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -443,6 +445,38 @@ async function start(): Promise<void> {
   const audit = new AuditService(
     new AuditRepository(db),
   );
+  // Owners/admins to notify (shared by the notification dispatcher + workflows).
+  const notifyRecipients = () =>
+    users
+      .list()
+      .then((list) =>
+        list
+          .filter(
+            (u) =>
+              u.status ===
+                "active" &&
+              (u.role === "owner" ||
+                u.role === "admin"),
+          )
+          .map((u) => u.id),
+      )
+      .catch(() => []);
+  const workflows =
+    new WorkflowService(
+      new WorkflowRepository(db),
+      {
+        notifications,
+        email,
+        drip,
+        activity,
+        resolveNotifyRecipients:
+          notifyRecipients,
+      },
+    );
+  // Workflows are triggered by activity events and advanced by a tick worker.
+  activity.subscribe(
+    workflows.handleEvent,
+  );
 
   const search = new SearchService({
     clients,
@@ -494,6 +528,7 @@ async function start(): Promise<void> {
     calendar,
     knowledge,
     audit,
+    workflows,
     websites,
     aiSettings,
     aiUsage,
@@ -537,6 +572,14 @@ async function start(): Promise<void> {
       .catch((error: unknown) => {
         console.error(
           "Drip worker tick failed.",
+          error,
+        );
+      });
+    workflows
+      .runDue()
+      .catch((error: unknown) => {
+        console.error(
+          "Workflow worker tick failed.",
           error,
         );
       });

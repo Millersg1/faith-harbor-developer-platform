@@ -49,6 +49,11 @@ import {
   type KnowledgeService,
 } from "./knowledge/KnowledgeService";
 import type { AuditService } from "./audit/AuditService";
+import {
+  WorkflowValidationError,
+  type WorkflowService,
+} from "./workflows/WorkflowService";
+import type { WorkflowStep } from "./workflows/WorkflowTypes";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -95,6 +100,7 @@ export interface PlatformApiDependencies {
   calendar?: CalendarService;
   knowledge?: KnowledgeService;
   audit?: AuditService;
+  workflows?: WorkflowService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1089,6 +1095,168 @@ export function createPlatformApiRouter(
               next,
               error,
               "FILE_NOT_FOUND",
+            ),
+          );
+      },
+    );
+  }
+
+  // ---- Workflows (automation) ----
+  if (deps.workflows) {
+    const workflows = deps.workflows;
+
+    router.get(
+      "/workflows",
+      (_req, res, next) => {
+        workflows
+          .list()
+          .then((rows) =>
+            res.json({
+              workflows: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/workflows",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          ) ||
+          !isNonEmptyString(
+            body.trigger,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_WORKFLOW",
+            "A workflow needs a name and a trigger.",
+          );
+
+          return;
+        }
+
+        workflows
+          .create({
+            name: String(body.name),
+            trigger: String(
+              body.trigger,
+            ),
+            steps: Array.isArray(
+              body.steps,
+            )
+              ? (body.steps as WorkflowStep[])
+              : undefined,
+          })
+          .then((workflow) =>
+            res
+              .status(201)
+              .json({ workflow }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              WorkflowValidationError
+            ) {
+              badRequest(
+                res,
+                "INVALID_WORKFLOW",
+                error.message,
+              );
+
+              return;
+            }
+
+            next(error);
+          });
+      },
+    );
+
+    router.patch(
+      "/workflows/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        workflows
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              trigger:
+                optionalString(
+                  body.trigger,
+                ),
+              status:
+                body.status ===
+                "paused"
+                  ? "paused"
+                  : body.status ===
+                      "active"
+                    ? "active"
+                    : undefined,
+              steps: Array.isArray(
+                body.steps,
+              )
+                ? (body.steps as WorkflowStep[])
+                : undefined,
+            },
+          )
+          .then((workflow) =>
+            res.json({ workflow }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              WorkflowValidationError
+            ) {
+              badRequest(
+                res,
+                "INVALID_WORKFLOW",
+                error.message,
+              );
+
+              return;
+            }
+
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "WORKFLOW_NOT_FOUND",
+            );
+          });
+      },
+    );
+
+    router.get(
+      "/workflows/:id/runs",
+      (req, res, next) => {
+        workflows
+          .listRuns(
+            String(req.params.id),
+          )
+          .then((runs) =>
+            res.json({ runs }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "WORKFLOW_NOT_FOUND",
             ),
           );
       },
@@ -2512,6 +2680,10 @@ export function createPlatformApiRouter(
               summary: lead.company
                 ? String(lead.company)
                 : undefined,
+              metadata: {
+                email: lead.email,
+                name: lead.name,
+              },
             });
 
             res

@@ -308,12 +308,20 @@ export class PlatformFormService {
           );
         }
 
+        const contact = extractLead(
+          form,
+          clean,
+        );
         void this.activity?.record({
           actorType: "system",
           type: "form.submitted",
           subjectType: "form",
           subjectId: form.id,
           title: `Form submitted: ${form.name}`,
+          metadata: {
+            email: contact?.email,
+            name: contact?.name,
+          },
         });
 
         return {

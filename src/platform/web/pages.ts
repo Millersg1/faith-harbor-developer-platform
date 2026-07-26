@@ -672,6 +672,22 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="fmmsg"></div>
       </div>
+      <div class="panel" id="workflowsPanel" style="display:none;">
+        <h2>Automations <span class="pill">owner/admin</span></h2>
+        <p class="hint">When something happens, run steps automatically — notify your team, email the contact, enroll them in a sequence.</p>
+        <div class="list" id="workflows"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="wftemplate">New automation</label><select id="wftemplate">
+            <option value="lead_notify">New lead → notify team</option>
+            <option value="lead_welcome">New lead → welcome email</option>
+            <option value="form_reply">Form submission → notify + auto-reply</option>
+            <option value="invoice_paid">Invoice paid → notify team</option>
+            <option value="proposal_accepted">Proposal accepted → notify team</option>
+          </select></div>
+          <button class="btn" id="addWorkflow" style="width:auto;">Create</button>
+        </div>
+        <div class="msg" id="wfmsg"></div>
+      </div>
       <div class="panel" id="knowledgePanel" style="display:none;">
         <h2>AI Knowledge Base <span class="pill">owner/admin</span></h2>
         <p class="hint">Add documents, then ask questions grounded in them — answers cite their sources.</p>
@@ -1390,6 +1406,60 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/calendar/events/'+encodeURIComponent(id),{method:'DELETE'});
     if(r.ok)loadCalendar();
   }
+  var WF_TEMPLATES={
+    lead_notify:{name:'New lead → notify team',trigger:'lead.created',steps:[{type:'notify',delayHours:0,config:{title:'New lead',body:'A new lead was just added to your pipeline.'}}]},
+    lead_welcome:{name:'New lead → welcome email',trigger:'lead.created',steps:[{type:'email',delayHours:0,config:{subject:'Thanks for reaching out',body:'Hi {{name}},\\n\\nThanks for your interest — we received your details and will be in touch shortly.'}}]},
+    form_reply:{name:'Form submission → notify + auto-reply',trigger:'form.submitted',steps:[{type:'notify',delayHours:0,config:{title:'New form submission',body:'Someone submitted one of your forms.'}},{type:'email',delayHours:0,config:{subject:'We got your message',body:'Hi {{name}},\\n\\nThanks — we received your submission and will get back to you soon.'}}]},
+    invoice_paid:{name:'Invoice paid → notify team',trigger:'invoice.paid',steps:[{type:'notify',delayHours:0,config:{title:'Invoice paid',body:'An invoice was just paid.'}}]},
+    proposal_accepted:{name:'Proposal accepted → notify team',trigger:'proposal.accepted',steps:[{type:'notify',delayHours:0,config:{title:'Proposal accepted',body:'A proposal was accepted — time to kick off.'}}]}
+  };
+  async function loadWorkflows(){
+    var r=await api('/api/platform/workflows'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('workflows'); clear(el);
+    var list=d.workflows||[];
+    if(!list.length){el.appendChild(emptyMsg('No automations yet. Create one below.'));return;}
+    list.forEach(function(wf){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(wf.name);t.style.fontWeight='600';left.appendChild(t);
+      var s=document.createElement('div');s.className='sub';s.textContent='on '+esc(wf.trigger)+' \\u00b7 '+((wf.steps||[]).length)+' step(s)';left.appendChild(s);
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
+      var st=document.createElement('span');st.className='pill';st.textContent=esc(wf.status);actions.appendChild(st);
+      var tog=document.createElement('button');tog.className='btn ghost';tog.style.padding='6px 12px';tog.textContent=wf.status==='active'?'Pause':'Resume';
+      tog.addEventListener('click',function(){setWorkflowStatus(wf.id,wf.status==='active'?'paused':'active');});actions.appendChild(tog);
+      var runs=document.createElement('button');runs.className='btn ghost';runs.style.padding='6px 12px';runs.textContent='Runs';
+      runs.addEventListener('click',function(){viewWorkflowRuns(wf.id,wf.name);});actions.appendChild(runs);
+      row.appendChild(actions);
+      el.appendChild(row);
+    });
+  }
+  async function setWorkflowStatus(id,status){
+    var r=await api('/api/platform/workflows/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
+    if(r.ok)loadWorkflows();
+  }
+  async function viewWorkflowRuns(id,name){
+    var modal=document.getElementById('journey');
+    var title=document.getElementById('journeyTitle');
+    var bodyEl=document.getElementById('journeyBody');
+    title.textContent='Runs · '+esc(name);
+    clear(bodyEl); bodyEl.appendChild(emptyMsg('Loading…'));
+    modal.style.display='';
+    var r=await api('/api/platform/workflows/'+encodeURIComponent(id)+'/runs');
+    var d=r.ok?await r.json():{runs:[]};
+    clear(bodyEl);
+    var list=d.runs||[];
+    if(!list.length){bodyEl.appendChild(emptyMsg('No runs yet. This automation runs when its trigger fires.'));return;}
+    list.forEach(function(run){
+      var row=document.createElement('div');row.className='item';row.style.flexDirection='column';row.style.alignItems='stretch';
+      var top=document.createElement('div');top.className='sub';top.textContent=esc(run.status)+' \\u00b7 '+timeAgo(run.createdAt);row.appendChild(top);
+      (run.log||[]).forEach(function(l){
+        var line=document.createElement('div');line.style.fontSize='0.82rem';line.textContent=(l.action)+': '+esc(l.result);row.appendChild(line);
+      });
+      bodyEl.appendChild(row);
+    });
+  }
   async function loadCollections(){
     var r=await api('/api/platform/knowledge/collections'); if(!r.ok)return;
     var d=await r.json();
@@ -1567,6 +1637,7 @@ export function dashboardPage(): string {
       document.getElementById('dripPanel').style.display='';
       document.getElementById('formsPanel').style.display='';
       document.getElementById('knowledgePanel').style.display='';
+      document.getElementById('workflowsPanel').style.display='';
       document.getElementById('auditPanel').style.display='';
       loadBrands();
       loadTeam();
@@ -1576,6 +1647,7 @@ export function dashboardPage(): string {
       loadDripEnrollments();
       loadForms();
       loadCollections();
+      loadWorkflows();
       loadAudit();
     }
     if(u.role==='owner'){
@@ -1682,6 +1754,15 @@ export function dashboardPage(): string {
     document.addEventListener('keydown',function(e){ if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); if(isOpen())close(); else open(); } });
     var ob=document.getElementById('openPalette'); if(ob)ob.addEventListener('click',open);
   })();
+  document.getElementById('addWorkflow').addEventListener('click',async function(){
+    var tpl=WF_TEMPLATES[document.getElementById('wftemplate').value];
+    if(!tpl){setMsg('wfmsg','err','Pick a template.');return;}
+    setMsg('wfmsg','','Creating\\u2026');
+    var r=await api('/api/platform/workflows',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:tpl.name,trigger:tpl.trigger,steps:tpl.steps})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('wfmsg','ok','Automation created and active.');loadWorkflows();}
+    else{setMsg('wfmsg','err',(x.error&&x.error.message)||'Could not create automation.');}
+  });
   document.getElementById('addCollection').addEventListener('click',async function(){
     var n=document.getElementById('kbcname');
     if(!n.value.trim()){setMsg('kbmsg','err','A collection needs a name.');return;}
