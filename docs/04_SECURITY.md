@@ -103,8 +103,10 @@ An in-memory fixed-window `RateLimiter` (`src/platform/security/RateLimiter.ts`)
 guards authentication endpoints, keyed by client IP + target email so both
 spray (many accounts, one IP) and focused (one account) brute-force are
 bounded: **login** 10 attempts / 15 min, **forgot-password** 5 / 15 min.
-Exceeding returns **429** with `Retry-After`. `app.set("trust proxy", true)` so
-the real client IP (behind the cPanel proxy) is used, not the proxy's. *Why:*
+Exceeding returns **429** with `Retry-After`. `app.set("trust proxy", 1)` — we
+trust exactly one hop (the cPanel proxy), not the whole `X-Forwarded-For`
+chain, so a client can't spoof `X-Forwarded-For` to forge `req.ip` and mint a
+fresh bucket per request. *Why:*
 credential-stuffing and reset-spam are the most common attacks on an auth
 surface. In-memory is correct for the single-process deployment; a
 multi-instance deployment swaps the store behind the same interface.

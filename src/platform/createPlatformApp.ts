@@ -151,10 +151,11 @@ export function createPlatformApp(
 
   const app = express();
 
-  // Behind the cPanel HTTPS proxy, so the real client IP is in
-  // X-Forwarded-For — needed for rate limiting to key on real clients rather
-  // than the proxy's single address.
-  app.set("trust proxy", true);
+  // Behind exactly ONE trusted hop (the cPanel HTTPS proxy). Trust only that
+  // single hop, not the whole X-Forwarded-For chain — otherwise a client could
+  // spoof X-Forwarded-For to forge req.ip and bypass rate limiting. With `1`,
+  // Express takes the last entry the trusted proxy appended as the client IP.
+  app.set("trust proxy", 1);
 
   // Stripe webhook — MUST be registered before express.json(), because
   // signature verification needs the exact raw request body. The signature
