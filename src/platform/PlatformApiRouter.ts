@@ -34,6 +34,11 @@ import {
   type PlatformFileService,
 } from "./files/PlatformFileService";
 import type { PlatformFileRecord } from "./files/PlatformFile";
+import {
+  FormValidationError,
+  type PlatformFormService,
+} from "./forms/PlatformFormService";
+import type { FormField } from "./forms/PlatformForm";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -76,6 +81,7 @@ export interface PlatformApiDependencies {
   notifications?: NotificationService;
   search?: SearchService;
   files?: PlatformFileService;
+  forms?: PlatformFormService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -240,6 +246,194 @@ export function createPlatformApiRouter(
             res.json({ groups }),
           )
           .catch(next);
+      },
+    );
+  }
+
+  // ---- Forms ----
+  if (deps.forms) {
+    const forms = deps.forms;
+
+    router.get(
+      "/forms",
+      (_req, res, next) => {
+        forms
+          .list()
+          .then((rows) =>
+            res.json({ forms: rows }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/forms",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(body.name)
+        ) {
+          badRequest(
+            res,
+            "INVALID_FORM",
+            "A form needs a name.",
+          );
+
+          return;
+        }
+
+        forms
+          .create({
+            name: String(body.name),
+            fields: Array.isArray(
+              body.fields,
+            )
+              ? (body.fields as FormField[])
+              : undefined,
+            confirmationMessage:
+              optionalString(
+                body.confirmationMessage,
+              ),
+            notifyEmail:
+              optionalString(
+                body.notifyEmail,
+              ),
+            createLead:
+              body.createLead ==
+              null
+                ? undefined
+                : Boolean(
+                    body.createLead,
+                  ),
+          })
+          .then((form) =>
+            res
+              .status(201)
+              .json({ form }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              FormValidationError
+            ) {
+              badRequest(
+                res,
+                "INVALID_FORM",
+                error.message,
+              );
+
+              return;
+            }
+
+            next(error);
+          });
+      },
+    );
+
+    router.get(
+      "/forms/:id",
+      (req, res, next) => {
+        forms
+          .get(
+            String(req.params.id),
+          )
+          .then((form) =>
+            res.json({ form }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "FORM_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    router.patch(
+      "/forms/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        forms
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              fields: Array.isArray(
+                body.fields,
+              )
+                ? (body.fields as FormField[])
+                : undefined,
+              confirmationMessage:
+                optionalString(
+                  body.confirmationMessage,
+                ),
+              notifyEmail:
+                optionalString(
+                  body.notifyEmail,
+                ),
+              createLead:
+                body.createLead ==
+                null
+                  ? undefined
+                  : Boolean(
+                      body.createLead,
+                    ),
+              status:
+                body.status ===
+                "paused"
+                  ? "paused"
+                  : body.status ===
+                      "active"
+                    ? "active"
+                    : undefined,
+            },
+          )
+          .then((form) =>
+            res.json({ form }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "FORM_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    router.get(
+      "/forms/:id/submissions",
+      (req, res, next) => {
+        forms
+          .listSubmissions(
+            String(req.params.id),
+          )
+          .then((submissions) =>
+            res.json({
+              submissions,
+            }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "FORM_NOT_FOUND",
+            ),
+          );
       },
     );
   }

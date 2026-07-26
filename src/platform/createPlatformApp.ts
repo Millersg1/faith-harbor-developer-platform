@@ -28,6 +28,11 @@ import type { ActivityService } from "./events/ActivityService";
 import type { NotificationService } from "./notifications/NotificationService";
 import type { SearchService } from "./search/SearchService";
 import type { PlatformFileService } from "./files/PlatformFileService";
+import {
+  FormNotFoundError,
+  FormValidationError,
+  type PlatformFormService,
+} from "./forms/PlatformFormService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -51,6 +56,7 @@ import { PlatformUserService } from "./users/PlatformUserService";
 import {
   dashboardPage,
   forgotPasswordPage,
+  formPublicPage,
   landingPage,
   loginPage,
   resetPasswordPage,
@@ -86,6 +92,7 @@ export interface PlatformAppDependencies {
   notifications?: NotificationService;
   search?: SearchService;
   files?: PlatformFileService;
+  forms?: PlatformFormService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -255,6 +262,123 @@ export function createPlatformApp(
       .type("html")
       .send(resetPasswordPage());
   });
+
+  // Public form share page + submit endpoint (NO auth — resolves the tenant
+  // from the form's globally-unique slug).
+  if (deps.forms) {
+    const forms = deps.forms;
+
+    app.get("/f/:slug", (req, res) => {
+      forms
+        .getPublicBySlug(
+          String(req.params.slug),
+        )
+        .then((form) => {
+          if (!form) {
+            res
+              .status(404)
+              .type("html")
+              .send(
+                "<h1>Form not found</h1>",
+              );
+
+            return;
+          }
+
+          res
+            .type("html")
+            .send(
+              formPublicPage({
+                name: form.name,
+                slug: form.slug,
+                fields: form.fields,
+                confirmationMessage:
+                  form.confirmationMessage,
+              }),
+            );
+        })
+        .catch(() =>
+          res
+            .status(500)
+            .type("html")
+            .send(
+              "<h1>Something went wrong</h1>",
+            ),
+        );
+    });
+
+    app.post(
+      "/api/public/forms/:slug/submit",
+      (req, res, next) => {
+        const body =
+          req.body &&
+          typeof req.body ===
+            "object"
+            ? (req.body as Record<
+                string,
+                unknown
+              >)
+            : {};
+        const data =
+          body.data &&
+          typeof body.data ===
+            "object"
+            ? (body.data as Record<
+                string,
+                unknown
+              >)
+            : {};
+
+        forms
+          .submitPublic(
+            String(req.params.slug),
+            data,
+          )
+          .then((result) =>
+            res.json(result),
+          )
+          .catch(
+            (error: unknown) => {
+              if (
+                error instanceof
+                FormNotFoundError
+              ) {
+                res
+                  .status(404)
+                  .json({
+                    error: {
+                      code: "FORM_NOT_FOUND",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
+              if (
+                error instanceof
+                FormValidationError
+              ) {
+                res
+                  .status(400)
+                  .json({
+                    error: {
+                      code: "INVALID_SUBMISSION",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+  }
   app.get("/app", (_req, res) => {
     res
       .type("html")
@@ -384,6 +508,7 @@ export function createPlatformApp(
       notifications: deps.notifications,
       search: deps.search,
       files: deps.files,
+      forms: deps.forms,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

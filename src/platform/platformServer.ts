@@ -81,6 +81,8 @@ import { SearchService } from "./search/SearchService";
 import { PlatformFileService } from "./files/PlatformFileService";
 import { PlatformFileRepository } from "./files/PlatformFileRepository";
 import { LocalStorageProvider } from "./files/StorageProvider";
+import { PlatformFormService } from "./forms/PlatformFormService";
+import { PlatformFormRepository } from "./forms/PlatformFormRepository";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -420,6 +422,11 @@ async function start(): Promise<void> {
     ),
   );
 
+  const forms = new PlatformFormService(
+    new PlatformFormRepository(db),
+    { leads, email, activity },
+  );
+
   const search = new SearchService({
     clients,
     leads,
@@ -466,6 +473,7 @@ async function start(): Promise<void> {
     notifications,
     search,
     files,
+    forms,
     websites,
     aiSettings,
     aiUsage,

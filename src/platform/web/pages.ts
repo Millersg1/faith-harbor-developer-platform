@@ -292,6 +292,105 @@ export function resetPasswordPage(): string {
   });
 }
 
+/**
+ * The public share page for a form. Self-contained; posts submissions as JSON
+ * to the public submit endpoint and shows the form's confirmation on success.
+ */
+export function formPublicPage(form: {
+  name: string;
+  slug: string;
+  fields: Array<{
+    key: string;
+    type: string;
+    label: string;
+    required: boolean;
+    helpText?: string;
+    options?: string[];
+  }>;
+  confirmationMessage: string;
+}): string {
+  const esc = (s: string): string =>
+    String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const fieldHtml = form.fields
+    .map((f) => {
+      const req = f.required
+        ? " required"
+        : "";
+      const help = f.helpText
+        ? `<div class="hint" style="margin-top:2px;">${esc(f.helpText)}</div>`
+        : "";
+      let control = "";
+
+      if (f.type === "textarea") {
+        control = `<textarea id="f_${esc(f.key)}" data-key="${esc(f.key)}"${req} rows="4" style="width:100%;"></textarea>`;
+      } else if (f.type === "select") {
+        const opts = (f.options ?? [])
+          .map(
+            (o) =>
+              `<option value="${esc(o)}">${esc(o)}</option>`,
+          )
+          .join("");
+        control = `<select id="f_${esc(f.key)}" data-key="${esc(f.key)}"${req}><option value="">Choose…</option>${opts}</select>`;
+      } else if (
+        f.type === "checkbox" ||
+        f.type === "consent"
+      ) {
+        control = `<label style="display:flex;gap:8px;align-items:center;font-weight:400;"><input type="checkbox" id="f_${esc(f.key)}" data-key="${esc(f.key)}" data-bool="1"${req} /> ${esc(f.label)}</label>`;
+        return `<div class="f">${control}${help}</div>`;
+      } else {
+        const t =
+          f.type === "email"
+            ? "email"
+            : f.type === "phone"
+              ? "tel"
+              : f.type === "number"
+                ? "number"
+                : f.type === "date"
+                  ? "date"
+                  : "text";
+        control = `<input type="${t}" id="f_${esc(f.key)}" data-key="${esc(f.key)}"${req} />`;
+      }
+
+      return `<div class="f"><label for="f_${esc(f.key)}">${esc(f.label)}${f.required ? " *" : ""}</label>${control}${help}</div>`;
+    })
+    .join("");
+
+  const body = `
+  <div class="center"><form class="card" id="pf" style="max-width:520px;">
+    <h1>${esc(form.name)}</h1>
+    ${fieldHtml}
+    <div class="msg" id="pfmsg"></div>
+    <button class="btn" type="submit">Submit</button>
+  </form></div>`;
+
+  const script = `
+  var f=document.getElementById('pf'),msg=document.getElementById('pfmsg');
+  var SLUG=${JSON.stringify(form.slug)};
+  f.addEventListener('submit',async function(e){
+    e.preventDefault(); msg.className='msg'; msg.textContent='Sending…';
+    var data={};
+    var els=f.querySelectorAll('[data-key]');
+    for(var i=0;i<els.length;i++){var el=els[i];var k=el.getAttribute('data-key');data[k]=el.getAttribute('data-bool')?el.checked:el.value;}
+    try{
+      var r=await fetch('/api/public/forms/'+encodeURIComponent(SLUG)+'/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:data})});
+      var d=await r.json().catch(function(){return {};});
+      if(r.ok){f.innerHTML='<h1>Thank you</h1><p>'+((d.confirmationMessage)||'Your submission was received.').replace(/</g,'&lt;')+'</p>';}
+      else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not submit.';}
+    }catch(_){msg.className='msg err';msg.textContent='Network error.';}
+  });`;
+
+  return layout({
+    title: esc(form.name),
+    body,
+    script,
+  });
+}
+
 export function dashboardPage(): string {
   const body = `
   <div class="topbar"><div class="wrap">
@@ -550,6 +649,17 @@ export function dashboardPage(): string {
           <button class="btn" id="uploadFile" style="width:auto;">Upload</button>
         </div>
         <div class="msg" id="filemsg"></div>
+      </div>
+      <div class="panel" id="formsPanel" style="display:none;">
+        <h2>Forms <span class="pill">owner/admin</span></h2>
+        <p class="hint">Publish a public form to capture leads. Share the link or embed it on any site.</p>
+        <div class="list" id="forms"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="fmname">New form</label><input id="fmname" placeholder="Contact us" /></div>
+          <div class="f" style="max-width:180px;"><label for="fmtemplate">Template</label><select id="fmtemplate"><option value="contact">Contact</option><option value="quote">Quote request</option><option value="intake">Client intake</option></select></div>
+          <button class="btn" id="addForm" style="width:auto;">Create form</button>
+        </div>
+        <div class="msg" id="fmmsg"></div>
       </div>
       <div class="panel" id="emailPanel" style="display:none;">
         <h2>Email <span class="pill">owner/admin</span></h2>
@@ -1164,6 +1274,55 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/files/'+encodeURIComponent(id)+'/delete',{method:'POST'});
     if(r.ok)loadFiles();
   }
+  var FORM_TEMPLATES={
+    contact:[{key:'name',type:'text',label:'Name',required:true},{key:'email',type:'email',label:'Email',required:true},{key:'message',type:'textarea',label:'Message',required:true}],
+    quote:[{key:'name',type:'text',label:'Name',required:true},{key:'email',type:'email',label:'Email',required:true},{key:'phone',type:'phone',label:'Phone',required:false},{key:'service',type:'text',label:'Service needed',required:false},{key:'budget',type:'text',label:'Budget',required:false},{key:'message',type:'textarea',label:'Details',required:false}],
+    intake:[{key:'name',type:'text',label:'Full name',required:true},{key:'email',type:'email',label:'Email',required:true},{key:'phone',type:'phone',label:'Phone',required:false},{key:'company',type:'text',label:'Company',required:false},{key:'message',type:'textarea',label:'How can we help?',required:false}]
+  };
+  async function loadForms(){
+    var r=await api('/api/platform/forms'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('forms'); clear(el);
+    var list=d.forms||[];
+    if(!list.length){el.appendChild(emptyMsg('No forms yet. Create one below.'));return;}
+    list.forEach(function(fm){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(fm.name);t.style.fontWeight='600';left.appendChild(t);
+      var link=document.createElement('a');link.href='/f/'+encodeURIComponent(fm.slug);link.target='_blank';link.rel='noopener';link.textContent='/f/'+esc(fm.slug);link.className='sub';link.style.color='var(--accent,#6366f1)';left.appendChild(link);
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
+      var st=document.createElement('span');st.className='pill';st.textContent=esc(fm.status);actions.appendChild(st);
+      var subs=document.createElement('button');subs.className='btn ghost';subs.style.cssText='width:auto;padding:6px 12px;';subs.textContent='Submissions';
+      subs.addEventListener('click',function(){viewSubmissions(fm.id,fm.name);});actions.appendChild(subs);
+      row.appendChild(actions);
+      el.appendChild(row);
+    });
+  }
+  async function viewSubmissions(id,name){
+    var modal=document.getElementById('journey');
+    var title=document.getElementById('journeyTitle');
+    var bodyEl=document.getElementById('journeyBody');
+    title.textContent='Submissions · '+esc(name);
+    clear(bodyEl); bodyEl.appendChild(emptyMsg('Loading…'));
+    modal.style.display='';
+    var r=await api('/api/platform/forms/'+encodeURIComponent(id)+'/submissions');
+    var d=r.ok?await r.json():{submissions:[]};
+    clear(bodyEl);
+    var list=d.submissions||[];
+    if(!list.length){bodyEl.appendChild(emptyMsg('No submissions yet.'));return;}
+    list.forEach(function(s){
+      var row=document.createElement('div');row.className='item';row.style.flexDirection='column';row.style.alignItems='stretch';
+      var when=document.createElement('div');when.className='sub';when.textContent=timeAgo(s.createdAt);row.appendChild(when);
+      Object.keys(s.data||{}).forEach(function(k){
+        var line=document.createElement('div');line.style.fontSize='0.85rem';
+        var b=document.createElement('strong');b.textContent=esc(k)+': ';line.appendChild(b);
+        line.appendChild(document.createTextNode(esc(String(s.data[k]))));
+        row.appendChild(line);
+      });
+      bodyEl.appendChild(row);
+    });
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -1291,12 +1450,14 @@ export function dashboardPage(): string {
       document.getElementById('portalPanel').style.display='';
       document.getElementById('emailPanel').style.display='';
       document.getElementById('dripPanel').style.display='';
+      document.getElementById('formsPanel').style.display='';
       loadBrands();
       loadTeam();
       loadPortalUsers();
       loadEmails();
       loadDrip();
       loadDripEnrollments();
+      loadForms();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
@@ -1401,6 +1562,16 @@ export function dashboardPage(): string {
     document.addEventListener('keydown',function(e){ if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); if(isOpen())close(); else open(); } });
     var ob=document.getElementById('openPalette'); if(ob)ob.addEventListener('click',open);
   })();
+  document.getElementById('addForm').addEventListener('click',async function(){
+    var n=document.getElementById('fmname'),tpl=document.getElementById('fmtemplate');
+    if(!n.value.trim()){setMsg('fmmsg','err','A form needs a name.');return;}
+    setMsg('fmmsg','','Creating\\u2026');
+    var fields=FORM_TEMPLATES[tpl.value]||FORM_TEMPLATES.contact;
+    var r=await api('/api/platform/forms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n.value.trim(),fields:fields})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';setMsg('fmmsg','ok','Form created — share its link.');loadForms();}
+    else{setMsg('fmmsg','err',(x.error&&x.error.message)||'Could not create form.');}
+  });
   document.getElementById('addSequence').addEventListener('click',async function(){
     var n=document.getElementById('dsname'),tr=document.getElementById('dstrigger');
     if(!n.value.trim()){setMsg('dsmsg','err','A sequence needs a name.');return;}

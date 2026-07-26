@@ -372,6 +372,44 @@ export class PostgresDatabase
         ON password_reset_tokens (organization_id, user_id);
     `);
 
+    // Forms — no-code forms with a globally-unique public slug, + submissions.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS forms (
+        id                   TEXT PRIMARY KEY,
+        organization_id      TEXT NOT NULL
+                               REFERENCES organizations (id) ON DELETE CASCADE,
+        name                 TEXT NOT NULL,
+        slug                 TEXT NOT NULL UNIQUE,
+        fields               JSONB NOT NULL DEFAULT '[]'::jsonb,
+        confirmation_message TEXT NOT NULL DEFAULT '',
+        notify_email         TEXT,
+        create_lead          BOOLEAN NOT NULL DEFAULT TRUE,
+        status               TEXT NOT NULL DEFAULT 'active',
+        created_at           TEXT NOT NULL,
+        updated_at           TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS forms_org_idx
+        ON forms (organization_id, created_at DESC);
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS form_submissions (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        form_id          TEXT NOT NULL
+                           REFERENCES forms (id) ON DELETE CASCADE,
+        data             JSONB NOT NULL DEFAULT '{}'::jsonb,
+        status           TEXT NOT NULL DEFAULT 'new',
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS form_submissions_idx
+        ON form_submissions (organization_id, form_id, created_at DESC);
+    `);
+
     // Files — tenant-scoped metadata; bytes live in a StorageProvider.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS files (
