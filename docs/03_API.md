@@ -61,6 +61,9 @@ validation failures **400**; plan/quota limits **402**.
 | GET | /api/platform/drip/enrollments | user | |
 | POST | /api/platform/emails | owner/admin | send + outbox |
 | GET | /api/platform/emails | owner/admin | outbox + connected flag |
+| GET/POST | /api/platform/workflows | list / owner+admin create | {name,trigger,steps[]} |
+| PATCH | /api/platform/workflows/:id | owner/admin | name/trigger/status/steps |
+| GET | /api/platform/workflows/:id/runs | user | run history + step log |
 
 ## Tenant API — business modules
 

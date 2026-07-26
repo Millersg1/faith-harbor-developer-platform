@@ -55,6 +55,20 @@ Source lives under `src/platform/<module>/`.
 - **Purpose:** tenant email + outbox. **Tables:** emails. **Transport:** SMTP
   or logging. **API:** /emails.
 
+### Workflows (`workflows/`)
+- **Purpose:** tenant automations — a trigger starts a run that advances through
+  timed steps, each running a closed-set action through an existing service.
+- **Trigger:** any activity-event type (e.g. `lead.created`, `form.submitted`),
+  matched by a subscribed `ActivityService` handler. Loop-safe: `workflow.*`
+  events are ignored.
+- **Actions:** `notify` (Notification Center), `email` (tenant email, with
+  `{{name}}`/`{{email}}` personalization), `enroll_sequence` (drip), `note`
+  (activity record). No arbitrary tenant code runs.
+- **Worker:** `runDue()` on the shared drip tick (default 60 s) scans due runs
+  across all tenants and re-enters `runWithTenant` per org to advance each.
+- **Tables:** workflows, workflow_runs (JSONB steps/log). **API:** /workflows
+  (+ /:id, /:id/runs). **UI:** dashboard **Automations** panel (owner/admin).
+
 ## Auth & identity
 - **Auth** (`auth/`): password hashing, requireUser/requireRole, password
   reset. **Sessions** (`sessions/`), **Users** (`users/`), **Signup**

@@ -23,16 +23,18 @@ Prioritized. Effort is rough (S/M/L/XL). Status: ✅ done · 🚧 in progress ·
 | P2: Forms Builder | L | Public capture → leads |
 | P2: Shared Calendar | M | Agenda view |
 | P2: AI Knowledge Base | L | Keyword retrieval + citations |
+| **Hardening pass** | M | Rate limiting, audit logging, daily backups |
+| P3-M1: Workflow engine + Automations UI | XL | Trigger→timed steps→closed-set actions; live-proved |
 | Living documentation (`/docs`) | M | Established 2026-07-26 |
 
 ## Next Release 🚧 / ⏳ (recommended order)
 
 | Feature | Priority | Effort | Depends on | Notes |
 |---|---|---|---|---|
-| **Hardening pass** | P0 | M | — | Login rate-limit, RLS backstop, audit logging, backups |
-| Workflow engine + UI (P3) | P1 | XL | activity spine | Triggers→actions, retries, idempotency |
 | AI tool registry + Command Center (P3) | P1 | XL | modules, KB | Read tools free; write tools require confirmation |
 | AI Employees (P3) | P2 | L | tool registry | Role-based assistants |
+| Workflow engine v2 (P3) | P2 | M | workflow engine | Visual builder, more triggers, retries/idempotency |
+| Postgres RLS backstop + CSRF (hardening) | P1 | M | — | Deferred from the hardening pass |
 
 ## Future ⏳
 

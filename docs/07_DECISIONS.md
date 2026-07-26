@@ -77,6 +77,19 @@ consistency with existing tables. **Trade-offs:** weaker native date ops than
 `timestamptz`; lexicographic range works for UTC ISO. **Implications:** new
 tables may adopt `timestamptz`; a migration could unify later.
 
+## ADR-011 — Vitest `forks` pool (Windows worker stability)
+
+**Date:** 2026-07-26 · **Problem:** Even on the pinned `vite@7`, Vitest 4's
+default worker pool crashed with `Cannot read properties of undefined (reading
+'config')` at the first `describe()` on the Windows dev machine, so the suite
+again could not run locally (CI/Linux unaffected). **Alternatives:** float Vite
+within v7 (7.3.6 reproduced it); rely on CI only. **Decision:** set
+`test.pool = "forks"` in `vitest.config.ts` — child processes instead of worker
+threads. **Reasoning:** the full suite (887) runs cleanly under forks locally
+and on CI; local runs are the pre-push gate that catches failures before they
+reach CI. **Trade-offs:** forks are marginally slower to start than threads.
+**Implications:** complements ADR-010; revisit both when Vitest supports Vite 8.
+
 ## ADR-010 — Pin Vite to 7 (Vitest runner stability)
 
 **Date:** 2026-07-26 · **Problem:** With `vite@8`, the Vitest 4 worker failed

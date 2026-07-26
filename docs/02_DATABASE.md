@@ -96,4 +96,19 @@ erDiagram
   organizations ||--o{ drip_sequences : automates
   drip_sequences ||--o{ drip_steps : has
   drip_sequences ||--o{ drip_enrollments : enrolls
+  organizations ||--o{ workflows : automates
+  workflows ||--o{ workflow_runs : "spawns"
 ```
+
+### Workflow tables (P3-M1)
+
+- **`workflows`** — one automation per row. Columns: `id`, `organization_id`,
+  `name`, `trigger` (an activity-event type, indexed with `organization_id` +
+  `status` for the trigger lookup), `status` (`active` | `paused`), `steps`
+  (JSONB array of `{id,type,delayHours,config}`), `created_at`, `updated_at`.
+- **`workflow_runs`** — one in-flight/finished run per triggered subject.
+  Columns: `id`, `organization_id`, `workflow_id`, `trigger_type`,
+  `subject_type`, `subject_id`, `context_email`, `context_name`, `step_index`,
+  `status` (`running` | `completed` | `failed`), `next_run_at` (indexed for the
+  cross-tenant due scan), `log` (JSONB append-only step log), `created_at`,
+  `updated_at`.

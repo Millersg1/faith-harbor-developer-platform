@@ -4,6 +4,28 @@ All notable changes to All Elite Cloud. Dates are UTC. This is the
 parallel multi-tenant build (`feature/multitenant-foundation`); production
 Faith Harbor OS is unaffected.
 
+## [Unreleased] — Phase 3 in progress (2026-07-26)
+
+### Added
+- **Workflow engine** (P3-M1): tenant automations — a trigger (any activity
+  event type) starts a run that advances through timed steps, each performing
+  a closed-set action (`notify` | `email` | `enroll_sequence` | `note`)
+  through an existing service. No arbitrary tenant code executes. Triggered via
+  a subscribed `ActivityService` handler; advanced by the existing drip tick
+  worker (`workflows.runDue()`). Loop-safe (`workflow.*` events never
+  re-trigger). Fully tenant-scoped; the global due-run scan re-enters
+  `runWithTenant` per org. `lead.created` / `form.submitted` now carry
+  `{email,name}` metadata so steps can email/enroll the contact. API
+  `/api/platform/workflows` (+ `/:id`, `/:id/runs`), dashboard **Automations**
+  panel (owner/admin, 5 templates), 7 tests. Live-proved on staging
+  (trigger → run → notify → completed). Commit `7fac204`.
+
+### Fixed
+- **Vitest forks pool** (ADR-011): Vitest 4's default worker pool crashed with
+  `Cannot read properties of undefined (reading 'config')` on the Windows dev
+  box even on the pinned Vite 7. Set `pool: "forks"` — the full suite (now 887)
+  runs locally again. CI/Linux was never affected.
+
 ## [Unreleased] — Phase 2 complete + documentation established (2026-07-26)
 
 ### Added
