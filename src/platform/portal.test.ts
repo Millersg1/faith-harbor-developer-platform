@@ -227,6 +227,76 @@ describe("Client portal", () => {
     ).toBe("A's project");
   });
 
+  it("lets a portal client change their own password", async () => {
+    const { app, ownerCookie } =
+      await build();
+    const clientA =
+      await makeClient(
+        app,
+        ownerCookie,
+        "Client A",
+      );
+    await request(app)
+      .post(
+        "/api/platform/portal-users",
+      )
+      .set("Cookie", ownerCookie)
+      .send({
+        clientId: clientA,
+        email: "a@client.com",
+        password: "portalpass1",
+      });
+
+    const login = await request(app)
+      .post(
+        "/portal/api/auth/login",
+      )
+      .set("X-Org-Slug", "acme")
+      .send({
+        email: "a@client.com",
+        password: "portalpass1",
+      });
+    const portalCookie =
+      login.headers[
+        "set-cookie"
+      ] as unknown as string[];
+
+    await request(app)
+      .post(
+        "/portal/api/auth/change-password",
+      )
+      .set("Cookie", portalCookie)
+      .send({
+        currentPassword:
+          "portalpass1",
+        newPassword: "newportal123",
+      })
+      .expect(200);
+
+    // Old password no longer works; new one does.
+    const oldPw = await request(app)
+      .post(
+        "/portal/api/auth/login",
+      )
+      .set("X-Org-Slug", "acme")
+      .send({
+        email: "a@client.com",
+        password: "portalpass1",
+      });
+    expect(oldPw.status).toBe(401);
+
+    const newPw = await request(app)
+      .post(
+        "/portal/api/auth/login",
+      )
+      .set("X-Org-Slug", "acme")
+      .send({
+        email: "a@client.com",
+        password: "newportal123",
+      });
+    expect(newPw.status).toBe(200);
+  });
+
   it("rejects wrong portal credentials and unauthenticated access", async () => {
     const { app, ownerCookie } =
       await build();

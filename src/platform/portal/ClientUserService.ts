@@ -110,6 +110,50 @@ export class ClientUserService {
     return user;
   }
 
+  /** Verifies a client user's current password and sets a new one. */
+  async changePassword(
+    id: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    if (
+      !newPassword ||
+      newPassword.length < 8
+    ) {
+      throw new Error(
+        "New password must be at least 8 characters.",
+      );
+    }
+
+    const users =
+      await this.repository.list();
+    const user = users.find(
+      (u) => u.id === id,
+    );
+
+    if (!user) {
+      throw new Error(
+        "Portal user not found.",
+      );
+    }
+
+    if (
+      !verifyPassword(
+        currentPassword,
+        user.passwordHash,
+      )
+    ) {
+      throw new Error(
+        "Your current password is incorrect.",
+      );
+    }
+
+    await this.repository.updatePassword(
+      user.id,
+      hashPassword(newPassword),
+    );
+  }
+
   async list(): Promise<
     readonly ClientUserRecord[]
   > {

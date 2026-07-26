@@ -188,6 +188,52 @@ describe("Team management", () => {
     ).toBe("LAST_OWNER");
   });
 
+  it("lets a user change their own password", async () => {
+    const { app, signup } =
+      await build();
+    const { cookie } = await signup(
+      "Acme",
+      "owner@acme.com",
+    );
+
+    // Wrong current password is rejected.
+    const bad = await request(app)
+      .post(
+        "/auth/change-password",
+      )
+      .set("Cookie", cookie)
+      .send({
+        currentPassword: "nope",
+        newPassword: "newpass12345",
+      });
+    expect(bad.status).toBe(400);
+
+    // Correct current password succeeds.
+    await request(app)
+      .post(
+        "/auth/change-password",
+      )
+      .set("Cookie", cookie)
+      .send({
+        currentPassword:
+          "password123",
+        newPassword: "newpass12345",
+      })
+      .expect(200);
+
+    // The new password now logs in.
+    const relogin = await request(
+      app,
+    )
+      .post("/auth/login")
+      .set("X-Org-Slug", "acme")
+      .send({
+        email: "owner@acme.com",
+        password: "newpass12345",
+      });
+    expect(relogin.status).toBe(200);
+  });
+
   it("blocks self-removal, non-owners, and cross-tenant access", async () => {
     const { app, signup } =
       await build();

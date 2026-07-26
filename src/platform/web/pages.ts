@@ -96,6 +96,12 @@ const STYLES = `
     padding: 3px 9px; border-radius: 999px; background: rgba(45,212,191,0.16); color: var(--accent); }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .secnav { position: sticky; top: 0; z-index: 20; display: flex; gap: 8px; overflow-x: auto;
+    padding: 10px; margin-bottom: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; }
+  .secnav a { white-space: nowrap; font-size: 0.78rem; color: var(--muted); text-decoration: none;
+    padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px; }
+  .secnav a:hover { color: var(--text); border-color: var(--accent); }
+  [id^="sec_"] { scroll-margin-top: 64px; }
   .dns { margin-top: 10px; padding: 12px 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; }
   .dns .hint { margin-bottom: 10px; }
   .dns .rec { display: flex; flex-direction: column; gap: 8px; }
@@ -221,6 +227,7 @@ export function dashboardPage(): string {
     </div>
   </div></div>
   <div class="wrap">
+    <div class="secnav" id="secnav"></div>
     <div class="panel" id="billingPanel" style="margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
         <div>
@@ -424,6 +431,16 @@ export function dashboardPage(): string {
           <button class="btn" id="addPortalUser" style="width:auto;">Create login</button>
         </div>
         <div class="msg" id="pumsg"></div>
+      </div>
+      <div class="panel">
+        <h2>Account</h2>
+        <p class="hint">Change your password.</p>
+        <label for="cpcur">Current password</label>
+        <input id="cpcur" type="password" autocomplete="current-password" />
+        <label for="cpnew">New password</label>
+        <input id="cpnew" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+        <button class="btn" id="changePw" style="width:auto;margin-top:12px;">Change password</button>
+        <div class="msg" id="cpmsg"></div>
       </div>
       <div class="panel" id="aiPanel" style="display:none;">
         <h2>AI settings <span class="pill">owner</span></h2>
@@ -867,6 +884,17 @@ export function dashboardPage(): string {
       });
     }
   }
+  function buildSecNav(){
+    var nav=document.getElementById('secnav'); if(!nav)return; clear(nav);
+    var panels=document.querySelectorAll('.wrap .panel');
+    for(var i=0;i<panels.length;i++){
+      var p=panels[i]; if(p.style.display==='none')continue;
+      var h=p.querySelector('h2'); if(!h)continue;
+      if(!p.id)p.id='sec_'+i;
+      var label=(h.firstChild&&h.firstChild.textContent||h.textContent||'').trim();
+      var a=document.createElement('a');a.href='#'+p.id;a.textContent=label;nav.appendChild(a);
+    }
+  }
   async function init(){
     var me=await api('/auth/me');
     if(!me.ok){window.location='/login';return;}
@@ -891,7 +919,17 @@ export function dashboardPage(): string {
     }
     await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
+    buildSecNav();
   }
+  document.getElementById('changePw').addEventListener('click',async function(){
+    var c=document.getElementById('cpcur'),n=document.getElementById('cpnew');
+    if(!c.value||!n.value){setMsg('cpmsg','err','Both fields are required.');return;}
+    setMsg('cpmsg','','Updating\\u2026');
+    var r=await api('/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:c.value,newPassword:n.value})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){c.value='';n.value='';setMsg('cpmsg','ok','Password changed.');}
+    else{setMsg('cpmsg','err',(x.error&&x.error.message)||'Could not change password.');}
+  });
   document.getElementById('addPortalUser').addEventListener('click',async function(){
     var c=document.getElementById('puclient'),e=document.getElementById('puemail'),p=document.getElementById('pupass');
     if(!c.value||!e.value.trim()||!p.value.trim()){setMsg('pumsg','err','Client, email, and temp password are required.');return;}

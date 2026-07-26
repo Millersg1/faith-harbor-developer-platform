@@ -166,6 +166,74 @@ export function createPortalRouter(
       deps.portalSessions,
     );
 
+  router.post(
+    "/auth/change-password",
+    guard,
+    (req: PortalRequest, res, next) => {
+      const body =
+        (req.body as
+          | Record<string, unknown>
+          | undefined) ?? {};
+      const current =
+        typeof body.currentPassword ===
+        "string"
+          ? body.currentPassword
+          : "";
+      const next_ =
+        typeof body.newPassword ===
+        "string"
+          ? body.newPassword
+          : "";
+
+      if (!current || !next_) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_REQUEST",
+            message:
+              "Current and new passwords are required.",
+          },
+        });
+
+        return;
+      }
+
+      deps.clientUsers
+        .changePassword(
+          req.portal!.clientUserId,
+          current,
+          next_,
+        )
+        .then(() =>
+          res.json({ ok: true }),
+        )
+        .catch(
+          (error: unknown) => {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "";
+
+            if (
+              /incorrect|at least 8/i.test(
+                message,
+              )
+            ) {
+              res.status(400).json({
+                error: {
+                  code: "INVALID_PASSWORD",
+                  message,
+                },
+              });
+
+              return;
+            }
+
+            next(error);
+          },
+        );
+    },
+  );
+
   router.get(
     "/me",
     guard,

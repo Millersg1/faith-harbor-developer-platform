@@ -125,6 +125,41 @@ export class ClientUserRepository extends TenantScopedRepository {
     );
   }
 
+  async updatePassword(
+    id: string,
+    passwordHash: string,
+  ): Promise<void> {
+    const organizationId =
+      this.tenantId();
+
+    if (this.db) {
+      await this.db.query(
+        "UPDATE portal_users SET password_hash = $3 WHERE id = $1 AND organization_id = $2",
+        [
+          id,
+          organizationId,
+          passwordHash,
+        ],
+      );
+
+      return;
+    }
+
+    const existing =
+      this.memory.get(id);
+
+    if (
+      existing &&
+      existing.organizationId ===
+        organizationId
+    ) {
+      this.memory.set(id, {
+        ...existing,
+        passwordHash,
+      });
+    }
+  }
+
   async delete(
     id: string,
   ): Promise<void> {

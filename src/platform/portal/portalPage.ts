@@ -56,6 +56,13 @@ export function portalPage(): string {
     <div class="card"><h2>Proposals</h2><div id="proposals"><div class="empty">Loading…</div></div></div>
     <div class="card"><h2>Invoices</h2><div id="invoices"><div class="empty">Loading…</div></div></div>
     <div class="card"><h2>Support tickets</h2><div id="tickets"><div class="empty">Loading…</div></div></div>
+    <div class="card">
+      <h2>Change password</h2>
+      <label for="pcur">Current password</label><input id="pcur" type="password" autocomplete="current-password" />
+      <label for="pnew">New password</label><input id="pnew" type="password" autocomplete="new-password" placeholder="At least 8 characters" />
+      <button class="btn" id="pchg">Change password</button>
+      <div class="msg" id="pchgmsg"></div>
+    </div>
   </div>
 </div>
 <script>
@@ -94,6 +101,14 @@ export function portalPage(): string {
     else{var x=await r.json().catch(function(){return{};});document.getElementById('lmsg').className='msg err';document.getElementById('lmsg').textContent=(x.error&&x.error.message)||'Could not sign in.';}
   });
   document.getElementById('logoutBtn').addEventListener('click',async function(){await api('/auth/logout',{method:'POST'});show('login');});
+  document.getElementById('pchg').addEventListener('click',async function(){
+    var c=document.getElementById('pcur'),n=document.getElementById('pnew'),m=document.getElementById('pchgmsg');
+    if(!c.value||!n.value){m.className='msg err';m.textContent='Both fields are required.';return;}
+    m.className='msg';m.textContent='Updating…';
+    var r=await api('/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:c.value,newPassword:n.value})});
+    if(r.ok){c.value='';n.value='';m.className='msg ok';m.textContent='Password changed.';}
+    else{var x=await r.json().catch(function(){return{};});m.className='msg err';m.textContent=(x.error&&x.error.message)||'Could not change password.';}
+  });
   loadAll();
 </script>
 </body>

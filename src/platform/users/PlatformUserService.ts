@@ -181,6 +181,47 @@ export class PlatformUserService {
     await this.repository.delete(id);
   }
 
+  /**
+   * Changes a user's own password after verifying their current one.
+   */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    if (
+      !newPassword ||
+      newPassword.length < 8
+    ) {
+      throw new Error(
+        "New password must be at least 8 characters.",
+      );
+    }
+
+    const user =
+      await this.get(userId);
+
+    if (
+      !verifyPassword(
+        currentPassword,
+        user.passwordHash,
+      )
+    ) {
+      throw new Error(
+        "Your current password is incorrect.",
+      );
+    }
+
+    await this.repository.update({
+      ...user,
+      passwordHash: hashPassword(
+        newPassword,
+      ),
+      updatedAt:
+        new Date().toISOString(),
+    });
+  }
+
   private async assertNotLastOwner(): Promise<void> {
     const owners = (
       await this.repository.list()

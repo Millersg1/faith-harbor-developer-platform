@@ -288,6 +288,72 @@ export function createAuthRouter(
     },
   );
 
+  router.post(
+    "/change-password",
+    deps.requireUser,
+    (req, res, next) => {
+      const auth = (
+        req as AuthedRequest
+      ).auth;
+      const body = (req.body ??
+        {}) as {
+        currentPassword?: unknown;
+        newPassword?: unknown;
+      };
+
+      if (
+        !auth ||
+        typeof body.currentPassword !==
+          "string" ||
+        typeof body.newPassword !==
+          "string"
+      ) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_REQUEST",
+            message:
+              "Current and new passwords are required.",
+          },
+        });
+
+        return;
+      }
+
+      deps.users
+        .changePassword(
+          auth.user.id,
+          body.currentPassword,
+          body.newPassword,
+        )
+        .then(() =>
+          res.json({ ok: true }),
+        )
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "";
+
+          if (
+            /incorrect|at least 8/i.test(
+              message,
+            )
+          ) {
+            res.status(400).json({
+              error: {
+                code: "INVALID_PASSWORD",
+                message,
+              },
+            });
+
+            return;
+          }
+
+          next(error);
+        });
+    },
+  );
+
   router.get(
     "/me",
     deps.requireUser,
