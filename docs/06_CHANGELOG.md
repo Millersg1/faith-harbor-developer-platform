@@ -32,9 +32,13 @@ Faith Harbor OS is unaffected.
   uploads (File service still caps decoded size well below this).
 
 ### Fixed
-- **CI green again** (red 2026-07-22 → 2026-07-25): test files had type errors
-  that only `tsc -p tsconfig.json` (which includes tests) caught. Commit
-  `884497a`.
+- **CI actually green** — two causes: (1) test-file type errors under
+  `tsconfig.json` (fixed in `884497a`), and (2) a real test failure in
+  `drip.test.ts` (enroll-before-step returned 500 not the expected 400 —
+  `validationOrNext` didn't recognise the "at least"/"needs a"/"must be"
+  phrasings). Broadened the validation matcher; full suite now 880 passing.
+- **Pinned Vite to 7** (ADR-010) so the Vitest suite runs locally (Vite 8 broke
+  the worker on Windows) — this is how the drip failure was finally caught.
 
 ### Security
 - **Automated database backups** — daily `pg_dump` → gzip →

@@ -12,14 +12,15 @@ typecheck && test && build.
 > `npm run typecheck` before pushing, not just `npm run build`. (This exact gap
 > made CI red 2026-07-22 → 25.)
 
-## Known local limitation
+## Local runner
 
-On the current dev machine the Vitest worker fails to initialize ("Cannot read
-properties of undefined (reading 'config')") because an npm allow-scripts policy
-blocks esbuild's postinstall binary. Mitigations: `node
-node_modules/esbuild/install.js`; clear `node_modules/.vite`. CI (Linux) runs
-the suite normally. When the local runner is blocked, features are verified via
-`typecheck` + `build` + **live HTTP/in-process proofs** against staging.
+The suite runs locally with `npm test`. Vite is pinned to **v7** (see
+ADR-010): Vite 8 broke the Vitest worker on Windows with "Cannot read
+properties of undefined (reading 'config')" — on v7 the full suite runs
+(880 tests). If a fresh install ever leaves esbuild's native binary missing
+(an npm allow-scripts policy can block its postinstall), run
+`node node_modules/esbuild/install.js` and clear `node_modules/.vite`.
+CI (Linux) runs `npm ci && npm run validate`.
 
 ## Test categories present
 

@@ -77,6 +77,20 @@ consistency with existing tables. **Trade-offs:** weaker native date ops than
 `timestamptz`; lexicographic range works for UTC ISO. **Implications:** new
 tables may adopt `timestamptz`; a migration could unify later.
 
+## ADR-010 — Pin Vite to 7 (Vitest runner stability)
+
+**Date:** 2026-07-26 · **Problem:** With `vite@8`, the Vitest 4 worker failed
+to initialize on the Windows dev machine (`Cannot read properties of undefined
+(reading 'config')`), so the suite could not be run locally — features were
+verified only via typecheck/build/live-proofs, and a real test failure
+(`drip.test.ts` returning 500 vs an expected 400) slipped through to CI.
+**Alternatives:** keep vite@8 and rely on CI only; switch pool config.
+**Decision:** pin `vite@^7` (vitest@4's officially supported major).
+**Reasoning:** the full suite (880 tests) runs cleanly on v7 locally and on CI;
+being able to run tests locally is essential to catch failures before pushing.
+**Trade-offs:** not on the newest Vite. **Implications:** revisit when Vitest
+officially supports Vite 8.
+
 ## ADR-009 — Documentation as Definition of Done
 
 **Date:** 2026-07-26 · **Decision:** `/docs` is living documentation; no feature

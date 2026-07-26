@@ -5291,7 +5291,7 @@ function validationOrNext(
       : "";
 
   if (
-    /required|not found|line item|valid/i.test(
+    /required|not found|line item|valid|at least|must be|needs a/i.test(
       message,
     )
   ) {
