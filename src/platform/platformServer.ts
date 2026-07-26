@@ -487,6 +487,7 @@ async function start(): Promise<void> {
     files,
     forms,
     calendar,
+    knowledge,
     websites,
     aiSettings,
     aiUsage,
