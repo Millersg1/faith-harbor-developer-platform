@@ -321,6 +321,15 @@ export function dashboardPage(): string {
       <div style="padding:8px 14px;font-size:0.72rem;opacity:0.6;border-top:1px solid var(--line,#eee);">&#8593;&#8595; to navigate · Enter to open · Esc to close</div>
     </div>
   </div>
+  <div id="journey" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;padding:8vh 16px 16px;">
+    <div style="max-width:600px;margin:0 auto;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,0.35);overflow:hidden;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line,#eee);">
+        <strong id="journeyTitle" style="font-size:0.95rem;">Journey</strong>
+        <button class="btn ghost" id="journeyClose" style="width:auto;padding:4px 10px;">Close</button>
+      </div>
+      <div id="journeyBody" style="max-height:64vh;overflow:auto;padding:6px 6px 10px;"><div class="empty" style="padding:16px;">Loading…</div></div>
+    </div>
+  </div>
   <div class="wrap">
     <div class="secnav" id="secnav"></div>
     <div class="panel" id="billingPanel" style="margin-bottom:18px;">
@@ -641,7 +650,7 @@ export function dashboardPage(): string {
   async function loadClients(){
     var r=await api('/api/platform/clients'); if(!r.ok)return;
     var d=await r.json(); clientsCache=d.clients||[];
-    renderList('clients',clientsCache,function(c){return item(esc(c.name),esc(c.email||''),esc(c.status));});
+    renderList('clients',clientsCache,function(c){var row=item(esc(c.name),esc(c.email||''),esc(c.status));row.style.cursor='pointer';row.title='View journey';row.addEventListener('click',function(){openJourney('client',c.id,c.name);});return row;});
     fillClientSelects();
   }
   async function loadProjects(){
@@ -746,7 +755,7 @@ export function dashboardPage(): string {
     list.forEach(function(l){
       var row=document.createElement('div');row.className='item';
       var left=document.createElement('div');
-      var nm=document.createElement('div');nm.textContent=esc(l.name);nm.style.fontWeight='600';left.appendChild(nm);
+      var nm=document.createElement('div');nm.textContent=esc(l.name);nm.style.fontWeight='600';nm.style.cursor='pointer';nm.title='View journey';nm.addEventListener('click',function(){openJourney('lead',l.id,l.name);});left.appendChild(nm);
       var parts=[];if(l.company)parts.push(esc(l.company));if(l.estimatedValue)parts.push('$'+Number(l.estimatedValue).toLocaleString());
       if(parts.length){var sub=document.createElement('div');sub.className='sub';sub.textContent=parts.join(' \\u00b7 ');left.appendChild(sub);}
       row.appendChild(left);
@@ -1064,6 +1073,36 @@ export function dashboardPage(): string {
       el.appendChild(row);
     });
   }
+  async function openJourney(subjectType, subjectId, name){
+    var modal=document.getElementById('journey');
+    var title=document.getElementById('journeyTitle');
+    var bodyEl=document.getElementById('journeyBody');
+    if(!modal||!bodyEl)return;
+    title.textContent='Journey · '+esc(name||'');
+    clear(bodyEl); bodyEl.appendChild(emptyMsg('Loading…'));
+    modal.style.display='';
+    var r=await api('/api/platform/activity?limit=50&subjectType='+encodeURIComponent(subjectType)+'&subjectId='+encodeURIComponent(subjectId));
+    var d=r.ok?await r.json():{events:[]};
+    clear(bodyEl);
+    var list=d.events||[];
+    if(!list.length){bodyEl.appendChild(emptyMsg('No activity recorded yet for this record.'));return;}
+    list.forEach(function(e){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(e.title);t.style.fontWeight='600';left.appendChild(t);
+      var parts=[];if(e.actorName)parts.push(esc(e.actorName));parts.push(timeAgo(e.createdAt));
+      var s=document.createElement('div');s.className='sub';s.textContent=parts.join(' \\u00b7 ');left.appendChild(s);
+      row.appendChild(left);
+      if(e.summary){var p=document.createElement('span');p.className='pill';p.textContent=esc(e.summary);row.appendChild(p);}
+      bodyEl.appendChild(row);
+    });
+  }
+  (function(){
+    var modal=document.getElementById('journey');
+    var close=document.getElementById('journeyClose');
+    if(close)close.addEventListener('click',function(){modal.style.display='none';});
+    if(modal)modal.addEventListener('click',function(e){if(e.target===modal)modal.style.display='none';});
+  })();
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;

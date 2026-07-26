@@ -409,6 +409,32 @@ describe("Activity + notifications API", () => {
     ).toBe(0);
   });
 
+  it("records a client-created event on the client's journey", async () => {
+    const { app, cookie } =
+      await buildApp();
+
+    const created = await request(app)
+      .post("/api/platform/clients")
+      .set("Cookie", cookie)
+      .send({ name: "Journey Co" });
+    expect(created.status).toBe(201);
+    const clientId =
+      created.body.client.id;
+
+    const journey = await request(app)
+      .get(
+        `/api/platform/activity?subjectType=client&subjectId=${clientId}`,
+      )
+      .set("Cookie", cookie);
+    expect(journey.status).toBe(200);
+    expect(
+      journey.body.events,
+    ).toHaveLength(1);
+    expect(
+      journey.body.events[0].type,
+    ).toBe("client.created");
+  });
+
   it("rejects an unauthenticated caller", async () => {
     const { app } = await buildApp();
 

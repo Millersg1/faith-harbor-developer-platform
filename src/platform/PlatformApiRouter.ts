@@ -757,11 +757,19 @@ export function createPlatformApiRouter(
             body.company,
           ),
         })
-        .then((client) =>
+        .then((client) => {
+          void deps.activity?.record({
+            ...actor(req),
+            type: "client.created",
+            subjectType: "client",
+            subjectId: client.id,
+            title: `Client added: ${client.name}`,
+          });
+
           res
             .status(201)
-            .json({ client }),
-        )
+            .json({ client });
+        })
         .catch(next);
     },
   );
@@ -878,11 +886,25 @@ export function createPlatformApiRouter(
             ),
             lineItems,
           })
-          .then((invoice) =>
+          .then((invoice) => {
+            if (invoice.clientId) {
+              void deps.activity?.record(
+                {
+                  ...actor(req),
+                  type: "invoice.created",
+                  subjectType: "client",
+                  subjectId:
+                    invoice.clientId,
+                  title: `Invoice ${invoice.number} created`,
+                  summary: `$${Number(invoice.amount || 0).toLocaleString()}`,
+                },
+              );
+            }
+
             res
               .status(201)
-              .json({ invoice }),
-          )
+              .json({ invoice });
+          })
           .catch((error: unknown) =>
             validationOrNext(
               error,
@@ -1364,8 +1386,13 @@ export function createPlatformApiRouter(
             void deps.activity?.record({
               ...actor(req),
               type: "ticket.created",
-              subjectType: "ticket",
-              subjectId: ticket.id,
+              subjectType:
+                ticket.clientId
+                  ? "client"
+                  : "ticket",
+              subjectId:
+                ticket.clientId ||
+                ticket.id,
               title: `Ticket opened: ${ticket.subject}`,
               summary: ticket.priority
                 ? `Priority: ${ticket.priority}`
@@ -1573,6 +1600,17 @@ export function createPlatformApiRouter(
               lead.name,
             );
 
+            void deps.activity?.record({
+              ...actor(req),
+              type: "lead.created",
+              subjectType: "lead",
+              subjectId: lead.id,
+              title: `Lead added: ${lead.name}`,
+              summary: lead.company
+                ? String(lead.company)
+                : undefined,
+            });
+
             res
               .status(201)
               .json({ lead });
@@ -1656,9 +1694,25 @@ export function createPlatformApiRouter(
               ),
             },
           )
-          .then((lead) =>
-            res.json({ lead }),
-          )
+          .then((lead) => {
+            if (
+              isNonEmptyString(
+                body.status,
+              )
+            ) {
+              void deps.activity?.record(
+                {
+                  ...actor(req),
+                  type: "lead.stage_changed",
+                  subjectType: "lead",
+                  subjectId: lead.id,
+                  title: `Lead moved to ${lead.status}: ${lead.name}`,
+                },
+              );
+            }
+
+            res.json({ lead });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -2136,8 +2190,11 @@ export function createPlatformApiRouter(
                   ...actor(req),
                   type: `proposal.${proposal.status}`,
                   subjectType:
-                    "proposal",
+                    proposal.clientId
+                      ? "client"
+                      : "proposal",
                   subjectId:
+                    proposal.clientId ||
                     proposal.id,
                   title: `Proposal ${proposal.status}: ${proposal.title}`,
                   summary: proposal.amount
