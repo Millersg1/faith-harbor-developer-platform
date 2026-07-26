@@ -28,6 +28,12 @@ import type { DripService } from "./drip/DripService";
 import type { ActivityService } from "./events/ActivityService";
 import type { NotificationService } from "./notifications/NotificationService";
 import type { SearchService } from "./search/SearchService";
+import {
+  FileQuotaError,
+  FileValidationError,
+  type PlatformFileService,
+} from "./files/PlatformFileService";
+import type { PlatformFileRecord } from "./files/PlatformFile";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -69,6 +75,7 @@ export interface PlatformApiDependencies {
   activity?: ActivityService;
   notifications?: NotificationService;
   search?: SearchService;
+  files?: PlatformFileService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -233,6 +240,233 @@ export function createPlatformApiRouter(
             res.json({ groups }),
           )
           .catch(next);
+      },
+    );
+  }
+
+  // ---- Files ----
+  if (deps.files) {
+    const files = deps.files;
+
+    router.get(
+      "/files",
+      (req, res, next) => {
+        files
+          .list({
+            subjectType:
+              optionalString(
+                req.query.subjectType,
+              ),
+            subjectId: optionalString(
+              req.query.subjectId,
+            ),
+          })
+          .then((rows) =>
+            res.json({
+              files: rows.map(
+                publicFile,
+              ),
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.get(
+      "/files/usage",
+      (_req, res, next) => {
+        files
+          .usage()
+          .then((usage) =>
+            res.json(usage),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/files",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          ) ||
+          !isNonEmptyString(
+            body.data,
+          ) ||
+          !isNonEmptyString(
+            body.mimeType,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_FILE",
+            "A file name, type, and contents are required.",
+          );
+
+          return;
+        }
+
+        files
+          .upload({
+            name: String(body.name),
+            mimeType: String(
+              body.mimeType,
+            ),
+            data: String(body.data),
+            tags: Array.isArray(
+              body.tags,
+            )
+              ? body.tags.map(String)
+              : undefined,
+            subjectType:
+              optionalString(
+                body.subjectType,
+              ),
+            subjectId: optionalString(
+              body.subjectId,
+            ),
+            uploadedBy:
+              actor(req).actorId,
+          })
+          .then((file) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "file.uploaded",
+              subjectType:
+                file.subjectType ||
+                "file",
+              subjectId:
+                file.subjectId ||
+                file.id,
+              title: `File uploaded: ${file.name}`,
+            });
+
+            res
+              .status(201)
+              .json({
+                file: publicFile(
+                  file,
+                ),
+              });
+          })
+          .catch(
+            (error: unknown) => {
+              if (
+                error instanceof
+                FileQuotaError
+              ) {
+                res
+                  .status(402)
+                  .json({
+                    error: {
+                      code: "QUOTA_FULL",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
+              if (
+                error instanceof
+                FileValidationError
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_FILE",
+                  error.message,
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+
+    router.get(
+      "/files/:id/download",
+      (req, res, next) => {
+        files
+          .download(
+            String(req.params.id),
+          )
+          .then(({ file, data }) => {
+            res.setHeader(
+              "Content-Type",
+              file.mimeType,
+            );
+            res.setHeader(
+              "X-Content-Type-Options",
+              "nosniff",
+            );
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${file.name.replace(/["\\]/g, "")}"`,
+            );
+            res.send(data);
+          })
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "FILE_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    router.post(
+      "/files/:id/delete",
+      (req, res, next) => {
+        files
+          .softDelete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "FILE_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    router.post(
+      "/files/:id/restore",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        files
+          .restore(
+            String(req.params.id),
+          )
+          .then((file) =>
+            res.json({
+              file: publicFile(file),
+            }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "FILE_NOT_FOUND",
+            ),
+          );
       },
     );
   }
@@ -4203,6 +4437,25 @@ function actor(req: unknown): {
     actorName:
       auth?.user.name ||
       auth?.user.email,
+  };
+}
+
+/**
+ * The client-safe shape of a file — omits the internal storage key.
+ */
+function publicFile(
+  file: PlatformFileRecord,
+): Record<string, unknown> {
+  return {
+    id: file.id,
+    name: file.name,
+    mimeType: file.mimeType,
+    size: file.size,
+    tags: file.tags,
+    subjectType: file.subjectType,
+    subjectId: file.subjectId,
+    uploadedBy: file.uploadedBy,
+    createdAt: file.createdAt,
   };
 }
 

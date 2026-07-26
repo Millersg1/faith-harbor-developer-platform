@@ -78,6 +78,9 @@ import { NotificationService } from "./notifications/NotificationService";
 import { NotificationRepository } from "./notifications/NotificationRepository";
 import { createNotificationActivityHandler } from "./notifications/NotificationActivityHandler";
 import { SearchService } from "./search/SearchService";
+import { PlatformFileService } from "./files/PlatformFileService";
+import { PlatformFileRepository } from "./files/PlatformFileRepository";
+import { LocalStorageProvider } from "./files/StorageProvider";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -409,6 +412,14 @@ async function start(): Promise<void> {
     }
   }
 
+  const files = new PlatformFileService(
+    new PlatformFileRepository(db),
+    new LocalStorageProvider(
+      process.env.FILE_STORAGE_DIR ||
+        `${process.env.HOME || "."}/aecloud/storage`,
+    ),
+  );
+
   const search = new SearchService({
     clients,
     leads,
@@ -454,6 +465,7 @@ async function start(): Promise<void> {
     activity,
     notifications,
     search,
+    files,
     websites,
     aiSettings,
     aiUsage,

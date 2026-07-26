@@ -541,6 +541,16 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="pumsg"></div>
       </div>
+      <div class="panel" id="filesPanel">
+        <h2>Files</h2>
+        <p class="hint" id="filesUsage">Upload and manage your documents and assets.</p>
+        <div class="list" id="files"><div class="empty">Loading…</div></div>
+        <div class="inline" style="align-items:center;">
+          <input id="fileInput" type="file" style="max-width:280px;" />
+          <button class="btn" id="uploadFile" style="width:auto;">Upload</button>
+        </div>
+        <div class="msg" id="filemsg"></div>
+      </div>
       <div class="panel" id="emailPanel" style="display:none;">
         <h2>Email <span class="pill">owner/admin</span></h2>
         <p class="hint" id="emailStatus">Send email and view your outbox.</p>
@@ -1103,6 +1113,57 @@ export function dashboardPage(): string {
     if(close)close.addEventListener('click',function(){modal.style.display='none';});
     if(modal)modal.addEventListener('click',function(e){if(e.target===modal)modal.style.display='none';});
   })();
+  function fmtBytes(n){
+    n=Number(n||0);
+    if(n<1024)return n+' B';
+    if(n<1048576)return (n/1024).toFixed(1)+' KB';
+    if(n<1073741824)return (n/1048576).toFixed(1)+' MB';
+    return (n/1073741824).toFixed(2)+' GB';
+  }
+  async function loadFiles(){
+    var r=await api('/api/platform/files'); if(!r.ok)return;
+    var d=await r.json();
+    var u=await api('/api/platform/files/usage');
+    if(u.ok){var ud=await u.json();document.getElementById('filesUsage').textContent='Storage: '+fmtBytes(ud.usedBytes)+' of '+fmtBytes(ud.quotaBytes)+' used.';}
+    var el=document.getElementById('files'); clear(el);
+    var list=d.files||[];
+    if(!list.length){el.appendChild(emptyMsg('No files yet. Upload a document below.'));return;}
+    list.forEach(function(f){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(f.name);t.style.fontWeight='600';left.appendChild(t);
+      var s=document.createElement('div');s.className='sub';s.textContent=fmtBytes(f.size)+' \\u00b7 '+timeAgo(f.createdAt);left.appendChild(s);
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;';
+      var dl=document.createElement('a');dl.className='btn ghost';dl.style.cssText='width:auto;padding:6px 12px;';dl.textContent='Download';
+      dl.href='/api/platform/files/'+encodeURIComponent(f.id)+'/download';actions.appendChild(dl);
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.cssText='width:auto;padding:6px 12px;';rm.textContent='Delete';
+      rm.addEventListener('click',function(){deleteFile(f.id);});actions.appendChild(rm);
+      row.appendChild(actions);
+      el.appendChild(row);
+    });
+  }
+  document.getElementById('uploadFile').addEventListener('click',function(){
+    var inp=document.getElementById('fileInput');
+    var file=inp.files&&inp.files[0];
+    if(!file){setMsg('filemsg','err','Choose a file first.');return;}
+    if(file.size>10*1048576){setMsg('filemsg','err','Files must be 10 MB or smaller.');return;}
+    setMsg('filemsg','','Uploading\\u2026');
+    var reader=new FileReader();
+    reader.onload=async function(){
+      var b64=String(reader.result).split(',')[1]||'';
+      var r=await api('/api/platform/files',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:file.name,mimeType:file.type||'application/octet-stream',data:b64})});
+      var x=await r.json().catch(function(){return {};});
+      if(r.ok){inp.value='';setMsg('filemsg','ok','Uploaded.');loadFiles();}
+      else{setMsg('filemsg','err',(x.error&&x.error.message)||'Upload failed.');}
+    };
+    reader.onerror=function(){setMsg('filemsg','err','Could not read the file.');};
+    reader.readAsDataURL(file);
+  });
+  async function deleteFile(id){
+    var r=await api('/api/platform/files/'+encodeURIComponent(id)+'/delete',{method:'POST'});
+    if(r.ok)loadFiles();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -1244,6 +1305,7 @@ export function dashboardPage(): string {
     await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
     await loadActivity();
+    await loadFiles();
     refreshUnread();
     setInterval(refreshUnread, 45000);
     buildSecNav();

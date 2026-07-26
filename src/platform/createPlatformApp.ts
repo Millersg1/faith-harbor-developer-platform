@@ -27,6 +27,7 @@ import type { DripService } from "./drip/DripService";
 import type { ActivityService } from "./events/ActivityService";
 import type { NotificationService } from "./notifications/NotificationService";
 import type { SearchService } from "./search/SearchService";
+import type { PlatformFileService } from "./files/PlatformFileService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -84,6 +85,7 @@ export interface PlatformAppDependencies {
   activity?: ActivityService;
   notifications?: NotificationService;
   search?: SearchService;
+  files?: PlatformFileService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -188,7 +190,9 @@ export function createPlatformApp(
     },
   );
 
-  app.use(express.json());
+  // 20mb accommodates base64-encoded file uploads (the File service caps the
+  // decoded size well below this); ordinary API bodies are tiny.
+  app.use(express.json({ limit: "20mb" }));
 
   app.get(
     "/health",
@@ -379,6 +383,7 @@ export function createPlatformApp(
       activity: deps.activity,
       notifications: deps.notifications,
       search: deps.search,
+      files: deps.files,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

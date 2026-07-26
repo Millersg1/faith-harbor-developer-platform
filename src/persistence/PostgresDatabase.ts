@@ -372,6 +372,33 @@ export class PostgresDatabase
         ON password_reset_tokens (organization_id, user_id);
     `);
 
+    // Files — tenant-scoped metadata; bytes live in a StorageProvider.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS files (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        stored_key       TEXT NOT NULL,
+        mime_type        TEXT NOT NULL,
+        size             BIGINT NOT NULL DEFAULT 0,
+        tags             JSONB NOT NULL DEFAULT '[]'::jsonb,
+        subject_type     TEXT,
+        subject_id       TEXT,
+        uploaded_by      TEXT,
+        deleted_at       TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS files_org_idx
+        ON files (organization_id, deleted_at, created_at DESC);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS files_subject_idx
+        ON files (organization_id, subject_type, subject_id);
+    `);
+
     // Activity log — the shared event spine (timeline, notifications, later
     // workflows/webhooks). One row per business event, tenant-scoped.
     await this.pool.query(`
