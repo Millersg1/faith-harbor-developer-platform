@@ -173,7 +173,7 @@ export class OpenAiChatClient
 
     if (!response.ok) {
       throw new Error(
-        `AI request failed (status ${response.status}).`,
+        `AI request failed (status ${response.status}): ${text.slice(0, 300)}`,
       );
     }
 

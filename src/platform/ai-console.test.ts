@@ -234,6 +234,44 @@ describe("AiConsoleService", () => {
     );
   });
 
+  it("maps the model's dotless wire name back to the dotted registry tool", async () => {
+    // OpenAI tool names can't contain dots, so the model sees "demo__read"
+    // and returns that; it must still resolve to the real "demo.read" tool.
+    const calls: string[] = [];
+    const svc = service(calls, [
+      {
+        content: "",
+        toolCalls: [
+          {
+            id: "c1",
+            name: "demo__read",
+            arguments: {},
+          },
+        ],
+      },
+      {
+        content: "There are 7.",
+        toolCalls: [],
+      },
+    ]);
+
+    await runWithTenant(
+      { organizationId: "orgA" },
+      async () => {
+        const reply = await svc.chat(
+          "count",
+          [],
+          { role: "member" },
+        );
+
+        expect(calls).toEqual(["read"]);
+        expect(
+          reply.steps[0].tool,
+        ).toBe("demo.read");
+      },
+    );
+  });
+
   it("reports unavailable when no client is connected", async () => {
     const calls: string[] = [];
     const svc = service(

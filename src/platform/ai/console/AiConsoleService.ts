@@ -102,6 +102,21 @@ export class AiConsoleService {
     const tools = this.toolSpecs(
       ctx.role,
     );
+    // OpenAI tool names can't contain dots, but registry names do
+    // (e.g. "crm.leads.list"). Map the wire name the model sees back to the
+    // real registry name when it calls a tool.
+    const realName = new Map<
+      string,
+      string
+    >();
+    for (const t of this.registry.describe(
+      ctx.role,
+    )) {
+      realName.set(
+        wireName(t.name),
+        t.name,
+      );
+    }
     const messages: ChatMessage[] = [
       {
         role: "system",
@@ -158,17 +173,18 @@ export class AiConsoleService {
       });
 
       for (const call of completion.toolCalls) {
+        const name =
+          realName.get(call.name) ??
+          call.name;
         const tool =
-          this.registry.get(
-            call.name,
-          );
+          this.registry.get(name);
         const mode =
           tool?.mode ?? "read";
 
         try {
           const outcome =
             await this.aiTools.invoke(
-              call.name,
+              name,
               call.arguments,
               ctx,
             );
@@ -181,7 +197,7 @@ export class AiConsoleService {
               outcome.invocation,
             );
             steps.push({
-              tool: call.name,
+              tool: name,
               mode: "write",
               summary:
                 "Proposed — awaiting your confirmation.",
@@ -197,7 +213,7 @@ export class AiConsoleService {
               outcome.result
                 ?.summary ?? "Done.";
             steps.push({
-              tool: call.name,
+              tool: name,
               mode: "read",
               summary,
             });
@@ -212,7 +228,7 @@ export class AiConsoleService {
           }
         } catch (error) {
           steps.push({
-            tool: call.name,
+            tool: name,
             mode,
             summary: `Couldn't run: ${errorText(error)}`,
           });
@@ -258,7 +274,7 @@ export class AiConsoleService {
         }
 
         return {
-          name: t.name,
+          name: wireName(t.name),
           description:
             t.mode === "write"
               ? `${t.description} (Changes data — will require user confirmation.)`
@@ -356,6 +372,15 @@ export class AiConsoleService {
       // Metering must never break the conversation.
     }
   }
+}
+
+/**
+ * Registry names use dots ("crm.leads.list"), but OpenAI tool names must match
+ * ^[a-zA-Z0-9_-]+$. Map dots to double underscores for the wire; the reverse
+ * map is rebuilt per request from the registry.
+ */
+function wireName(name: string): string {
+  return name.replace(/\./g, "__");
 }
 
 function toolResultText(
