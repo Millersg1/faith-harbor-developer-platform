@@ -98,7 +98,17 @@ erDiagram
   drip_sequences ||--o{ drip_enrollments : enrolls
   organizations ||--o{ workflows : automates
   workflows ||--o{ workflow_runs : "spawns"
+  organizations ||--o{ ai_tool_invocations : "records"
 ```
+
+### AI tool invocations (P3-M2)
+
+- **`ai_tool_invocations`** — one row per AI tool call. Columns: `id`,
+  `organization_id`, `tool_name`, `mode` (`read` | `write`), `args` (JSONB),
+  `status` (`executed` | `pending` | `rejected` | `failed`), `summary`,
+  `requested_by`, `created_at`, `updated_at`. Read tools land `executed`;
+  write tools land `pending` and move to `executed`/`failed` on confirm, or
+  `rejected` if declined. Indexed on `(organization_id, status, created_at)`.
 
 ### Workflow tables (P3-M1)
 

@@ -521,6 +521,27 @@ export class PostgresDatabase
         ON workflow_runs (status, next_run_at);
     `);
 
+    // AI tool invocations — read history + pending write proposals, tenant-scoped.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_tool_invocations (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        tool_name        TEXT NOT NULL,
+        mode             TEXT NOT NULL,
+        args             JSONB NOT NULL DEFAULT '{}'::jsonb,
+        status           TEXT NOT NULL DEFAULT 'pending',
+        summary          TEXT,
+        requested_by     TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS ai_tool_invocations_org_idx
+        ON ai_tool_invocations (organization_id, status, created_at);
+    `);
+
     // Audit log — append-only security trail, tenant-scoped.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS audit_events (

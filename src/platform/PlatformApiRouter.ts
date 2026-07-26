@@ -54,6 +54,12 @@ import {
   type WorkflowService,
 } from "./workflows/WorkflowService";
 import type { WorkflowStep } from "./workflows/WorkflowTypes";
+import {
+  AiToolForbiddenError,
+  AiToolNotFoundError,
+  AiToolValidationError,
+  type AiToolService,
+} from "./ai/tools/AiToolService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -101,6 +107,7 @@ export interface PlatformApiDependencies {
   knowledge?: KnowledgeService;
   audit?: AuditService;
   workflows?: WorkflowService;
+  aiTools?: AiToolService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1257,6 +1264,121 @@ export function createPlatformApiRouter(
               next,
               error,
               "WORKFLOW_NOT_FOUND",
+            ),
+          );
+      },
+    );
+  }
+
+  // ---- AI tool registry ----
+  if (deps.aiTools) {
+    const aiTools = deps.aiTools;
+
+    // The catalogue of tools the caller's role may use.
+    router.get(
+      "/ai/tools",
+      (req, res) => {
+        res.json({
+          tools: aiTools.describe(
+            toolRole(req),
+          ),
+        });
+      },
+    );
+
+    // Invoke a tool: read tools run now; write tools return a pending
+    // invocation that must be confirmed.
+    router.post(
+      "/ai/tools/:name/invoke",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+        const args = asObject(
+          body.args,
+        );
+
+        aiTools
+          .invoke(
+            String(req.params.name),
+            args,
+            toolContext(req),
+          )
+          .then((outcome) =>
+            res
+              .status(
+                outcome.status ===
+                  "pending"
+                  ? 202
+                  : 200,
+              )
+              .json(outcome),
+          )
+          .catch((error: unknown) =>
+            handleToolError(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    // The tenant's recent tool invocations (reads + pending/confirmed writes).
+    router.get(
+      "/ai/tools/invocations",
+      (req, res, next) => {
+        aiTools
+          .listInvocations()
+          .then((invocations) =>
+            res.json({ invocations }),
+          )
+          .catch(next);
+      },
+    );
+
+    // Confirm a pending write proposal (owner/admin) — this is where a write
+    // actually executes.
+    router.post(
+      "/ai/tools/invocations/:id/confirm",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        aiTools
+          .confirm(
+            String(req.params.id),
+            toolContext(req),
+          )
+          .then((outcome) =>
+            res.json(outcome),
+          )
+          .catch((error: unknown) =>
+            handleToolError(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    // Decline a pending write proposal without running it.
+    router.post(
+      "/ai/tools/invocations/:id/reject",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        aiTools
+          .reject(
+            String(req.params.id),
+            toolContext(req),
+          )
+          .then((invocation) =>
+            res.json({ invocation }),
+          )
+          .catch((error: unknown) =>
+            handleToolError(
+              res,
+              next,
+              error,
             ),
           );
       },
@@ -5279,6 +5401,84 @@ function actor(req: unknown): {
       auth?.user.name ||
       auth?.user.email,
   };
+}
+
+/** The caller's platform role, defaulting to the least-privileged one. */
+function toolRole(
+  req: unknown,
+): PlatformUserRole {
+  return (
+    (req as AuthedRequest).auth?.user
+      .role ?? "member"
+  );
+}
+
+/** The AI-tool acting context from the authenticated request. */
+function toolContext(req: unknown): {
+  role: PlatformUserRole;
+  actorId?: string;
+  actorLabel?: string;
+} {
+  const auth = (req as AuthedRequest)
+    .auth;
+
+  return {
+    role:
+      auth?.user.role ?? "member",
+    actorId: auth?.user.id,
+    actorLabel:
+      auth?.user.name ||
+      auth?.user.email,
+  };
+}
+
+/** Maps AI-tool errors to HTTP status codes; otherwise defers. */
+function handleToolError(
+  res: Response,
+  next: NextFunction,
+  error: unknown,
+): void {
+  if (
+    error instanceof
+    AiToolValidationError
+  ) {
+    badRequest(
+      res,
+      "INVALID_TOOL_ARGS",
+      error.message,
+    );
+
+    return;
+  }
+
+  if (
+    error instanceof
+    AiToolForbiddenError
+  ) {
+    res.status(403).json({
+      error: {
+        code: "TOOL_FORBIDDEN",
+        message: error.message,
+      },
+    });
+
+    return;
+  }
+
+  if (
+    error instanceof AiToolNotFoundError
+  ) {
+    res.status(404).json({
+      error: {
+        code: "TOOL_NOT_FOUND",
+        message: error.message,
+      },
+    });
+
+    return;
+  }
+
+  next(error);
 }
 
 /**

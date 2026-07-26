@@ -7,6 +7,18 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **AI tool registry** (P3-M2): the closed, code-defined catalogue of actions
+  an AI surface may take for a tenant. Two safety properties are structural,
+  not conventions: the tool set is fixed in code (no tenant can add or run
+  arbitrary tool code), and **read tools run on invoke while write tools are
+  recorded as pending proposals a human must confirm** before they execute.
+  Every tool runs inside the caller's tenant scope through an existing service;
+  role-gated; confirmations/rejections audited (`ai.tool.executed` /
+  `ai.tool.rejected`). Starter tools: `crm.leads.list`, `clients.list`,
+  `projects.list`, `metrics.summary` (read); `crm.leads.create`, `notes.add`,
+  `notifications.send` (write). API `/api/platform/ai/tools` (+ `/:name/invoke`,
+  `/invocations`, `/invocations/:id/confirm`, `/invocations/:id/reject`),
+  dashboard **AI Actions** panel, 10 tests. Table `ai_tool_invocations`.
 - **Workflow engine** (P3-M1): tenant automations — a trigger (any activity
   event type) starts a run that advances through timed steps, each performing
   a closed-set action (`notify` | `email` | `enroll_sequence` | `note`)

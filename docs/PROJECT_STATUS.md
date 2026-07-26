@@ -14,7 +14,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Authorization | ~75% | Service-layer role guards; RLS backstop pending |
 | Billing | ~70% | Stripe subscriptions (live-capable); customer portal + tax pending |
 | Website Builder | ~70% | Generate + publish to verified domain; template marketplace pending |
-| AI | ~40% | BYO keys, metering, caps, KB retrieval; Command Center/Employees pending |
+| AI | ~50% | BYO keys, metering, caps, KB retrieval, tool registry (read/confirm-write); Command Center/Employees pending |
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
 | Marketplace | 0% | Not started (Phase 4) |
 | Forms | ~80% | Public forms + submissions + lead capture; drag-drop editor pending |
@@ -26,14 +26,16 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 
 ## Current milestone
 
-Phase 3 underway. **P3-M1 Workflow engine shipped** (trigger → timed steps →
-closed-set actions; live-proved on staging). Hardening pass (rate limiting,
-audit logging, daily backups) also complete.
+Phase 3 underway. **P3-M1 Workflow engine** and **P3-M2 AI tool registry**
+shipped (both live-proved on staging). Hardening pass (rate limiting, audit
+logging, daily backups) also complete.
 
 ## Next milestone
 
-Phase 3 continues: **AI tool registry → AI Command Center → AI Employees**.
-Deferred hardening: Postgres RLS backstop, CSRF tokens, periodic restore test.
+Phase 3 continues: **AI Command Center** (chat that plans + calls registry
+tools, write actions gated by confirmation) → **AI Employees** (role-based
+assistants). Deferred hardening: Postgres RLS backstop, CSRF tokens, periodic
+restore test.
 
 ## Known technical debt
 

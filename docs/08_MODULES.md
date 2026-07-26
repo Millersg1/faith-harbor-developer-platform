@@ -55,6 +55,23 @@ Source lives under `src/platform/<module>/`.
 - **Purpose:** tenant email + outbox. **Tables:** emails. **Transport:** SMTP
   or logging. **API:** /emails.
 
+### AI tools (`ai/tools/`)
+- **Purpose:** the closed, code-defined registry of actions an AI surface may
+  take for a tenant — the foundation the AI Command Center and AI Employees
+  build on.
+- **Safety model:** the tool set is fixed in code (no tenant adds or runs
+  arbitrary tool code). **Read tools execute on invoke; write tools are
+  recorded `pending` and only run when a human confirms.** Every tool runs in
+  the caller's tenant scope through an existing service; tools are role-gated;
+  confirm/reject are audited.
+- **Pieces:** `AiToolRegistry` (register/describe/validate), `AiToolService`
+  (invoke → run-or-propose, confirm, reject), `AiToolInvocationRepository`
+  (tenant-scoped history + pending proposals), `buildDefaultAiTools` (starter
+  catalogue).
+- **Tables:** ai_tool_invocations. **API:** /ai/tools (+ /:name/invoke,
+  /invocations, /invocations/:id/confirm|reject). **UI:** dashboard **AI
+  Actions** panel (owner/admin).
+
 ### Workflows (`workflows/`)
 - **Purpose:** tenant automations — a trigger starts a run that advances through
   timed steps, each running a closed-set action through an existing service.

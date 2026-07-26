@@ -25,13 +25,14 @@ Prioritized. Effort is rough (S/M/L/XL). Status: ✅ done · 🚧 in progress ·
 | P2: AI Knowledge Base | L | Keyword retrieval + citations |
 | **Hardening pass** | M | Rate limiting, audit logging, daily backups |
 | P3-M1: Workflow engine + Automations UI | XL | Trigger→timed steps→closed-set actions; live-proved |
+| P3-M2: AI tool registry + AI Actions UI | XL | Read tools run; write tools require confirmation; live-proved |
 | Living documentation (`/docs`) | M | Established 2026-07-26 |
 
 ## Next Release 🚧 / ⏳ (recommended order)
 
 | Feature | Priority | Effort | Depends on | Notes |
 |---|---|---|---|---|
-| AI tool registry + Command Center (P3) | P1 | XL | modules, KB | Read tools free; write tools require confirmation |
+| AI Command Center (P3) | P1 | XL | tool registry, KB | Chat that plans + calls registry tools; writes gated by confirmation |
 | AI Employees (P3) | P2 | L | tool registry | Role-based assistants |
 | Workflow engine v2 (P3) | P2 | M | workflow engine | Visual builder, more triggers, retries/idempotency |
 | Postgres RLS backstop + CSRF (hardening) | P1 | M | — | Deferred from the hardening pass |

@@ -64,6 +64,11 @@ validation failures **400**; plan/quota limits **402**.
 | GET/POST | /api/platform/workflows | list / owner+admin create | {name,trigger,steps[]} |
 | PATCH | /api/platform/workflows/:id | owner/admin | name/trigger/status/steps |
 | GET | /api/platform/workflows/:id/runs | user | run history + step log |
+| GET | /api/platform/ai/tools | user | tools the caller's role may use |
+| POST | /api/platform/ai/tools/:name/invoke | user | read → 200 executed; write → 202 pending |
+| GET | /api/platform/ai/tools/invocations | user | recent invocations + pending |
+| POST | /api/platform/ai/tools/invocations/:id/confirm | owner/admin | run a pending write |
+| POST | /api/platform/ai/tools/invocations/:id/reject | owner/admin | decline a pending write |
 
 ## Tenant API — business modules
 

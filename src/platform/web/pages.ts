@@ -688,6 +688,15 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="wfmsg"></div>
       </div>
+      <div class="panel" id="aiToolsPanel" style="display:none;">
+        <h2>AI Actions <span class="pill">owner/admin</span></h2>
+        <p class="hint">The actions an AI assistant can take on your behalf. Read actions run immediately; actions that change data are proposed here and only run when you confirm them.</p>
+        <div class="sub" style="margin:6px 0 4px;font-weight:600;">Awaiting your confirmation</div>
+        <div class="list" id="aiPending"><div class="empty">Loading…</div></div>
+        <div class="sub" style="margin:14px 0 4px;font-weight:600;">Available actions</div>
+        <div class="list" id="aiToolsList"><div class="empty">Loading…</div></div>
+        <div class="msg" id="aitmsg"></div>
+      </div>
       <div class="panel" id="knowledgePanel" style="display:none;">
         <h2>AI Knowledge Base <span class="pill">owner/admin</span></h2>
         <p class="hint">Add documents, then ask questions grounded in them — answers cite their sources.</p>
@@ -1439,6 +1448,53 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/workflows/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
     if(r.ok)loadWorkflows();
   }
+  async function loadAiTools(){
+    var tr=await api('/api/platform/ai/tools');
+    if(tr.ok){
+      var td=await tr.json();var tel=document.getElementById('aiToolsList');clear(tel);
+      var tools=td.tools||[];
+      if(!tools.length){tel.appendChild(emptyMsg('No AI actions available yet.'));}
+      tools.forEach(function(t){
+        var row=document.createElement('div');row.className='item';
+        var left=document.createElement('div');
+        var n=document.createElement('div');n.textContent=esc(t.title);n.style.fontWeight='600';left.appendChild(n);
+        var s=document.createElement('div');s.className='sub';s.textContent=esc(t.description);left.appendChild(s);
+        row.appendChild(left);
+        var pill=document.createElement('span');pill.className='pill';pill.textContent=t.mode==='write'?'needs confirm':'read';pill.style.flex='none';row.appendChild(pill);
+        tel.appendChild(row);
+      });
+    }
+    var ir=await api('/api/platform/ai/tools/invocations');
+    var pel=document.getElementById('aiPending');clear(pel);
+    if(!ir.ok){pel.appendChild(emptyMsg('Could not load pending actions.'));return;}
+    var id=await ir.json();
+    var pending=(id.invocations||[]).filter(function(x){return x.status==='pending';});
+    if(!pending.length){pel.appendChild(emptyMsg('Nothing awaiting confirmation.'));return;}
+    pending.forEach(function(inv){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var n=document.createElement('div');n.textContent=esc(inv.toolName);n.style.fontWeight='600';left.appendChild(n);
+      var s=document.createElement('div');s.className='sub';s.textContent=summarizeArgs(inv.args)+' \\u00b7 '+timeAgo(inv.createdAt);left.appendChild(s);
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;';
+      var ok=document.createElement('button');ok.className='btn';ok.style.padding='6px 12px';ok.textContent='Confirm';
+      ok.addEventListener('click',function(){decideAi(inv.id,'confirm');});actions.appendChild(ok);
+      var no=document.createElement('button');no.className='btn ghost';no.style.padding='6px 12px';no.textContent='Decline';
+      no.addEventListener('click',function(){decideAi(inv.id,'reject');});actions.appendChild(no);
+      row.appendChild(actions);
+      pel.appendChild(row);
+    });
+  }
+  function summarizeArgs(args){
+    if(!args)return '';
+    var parts=[];for(var k in args){if(Object.prototype.hasOwnProperty.call(args,k)){parts.push(k+': '+esc(String(args[k])));}}
+    return parts.join(', ');
+  }
+  async function decideAi(id,decision){
+    var r=await api('/api/platform/ai/tools/invocations/'+encodeURIComponent(id)+'/'+decision,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    if(r.ok){setMsg('aitmsg','ok',decision==='confirm'?'Action confirmed and run.':'Action declined.');loadAiTools();}
+    else{setMsg('aitmsg','err','Could not complete that action.');}
+  }
   async function viewWorkflowRuns(id,name){
     var modal=document.getElementById('journey');
     var title=document.getElementById('journeyTitle');
@@ -1638,6 +1694,7 @@ export function dashboardPage(): string {
       document.getElementById('formsPanel').style.display='';
       document.getElementById('knowledgePanel').style.display='';
       document.getElementById('workflowsPanel').style.display='';
+      document.getElementById('aiToolsPanel').style.display='';
       document.getElementById('auditPanel').style.display='';
       loadBrands();
       loadTeam();
@@ -1648,6 +1705,7 @@ export function dashboardPage(): string {
       loadForms();
       loadCollections();
       loadWorkflows();
+      loadAiTools();
       loadAudit();
     }
     if(u.role==='owner'){

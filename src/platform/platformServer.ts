@@ -91,6 +91,10 @@ import { AuditService } from "./audit/AuditService";
 import { AuditRepository } from "./audit/AuditRepository";
 import { WorkflowService } from "./workflows/WorkflowService";
 import { WorkflowRepository } from "./workflows/WorkflowRepository";
+import { AiToolRegistry } from "./ai/tools/AiToolRegistry";
+import { AiToolService } from "./ai/tools/AiToolService";
+import { AiToolInvocationRepository } from "./ai/tools/AiToolInvocationRepository";
+import { buildDefaultAiTools } from "./ai/tools/defaultAiTools";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -478,6 +482,31 @@ async function start(): Promise<void> {
     workflows.handleEvent,
   );
 
+  // AI tool registry — the closed, code-defined set of actions an AI surface
+  // may take. Read tools run on invoke; write tools are proposed and require
+  // human confirmation before they execute.
+  const aiToolRegistry =
+    new AiToolRegistry();
+  for (const tool of buildDefaultAiTools(
+    {
+      leads,
+      clients,
+      projects,
+      invoices,
+      activity,
+      notifications,
+      resolveNotifyRecipients:
+        notifyRecipients,
+    },
+  )) {
+    aiToolRegistry.register(tool);
+  }
+  const aiTools = new AiToolService(
+    aiToolRegistry,
+    new AiToolInvocationRepository(db),
+    { audit },
+  );
+
   const search = new SearchService({
     clients,
     leads,
@@ -529,6 +558,7 @@ async function start(): Promise<void> {
     knowledge,
     audit,
     workflows,
+    aiTools,
     websites,
     aiSettings,
     aiUsage,
