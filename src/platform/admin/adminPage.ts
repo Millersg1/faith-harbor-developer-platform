@@ -80,6 +80,17 @@ export function adminConsolePage(): string {
     <h2>All organizations</h2>
     <div id="orgWrap"><div class="empty">Loading…</div></div>
   </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <h2>Documentation</h2>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+      <label for="docSelect">Document</label>
+      <select id="docSelect" style="width:100%;padding:11px 13px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:10px;color:var(--text);"></select>
+    </div>
+    <div id="docView" style="padding:20px;max-height:70vh;overflow:auto;font-size:.9rem;">
+      <div class="empty">Select a document.</div>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -136,11 +147,46 @@ export function adminConsolePage(): string {
     btn.disabled=false;
     if(r.ok){await loadOrgs();await loadStats();}
   }
+  function mdInline(s){return s.replace(/\`([^\`]+)\`/g,'<code style="background:rgba(255,255,255,.08);padding:1px 5px;border-radius:5px;">$1</code>').replace(/\\*\\*([^*]+)\\*\\*/g,'<strong>$1</strong>');}
+  function renderMd(md){
+    function e(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+    var lines=md.split(/\\r?\\n/),html='',inCode=false,inList=false;
+    lines.forEach(function(line){
+      if(/^\`\`\`/.test(line)){ if(inCode){html+='</pre>';inCode=false;}else{if(inList){html+='</ul>';inList=false;}html+='<pre style="background:rgba(0,0,0,.35);padding:12px;border-radius:8px;overflow:auto;">';inCode=true;} return; }
+      if(inCode){ html+=e(line)+'\\n'; return; }
+      var h=line.match(/^(#{1,4})\\s+(.*)/);
+      if(h){ if(inList){html+='</ul>';inList=false;} var lv=h[1].length; html+='<h'+lv+' style="margin:14px 0 6px;">'+mdInline(e(h[2]))+'</h'+lv+'>'; return; }
+      if(/^\\s*[-*]\\s+/.test(line)){ if(!inList){html+='<ul style="margin:6px 0 6px 20px;">';inList=true;} html+='<li>'+mdInline(e(line.replace(/^\\s*[-*]\\s+/,'')))+'</li>'; return; }
+      if(/^\\s*\\|/.test(line)){ html+='<div style="font-family:monospace;font-size:.82rem;white-space:pre;overflow:auto;">'+mdInline(e(line))+'</div>'; return; }
+      if(inList){html+='</ul>';inList=false;}
+      if(line.trim()===''){ return; }
+      html+='<p style="margin:8px 0;">'+mdInline(e(line))+'</p>';
+    });
+    if(inCode)html+='</pre>'; if(inList)html+='</ul>';
+    return html;
+  }
+  async function loadDoc(name){
+    var view=document.getElementById('docView');
+    view.innerHTML='<div class="empty">Loading…</div>';
+    var r=await api('/docs/'+encodeURIComponent(name));
+    if(!r.ok){view.innerHTML='<div class="empty">Could not load document.</div>';return;}
+    var d=await r.json();
+    view.innerHTML=renderMd(d.content||'');
+  }
+  async function loadDocs(){
+    var r=await api('/docs'); if(!r.ok)return;
+    var d=await r.json(); var docs=d.docs||[];
+    var sel=document.getElementById('docSelect'); sel.innerHTML='';
+    if(!docs.length){var o=document.createElement('option');o.textContent='No documents';sel.appendChild(o);return;}
+    docs.forEach(function(name){var o=document.createElement('option');o.value=name;o.textContent=name;sel.appendChild(o);});
+    sel.addEventListener('change',function(){loadDoc(sel.value);});
+    loadDoc(docs[0]);
+  }
   async function boot(){
     var me=await api('/me');
     if(me.ok){var d=await me.json();document.getElementById('who').textContent=esc(d.admin&&d.admin.email);
       show('login',false);show('console',true);document.getElementById('logout').style.display='';
-      await loadStats();await loadOrgs();}
+      await loadStats();await loadOrgs();await loadDocs();}
     else{show('login',true);show('console',false);}
   }
   document.getElementById('loginForm').addEventListener('submit',async function(e){

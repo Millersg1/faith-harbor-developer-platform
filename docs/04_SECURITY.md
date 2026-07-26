@@ -97,6 +97,18 @@ Stripe webhooks are mounted before `express.json()` and verified against the
 **raw** body with `node:crypto` before any payload field (including the org id
 we act on) is trusted.
 
+## Rate limiting
+
+An in-memory fixed-window `RateLimiter` (`src/platform/security/RateLimiter.ts`)
+guards authentication endpoints, keyed by client IP + target email so both
+spray (many accounts, one IP) and focused (one account) brute-force are
+bounded: **login** 10 attempts / 15 min, **forgot-password** 5 / 15 min.
+Exceeding returns **429** with `Retry-After`. `app.set("trust proxy", true)` so
+the real client IP (behind the cPanel proxy) is used, not the proxy's. *Why:*
+credential-stuffing and reset-spam are the most common attacks on an auth
+surface. In-memory is correct for the single-process deployment; a
+multi-instance deployment swaps the store behind the same interface.
+
 ## Audit logging
 
 The activity event spine records business events, but a dedicated
@@ -111,7 +123,8 @@ storage keys.
 
 ## Outstanding (must precede "production-ready")
 
-1. Login/auth **rate limiting** (brute-force).
+1. ~~Login/auth rate limiting~~ ✅ done (auth endpoints; extend to more
+   endpoints as needed).
 2. Postgres **Row-Level Security** as a defense-in-depth backstop under the
    app-layer isolation.
 3. Comprehensive **audit logging**.

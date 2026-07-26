@@ -114,6 +114,12 @@ export interface PlatformAppDependencies {
    * Mark the session cookie Secure (HTTPS only). True in staging/prod.
    */
   secureCookie?: boolean;
+
+  /**
+   * Directory of the living documentation (/docs), browsable read-only from
+   * the platform admin console.
+   */
+  docsDir?: string;
 }
 
 /**
@@ -144,6 +150,11 @@ export function createPlatformApp(
     });
 
   const app = express();
+
+  // Behind the cPanel HTTPS proxy, so the real client IP is in
+  // X-Forwarded-For — needed for rate limiting to key on real clients rather
+  // than the proxy's single address.
+  app.set("trust proxy", true);
 
   // Stripe webhook — MUST be registered before express.json(), because
   // signature verification needs the exact raw request body. The signature
@@ -451,6 +462,7 @@ export function createPlatformApp(
       requireAdmin,
       secureCookie:
         deps.secureCookie,
+      docsDir: deps.docsDir,
     }),
   );
 

@@ -37,6 +37,9 @@ Faith Harbor OS is unaffected.
   `884497a`.
 
 ### Security
+- **Login + forgot-password rate limiting** (in-memory `RateLimiter`, keyed by
+  IP + email; 429 + `Retry-After`) — first item of the hardening pass.
+  `trust proxy` enabled so the real client IP is used.
 - Password reset links are built from the tenant's canonical host resolved
   server-side (not the request `Host` header) — closes a reset-poisoning
   vector.

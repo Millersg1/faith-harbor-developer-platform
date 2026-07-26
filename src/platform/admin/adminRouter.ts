@@ -1,4 +1,10 @@
 import {
+  readdir,
+  readFile,
+} from "node:fs/promises";
+import { resolve } from "node:path";
+
+import {
   Router,
   type RequestHandler,
   type Response,
@@ -20,6 +26,12 @@ export interface AdminRouterDependencies {
   organizations: OrganizationService;
   requireAdmin: RequestHandler;
   secureCookie?: boolean;
+
+  /**
+   * Directory holding the living project documentation (the /docs markdown).
+   * When set, the admin console can browse it read-only.
+   */
+  docsDir?: string;
 }
 
 /**
@@ -237,6 +249,81 @@ export function createAdminRouter(
         });
     },
   );
+
+  // Living documentation — read-only, admin-only. Filenames are strictly
+  // validated (no separators, no traversal) and only .md is served.
+  if (deps.docsDir) {
+    const docsDir = resolve(
+      deps.docsDir,
+    );
+
+    router.get(
+      "/docs",
+      deps.requireAdmin,
+      (_req, res) => {
+        readdir(docsDir)
+          .then((files) =>
+            res.json({
+              docs: files
+                .filter((f) =>
+                  /\.md$/i.test(f),
+                )
+                .sort(),
+            }),
+          )
+          .catch(() =>
+            res.json({ docs: [] }),
+          );
+      },
+    );
+
+    router.get(
+      "/docs/:name",
+      deps.requireAdmin,
+      (req, res) => {
+        const name = String(
+          req.params.name,
+        );
+
+        if (
+          !/^[A-Za-z0-9_.-]+\.md$/.test(
+            name,
+          ) ||
+          name.includes("..")
+        ) {
+          res.status(400).json({
+            error: {
+              code: "INVALID_DOC",
+              message:
+                "Invalid document name.",
+            },
+          });
+
+          return;
+        }
+
+        readFile(
+          resolve(docsDir, name),
+          "utf8",
+        )
+          .then((content) =>
+            res.json({
+              name,
+              content,
+            }),
+          )
+          .catch(() =>
+            res.status(404).json({
+              error: {
+                code: "NOT_FOUND",
+                message:
+                  "Document not found.",
+              },
+            }),
+          );
+      },
+    );
+  }
 
   return router;
 }

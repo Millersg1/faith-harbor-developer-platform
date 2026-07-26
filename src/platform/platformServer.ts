@@ -502,6 +502,9 @@ async function start(): Promise<void> {
       process.env
         .PLATFORM_SECURE_COOKIE ===
       "true",
+    docsDir:
+      process.env.DOCS_DIR ||
+      `${process.cwd()}/docs`,
   });
 
   const port = Number(

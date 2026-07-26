@@ -12,6 +12,10 @@ import type { PlatformSessionService } from "../sessions/PlatformSessionService"
 import type { PlatformSignupService } from "../signup/PlatformSignupService";
 import type { PasswordResetService } from "./PasswordResetService";
 import {
+  RateLimiter,
+  rateLimit,
+} from "../security/RateLimiter";
+import {
   readToken,
   SESSION_COOKIE,
   type AuthedRequest,
@@ -66,6 +70,13 @@ export interface AuthRouterDependencies {
    * production.
    */
   secureCookie?: boolean;
+
+  /**
+   * Optional limiter overrides for tests. When omitted, sensible in-memory
+   * limiters are created (login, and password-reset endpoints).
+   */
+  loginLimiter?: RateLimiter;
+  resetLimiter?: RateLimiter;
 }
 
 /**
@@ -80,6 +91,47 @@ export function createAuthRouter(
 
   const secure =
     deps.secureCookie ?? false;
+
+  const FIFTEEN_MIN =
+    15 * 60 * 1000;
+  // 10 login attempts / 15 min per IP+email; 5 reset requests likewise.
+  const loginLimiter =
+    deps.loginLimiter ??
+    new RateLimiter({
+      max: 10,
+      windowMs: FIFTEEN_MIN,
+    });
+  const resetLimiter =
+    deps.resetLimiter ??
+    new RateLimiter({
+      max: 5,
+      windowMs: FIFTEEN_MIN,
+    });
+
+  const emailKey = (
+    req: Parameters<RequestHandler>[0],
+  ): string =>
+    String(
+      (req.body as { email?: unknown })
+        ?.email ?? "",
+    )
+      .trim()
+      .toLowerCase();
+
+  const loginRateLimit = rateLimit({
+    limiter: loginLimiter,
+    scope: "login",
+    keyPart: emailKey,
+    message:
+      "Too many sign-in attempts. Please wait a few minutes and try again.",
+  });
+  const resetRateLimit = rateLimit({
+    limiter: resetLimiter,
+    scope: "reset",
+    keyPart: emailKey,
+    message:
+      "Too many requests. Please wait a few minutes and try again.",
+  });
 
   // Self-serve onboarding: create an organization + its first owner and
   // (when a session service is wired) log them straight in. Public — it
@@ -210,6 +262,7 @@ export function createAuthRouter(
 
   router.post(
     "/login",
+    loginRateLimit,
     deps.tenantMiddleware,
     (req, res, next) => {
       const body = (req.body ??
@@ -293,6 +346,7 @@ export function createAuthRouter(
 
     router.post(
       "/forgot-password",
+      resetRateLimit,
       deps.tenantMiddleware,
       (req, res, next) => {
         const body = (req.body ??
