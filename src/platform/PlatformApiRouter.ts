@@ -25,6 +25,8 @@ import type { PlatformEmailService } from "./email/PlatformEmailService";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformLeadService } from "./crm/PlatformLeadService";
 import type { DripService } from "./drip/DripService";
+import type { ActivityService } from "./events/ActivityService";
+import type { NotificationService } from "./notifications/NotificationService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -63,6 +65,8 @@ export interface PlatformApiDependencies {
   clientUsers?: ClientUserService;
   email?: PlatformEmailService;
   drip?: DripService;
+  activity?: ActivityService;
+  notifications?: NotificationService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -80,6 +84,163 @@ export function createPlatformApiRouter(
   deps: PlatformApiDependencies,
 ): Router {
   const router = Router();
+
+  // ---- Notifications (per-user) ----
+  if (deps.notifications) {
+    const notifications =
+      deps.notifications;
+
+    router.get(
+      "/notifications",
+      (req, res, next) => {
+        const auth = (
+          req as AuthedRequest
+        ).auth;
+
+        if (!auth) {
+          badRequest(
+            res,
+            "NO_USER",
+            "Not signed in.",
+          );
+
+          return;
+        }
+
+        const unreadOnly =
+          req.query.unreadOnly ===
+          "true";
+
+        Promise.all([
+          notifications.listForUser(
+            auth.user.id,
+            { unreadOnly },
+          ),
+          notifications.unreadCount(
+            auth.user.id,
+          ),
+        ])
+          .then(([rows, unread]) =>
+            res.json({
+              notifications: rows,
+              unreadCount: unread,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.get(
+      "/notifications/unread-count",
+      (req, res, next) => {
+        const auth = (
+          req as AuthedRequest
+        ).auth;
+
+        if (!auth) {
+          res.json({ unreadCount: 0 });
+
+          return;
+        }
+
+        notifications
+          .unreadCount(auth.user.id)
+          .then((unreadCount) =>
+            res.json({ unreadCount }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/notifications/:id/read",
+      (req, res, next) => {
+        const auth = (
+          req as AuthedRequest
+        ).auth;
+
+        if (!auth) {
+          badRequest(
+            res,
+            "NO_USER",
+            "Not signed in.",
+          );
+
+          return;
+        }
+
+        notifications
+          .markRead(
+            auth.user.id,
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/notifications/read-all",
+      (req, res, next) => {
+        const auth = (
+          req as AuthedRequest
+        ).auth;
+
+        if (!auth) {
+          badRequest(
+            res,
+            "NO_USER",
+            "Not signed in.",
+          );
+
+          return;
+        }
+
+        notifications
+          .markAllRead(auth.user.id)
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Activity timeline ----
+  if (deps.activity) {
+    const activity = deps.activity;
+
+    router.get(
+      "/activity",
+      (req, res, next) => {
+        const subjectType =
+          optionalString(
+            req.query.subjectType,
+          );
+        const subjectId =
+          optionalString(
+            req.query.subjectId,
+          );
+        const limit =
+          req.query.limit == null
+            ? undefined
+            : Number(req.query.limit);
+
+        activity
+          .list({
+            subjectType,
+            subjectId,
+            limit,
+          })
+          .then((events) =>
+            res.json({ events }),
+          )
+          .catch(next);
+      },
+    );
+  }
 
   // ---- Billing & plans ----
   if (deps.billing) {
@@ -298,6 +459,15 @@ export function createPlatformApiRouter(
               subject:
                 "You've been added to a workspace",
               body: "You've been added to a workspace on the platform. Sign in with the temporary password you were given, then change it under Account.",
+            });
+
+            void deps.activity?.record({
+              ...actor(req),
+              type: "team.invited",
+              subjectType: "team",
+              subjectId: user.id,
+              title: `Team member added: ${user.name || user.email}`,
+              summary: `Role: ${user.role}`,
             });
 
             res.status(201).json({
@@ -1161,11 +1331,22 @@ export function createPlatformApiRouter(
               body.assignee,
             ),
           })
-          .then((ticket) =>
+          .then((ticket) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ticket.created",
+              subjectType: "ticket",
+              subjectId: ticket.id,
+              title: `Ticket opened: ${ticket.subject}`,
+              summary: ticket.priority
+                ? `Priority: ${ticket.priority}`
+                : undefined,
+            });
+
             res
               .status(201)
-              .json({ ticket }),
-          )
+              .json({ ticket });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -1914,9 +2095,31 @@ export function createPlatformApiRouter(
                 ) as never,
             },
           )
-          .then((proposal) =>
-            res.json({ proposal }),
-          )
+          .then((proposal) => {
+            if (
+              proposal.status ===
+                "accepted" ||
+              proposal.status ===
+                "declined"
+            ) {
+              void deps.activity?.record(
+                {
+                  ...actor(req),
+                  type: `proposal.${proposal.status}`,
+                  subjectType:
+                    "proposal",
+                  subjectId:
+                    proposal.id,
+                  title: `Proposal ${proposal.status}: ${proposal.title}`,
+                  summary: proposal.amount
+                    ? `$${Number(proposal.amount).toLocaleString()}`
+                    : undefined,
+                },
+              );
+            }
+
+            res.json({ proposal });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -3600,14 +3803,24 @@ export function createPlatformApiRouter(
               domain,
             ),
           )
-          .then((website) =>
+          .then((website) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "website.published",
+              subjectType: "website",
+              subjectId: website.id,
+              title: `Website published: ${website.name}`,
+              summary: `Live on ${domain}`,
+              metadata: { domain },
+            });
+
             res.json({
               website:
                 websiteSummary(
                   website,
                 ),
-            }),
-          )
+            });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -3883,6 +4096,27 @@ function websiteSummary(
     ),
     createdAt: website.createdAt,
     updatedAt: website.updatedAt,
+  };
+}
+
+/**
+ * Derives the acting user for an activity event from the authenticated
+ * request. Always a team member here (this router is behind requireUser).
+ */
+function actor(req: unknown): {
+  actorType: "user";
+  actorId?: string;
+  actorName?: string;
+} {
+  const auth = (req as AuthedRequest)
+    .auth;
+
+  return {
+    actorType: "user",
+    actorId: auth?.user.id,
+    actorName:
+      auth?.user.name ||
+      auth?.user.email,
   };
 }
 

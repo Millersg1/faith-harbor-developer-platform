@@ -24,6 +24,8 @@ import { PlatformBrandService } from "./brands/PlatformBrandService";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import type { DripService } from "./drip/DripService";
+import type { ActivityService } from "./events/ActivityService";
+import type { NotificationService } from "./notifications/NotificationService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -78,6 +80,8 @@ export interface PlatformAppDependencies {
   portalSessions?: PortalSessionService;
   email?: PlatformEmailService;
   drip?: DripService;
+  activity?: ActivityService;
+  notifications?: NotificationService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -370,6 +374,8 @@ export function createPlatformApp(
       clientUsers: deps.clientUsers,
       email: deps.email,
       drip: deps.drip,
+      activity: deps.activity,
+      notifications: deps.notifications,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

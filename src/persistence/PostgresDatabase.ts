@@ -372,6 +372,54 @@ export class PostgresDatabase
         ON password_reset_tokens (organization_id, user_id);
     `);
 
+    // Activity log — the shared event spine (timeline, notifications, later
+    // workflows/webhooks). One row per business event, tenant-scoped.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS activity_events (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        type             TEXT NOT NULL,
+        actor_type       TEXT NOT NULL DEFAULT 'user',
+        actor_id         TEXT,
+        actor_name       TEXT,
+        subject_type     TEXT,
+        subject_id       TEXT,
+        title            TEXT NOT NULL,
+        summary          TEXT,
+        metadata         JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS activity_events_subject_idx
+        ON activity_events (organization_id, subject_type, subject_id, created_at DESC);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS activity_events_recent_idx
+        ON activity_events (organization_id, created_at DESC);
+    `);
+
+    // In-app notifications — per team member, tenant-scoped.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        user_id          TEXT NOT NULL,
+        type             TEXT NOT NULL,
+        title            TEXT NOT NULL,
+        body             TEXT,
+        link             TEXT,
+        read_at          TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS notifications_user_idx
+        ON notifications (organization_id, user_id, read_at, created_at DESC);
+    `);
+
     // Autoresponder / drip: sequences, their steps, and enrollments.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS drip_sequences (

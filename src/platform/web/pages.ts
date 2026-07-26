@@ -298,6 +298,18 @@ export function dashboardPage(): string {
     <div class="brand">${LOGO} <span id="orgName">All Elite Cloud</span></div>
     <div class="row" style="align-items:center; gap:14px;">
       <span class="muted" id="who" style="font-size:0.85rem;"></span>
+      <div style="position:relative;">
+        <button class="btn ghost" id="bell" title="Notifications" aria-label="Notifications" style="width:auto;padding:8px 12px;position:relative;">
+          &#128276;<span id="bellCount" style="display:none;position:absolute;top:-4px;right:-4px;background:#e5484d;color:#fff;border-radius:10px;font-size:0.68rem;line-height:1;padding:3px 6px;font-weight:700;">0</span>
+        </button>
+        <div id="notifPanel" role="menu" style="display:none;position:absolute;right:0;top:44px;width:340px;max-width:88vw;max-height:60vh;overflow:auto;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.18);z-index:50;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line,#e5e7eb);">
+            <strong style="font-size:0.9rem;">Notifications</strong>
+            <button class="btn ghost" id="markAllRead" style="width:auto;padding:4px 8px;font-size:0.78rem;">Mark all read</button>
+          </div>
+          <div id="notifList"><div class="empty" style="padding:16px;">Loading…</div></div>
+        </div>
+      </div>
       <button class="btn ghost" id="logout">Sign out</button>
     </div>
   </div></div>
@@ -315,6 +327,11 @@ export function dashboardPage(): string {
         </div>
       </div>
       <div class="msg" id="plmsg"></div>
+    </div>
+    <div class="panel" id="activityPanel" style="margin-bottom:18px;">
+      <h2>Recent activity</h2>
+      <p class="hint">The latest things that happened across your workspace.</p>
+      <div class="list" id="activityFeed"><div class="empty">Loading…</div></div>
     </div>
     <div class="grid2">
       <div class="panel">
@@ -982,6 +999,63 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/drip/enrollments/'+encodeURIComponent(id)+'/cancel',{method:'POST'});
     if(r.ok)loadDripEnrollments();
   }
+  function timeAgo(iso){
+    var d=Date.parse(iso); if(!d)return '';
+    var s=Math.floor((Date.now()-d)/1000);
+    if(s<60)return 'just now';
+    var m=Math.floor(s/60); if(m<60)return m+'m ago';
+    var h=Math.floor(m/60); if(h<24)return h+'h ago';
+    return Math.floor(h/24)+'d ago';
+  }
+  function setBell(count){
+    var badge=document.getElementById('bellCount');
+    if(!badge)return;
+    if(count>0){badge.style.display='';badge.textContent=count>99?'99+':String(count);}
+    else{badge.style.display='none';}
+  }
+  async function loadNotifications(){
+    var r=await api('/api/platform/notifications'); if(!r.ok)return;
+    var d=await r.json();
+    setBell(d.unreadCount||0);
+    var el=document.getElementById('notifList'); clear(el);
+    var list=d.notifications||[];
+    if(!list.length){el.appendChild(emptyMsg('No notifications yet.'));return;}
+    list.forEach(function(n){
+      var row=document.createElement('div');
+      row.style.cssText='padding:11px 14px;border-bottom:1px solid var(--line,#eee);cursor:pointer;'+(n.readAt?'':'background:rgba(99,102,241,0.07);');
+      var t=document.createElement('div');t.textContent=esc(n.title);t.style.cssText='font-weight:600;font-size:0.85rem;';row.appendChild(t);
+      if(n.body){var b=document.createElement('div');b.className='sub';b.textContent=esc(n.body);b.style.fontSize='0.8rem';row.appendChild(b);}
+      var meta=document.createElement('div');meta.className='sub';meta.style.cssText='font-size:0.72rem;opacity:0.7;margin-top:2px;';meta.textContent=timeAgo(n.createdAt);row.appendChild(meta);
+      row.addEventListener('click',function(){markNotifRead(n.id,n.link);});
+      el.appendChild(row);
+    });
+  }
+  async function markNotifRead(id,link){
+    await api('/api/platform/notifications/'+encodeURIComponent(id)+'/read',{method:'POST'});
+    loadNotifications();
+    if(link){window.location=link;}
+  }
+  async function refreshUnread(){
+    var r=await api('/api/platform/notifications/unread-count'); if(!r.ok)return;
+    var d=await r.json(); setBell(d.unreadCount||0);
+  }
+  async function loadActivity(){
+    var r=await api('/api/platform/activity?limit=25'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('activityFeed'); clear(el);
+    var list=d.events||[];
+    if(!list.length){el.appendChild(emptyMsg('No activity yet. As your team works, it shows up here.'));return;}
+    list.forEach(function(e){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(e.title);t.style.fontWeight='600';left.appendChild(t);
+      var parts=[];if(e.actorName)parts.push(esc(e.actorName));parts.push(timeAgo(e.createdAt));
+      var s=document.createElement('div');s.className='sub';s.textContent=parts.join(' \\u00b7 ');left.appendChild(s);
+      row.appendChild(left);
+      if(e.summary){var p=document.createElement('span');p.className='pill';p.textContent=esc(e.summary);row.appendChild(p);}
+      el.appendChild(row);
+    });
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -1122,6 +1196,9 @@ export function dashboardPage(): string {
     }
     await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
+    await loadActivity();
+    refreshUnread();
+    setInterval(refreshUnread, 45000);
     buildSecNav();
   }
   document.getElementById('sendEmail').addEventListener('click',async function(){
@@ -1133,6 +1210,26 @@ export function dashboardPage(): string {
     if(r.ok){to.value='';su.value='';bo.value='';var st=(x.email&&x.email.status)||'';setMsg('emmsg','ok',st==='sent'?'Sent.':'Recorded ('+st+').');loadEmails();}
     else{setMsg('emmsg','err',(x.error&&x.error.message)||'Could not send.');}
   });
+  (function(){
+    var bell=document.getElementById('bell');
+    if(!bell)return;
+    bell.addEventListener('click',function(ev){
+      ev.stopPropagation();
+      var p=document.getElementById('notifPanel');
+      var open=p.style.display!=='none';
+      p.style.display=open?'none':'';
+      if(!open)loadNotifications();
+    });
+    document.addEventListener('click',function(ev){
+      var p=document.getElementById('notifPanel');
+      if(p && p.style.display!=='none' && !p.contains(ev.target) && !bell.contains(ev.target)){p.style.display='none';}
+    });
+    var mar=document.getElementById('markAllRead');
+    if(mar)mar.addEventListener('click',function(ev){
+      ev.stopPropagation();
+      api('/api/platform/notifications/read-all',{method:'POST'}).then(function(){loadNotifications();});
+    });
+  })();
   document.getElementById('addSequence').addEventListener('click',async function(){
     var n=document.getElementById('dsname'),tr=document.getElementById('dstrigger');
     if(!n.value.trim()){setMsg('dsmsg','err','A sequence needs a name.');return;}

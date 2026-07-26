@@ -72,6 +72,11 @@ import { PasswordResetService } from "./auth/PasswordResetService";
 import { PasswordResetRepository } from "./auth/PasswordResetRepository";
 import { DripService } from "./drip/DripService";
 import { DripRepository } from "./drip/DripRepository";
+import { ActivityService } from "./events/ActivityService";
+import { ActivityEventRepository } from "./events/ActivityEventRepository";
+import { NotificationService } from "./notifications/NotificationService";
+import { NotificationRepository } from "./notifications/NotificationRepository";
+import { createNotificationActivityHandler } from "./notifications/NotificationActivityHandler";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -271,6 +276,36 @@ async function start(): Promise<void> {
     new DripRepository(db),
     email,
   );
+  // Activity spine + notifications. Recording an event fans out to the
+  // notification dispatcher, which notifies the org's active owners/admins.
+  const notifications =
+    new NotificationService(
+      new NotificationRepository(db),
+    );
+  const activity = new ActivityService(
+    new ActivityEventRepository(db),
+  );
+  activity.subscribe(
+    createNotificationActivityHandler({
+      notifications,
+      resolveRecipients: () =>
+        users
+          .list()
+          .then((list) =>
+            list
+              .filter(
+                (u) =>
+                  u.status ===
+                    "active" &&
+                  (u.role === "owner" ||
+                    u.role ===
+                      "admin"),
+              )
+              .map((u) => u.id),
+          )
+          .catch(() => []),
+    }),
+  );
   const clientUsers =
     new ClientUserService(
       new ClientUserRepository(db),
@@ -398,6 +433,8 @@ async function start(): Promise<void> {
     portalSessions,
     email,
     drip,
+    activity,
+    notifications,
     websites,
     aiSettings,
     aiUsage,
