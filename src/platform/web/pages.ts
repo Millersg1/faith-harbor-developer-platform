@@ -640,6 +640,17 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="pumsg"></div>
       </div>
+      <div class="panel" id="calendarPanel">
+        <h2>Calendar</h2>
+        <p class="hint">Upcoming events, appointments, and deadlines.</p>
+        <div class="list" id="calendarEvents"><div class="empty">Loading…</div></div>
+        <div class="inline">
+          <div class="f"><label for="cetitle">Event</label><input id="cetitle" placeholder="Kickoff call" /></div>
+          <div class="f" style="max-width:200px;"><label for="cewhen">When</label><input id="cewhen" type="datetime-local" /></div>
+          <button class="btn" id="addEvent" style="width:auto;">Add event</button>
+        </div>
+        <div class="msg" id="cemsg"></div>
+      </div>
       <div class="panel" id="filesPanel">
         <h2>Files</h2>
         <p class="hint" id="filesUsage">Upload and manage your documents and assets.</p>
@@ -1323,6 +1334,40 @@ export function dashboardPage(): string {
       bodyEl.appendChild(row);
     });
   }
+  async function loadCalendar(){
+    var r=await api('/api/platform/calendar/events'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('calendarEvents'); clear(el);
+    var now=Date.now();
+    var list=(d.events||[]).filter(function(e){return !e.endAt?Date.parse(e.startAt)>=now-86400000:Date.parse(e.endAt)>=now;});
+    if(!list.length){el.appendChild(emptyMsg('No upcoming events. Add one below.'));return;}
+    list.forEach(function(e){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(e.title);t.style.fontWeight='600';left.appendChild(t);
+      var when=new Date(e.startAt);
+      var s=document.createElement('div');s.className='sub';s.textContent=e.allDay?when.toLocaleDateString():when.toLocaleString();left.appendChild(s);
+      row.appendChild(left);
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.cssText='width:auto;padding:6px 12px;flex:none;';rm.textContent='Remove';
+      rm.addEventListener('click',function(){deleteEvent(e.id);});row.appendChild(rm);
+      el.appendChild(row);
+    });
+  }
+  document.getElementById('addEvent').addEventListener('click',async function(){
+    var t=document.getElementById('cetitle'),w=document.getElementById('cewhen');
+    if(!t.value.trim()||!w.value){setMsg('cemsg','err','A title and a date/time are required.');return;}
+    setMsg('cemsg','','Adding\\u2026');
+    // datetime-local is local time; convert to a real ISO (UTC) instant.
+    var iso=new Date(w.value).toISOString();
+    var r=await api('/api/platform/calendar/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t.value.trim(),startAt:iso})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){t.value='';w.value='';setMsg('cemsg','ok','Event added.');loadCalendar();}
+    else{setMsg('cemsg','err',(x.error&&x.error.message)||'Could not add event.');}
+  });
+  async function deleteEvent(id){
+    var r=await api('/api/platform/calendar/events/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok)loadCalendar();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -1467,6 +1512,7 @@ export function dashboardPage(): string {
     if(u.role==='owner'){await loadAiSettings();}
     await loadActivity();
     await loadFiles();
+    await loadCalendar();
     refreshUnread();
     setInterval(refreshUnread, 45000);
     buildSecNav();

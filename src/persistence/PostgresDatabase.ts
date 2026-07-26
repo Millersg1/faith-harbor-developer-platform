@@ -372,6 +372,30 @@ export class PostgresDatabase
         ON password_reset_tokens (organization_id, user_id);
     `);
 
+    // Calendar events — tenant-scoped; times stored as UTC ISO strings.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS calendar_events (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        title            TEXT NOT NULL,
+        description      TEXT,
+        location         TEXT,
+        start_at         TEXT NOT NULL,
+        end_at           TEXT,
+        all_day          BOOLEAN NOT NULL DEFAULT FALSE,
+        subject_type     TEXT,
+        subject_id       TEXT,
+        created_by       TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS calendar_events_range_idx
+        ON calendar_events (organization_id, start_at);
+    `);
+
     // Forms — no-code forms with a globally-unique public slug, + submissions.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS forms (

@@ -33,6 +33,7 @@ import {
   FormValidationError,
   type PlatformFormService,
 } from "./forms/PlatformFormService";
+import type { CalendarService } from "./calendar/CalendarService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -93,6 +94,7 @@ export interface PlatformAppDependencies {
   search?: SearchService;
   files?: PlatformFileService;
   forms?: PlatformFormService;
+  calendar?: CalendarService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -509,6 +511,7 @@ export function createPlatformApp(
       search: deps.search,
       files: deps.files,
       forms: deps.forms,
+      calendar: deps.calendar,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

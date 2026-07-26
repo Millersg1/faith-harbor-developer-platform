@@ -39,6 +39,10 @@ import {
   type PlatformFormService,
 } from "./forms/PlatformFormService";
 import type { FormField } from "./forms/PlatformForm";
+import {
+  CalendarValidationError,
+  type CalendarService,
+} from "./calendar/CalendarService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -82,6 +86,7 @@ export interface PlatformApiDependencies {
   search?: SearchService;
   files?: PlatformFileService;
   forms?: PlatformFormService;
+  calendar?: CalendarService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -246,6 +251,194 @@ export function createPlatformApiRouter(
             res.json({ groups }),
           )
           .catch(next);
+      },
+    );
+  }
+
+  // ---- Calendar ----
+  if (deps.calendar) {
+    const calendar = deps.calendar;
+
+    router.get(
+      "/calendar/events",
+      (req, res, next) => {
+        calendar
+          .list({
+            from: optionalString(
+              req.query.from,
+            ),
+            to: optionalString(
+              req.query.to,
+            ),
+          })
+          .then((events) =>
+            res.json({ events }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/calendar/events",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.title,
+          ) ||
+          !isNonEmptyString(
+            body.startAt,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_EVENT",
+            "An event needs a title and a start time.",
+          );
+
+          return;
+        }
+
+        calendar
+          .create({
+            title: String(body.title),
+            description:
+              optionalString(
+                body.description,
+              ),
+            location:
+              optionalString(
+                body.location,
+              ),
+            startAt: String(
+              body.startAt,
+            ),
+            endAt: optionalString(
+              body.endAt,
+            ),
+            allDay: Boolean(
+              body.allDay,
+            ),
+            subjectType:
+              optionalString(
+                body.subjectType,
+              ),
+            subjectId:
+              optionalString(
+                body.subjectId,
+              ),
+            createdBy:
+              actor(req).actorId,
+          })
+          .then((event) =>
+            res
+              .status(201)
+              .json({ event }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              CalendarValidationError
+            ) {
+              badRequest(
+                res,
+                "INVALID_EVENT",
+                error.message,
+              );
+
+              return;
+            }
+
+            next(error);
+          });
+      },
+    );
+
+    router.patch(
+      "/calendar/events/:id",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        calendar
+          .update(
+            String(req.params.id),
+            {
+              title: optionalString(
+                body.title,
+              ),
+              description:
+                optionalString(
+                  body.description,
+                ),
+              location:
+                optionalString(
+                  body.location,
+                ),
+              startAt:
+                optionalString(
+                  body.startAt,
+                ),
+              endAt: optionalString(
+                body.endAt,
+              ),
+              allDay:
+                body.allDay == null
+                  ? undefined
+                  : Boolean(
+                      body.allDay,
+                    ),
+            },
+          )
+          .then((event) =>
+            res.json({ event }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              CalendarValidationError
+            ) {
+              badRequest(
+                res,
+                "INVALID_EVENT",
+                error.message,
+              );
+
+              return;
+            }
+
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "EVENT_NOT_FOUND",
+            );
+          });
+      },
+    );
+
+    router.delete(
+      "/calendar/events/:id",
+      (req, res, next) => {
+        calendar
+          .delete(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "EVENT_NOT_FOUND",
+            ),
+          );
       },
     );
   }

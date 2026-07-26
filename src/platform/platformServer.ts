@@ -83,6 +83,8 @@ import { PlatformFileRepository } from "./files/PlatformFileRepository";
 import { LocalStorageProvider } from "./files/StorageProvider";
 import { PlatformFormService } from "./forms/PlatformFormService";
 import { PlatformFormRepository } from "./forms/PlatformFormRepository";
+import { CalendarService } from "./calendar/CalendarService";
+import { CalendarEventRepository } from "./calendar/CalendarEventRepository";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -427,6 +429,10 @@ async function start(): Promise<void> {
     { leads, email, activity },
   );
 
+  const calendar = new CalendarService(
+    new CalendarEventRepository(db),
+  );
+
   const search = new SearchService({
     clients,
     leads,
@@ -474,6 +480,7 @@ async function start(): Promise<void> {
     search,
     files,
     forms,
+    calendar,
     websites,
     aiSettings,
     aiUsage,
