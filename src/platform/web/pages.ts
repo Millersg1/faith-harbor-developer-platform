@@ -156,6 +156,7 @@ export function loginPage(): string {
     <input id="password" type="password" autocomplete="current-password" required />
     <div class="msg" id="msg"></div>
     <button class="btn" type="submit">Sign in</button>
+    <div class="alt"><a href="/forgot">Forgot your password?</a></div>
     <div class="alt">New here? <a href="/signup">Create an organization</a></div>
   </form></div>`;
   const script = `
@@ -212,6 +213,80 @@ export function signupPage(): string {
   });`;
   return layout({
     title: "Create organization · All Elite Cloud",
+    body,
+    script,
+  });
+}
+
+export function forgotPasswordPage(): string {
+  const body = `
+  <div class="center"><form class="card" id="f">
+    <div class="brand">${LOGO} All Elite Cloud</div>
+    <h1>Reset your password</h1>
+    <p class="sub">Enter your organization and email. We'll send a reset link.</p>
+    <label for="org">Organization</label>
+    <input id="org" placeholder="your-organization" autocomplete="organization" required />
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" required />
+    <div class="msg" id="msg"></div>
+    <button class="btn" type="submit">Send reset link</button>
+    <div class="alt">Remembered it? <a href="/login">Back to sign in</a></div>
+  </form></div>`;
+  const script = `
+  var f=document.getElementById('f'),msg=document.getElementById('msg');
+  f.addEventListener('submit',async function(e){
+    e.preventDefault(); msg.className='msg'; msg.textContent='Sending…';
+    try{
+      var r=await fetch('/auth/forgot-password',{method:'POST',credentials:'include',
+        headers:{'Content-Type':'application/json','X-Org-Slug':org.value.trim()},
+        body:JSON.stringify({email:email.value.trim()})});
+      var d=await r.json().catch(function(){return {};});
+      if(r.ok){msg.className='msg ok';msg.textContent=d.message||'If that email has an account, a reset link is on its way.';f.querySelector('button').disabled=true;}
+      else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not send the reset link.';}
+    }catch(_){msg.className='msg err';msg.textContent='Network error.';}
+  });`;
+  return layout({
+    title: "Reset password · All Elite Cloud",
+    body,
+    script,
+  });
+}
+
+export function resetPasswordPage(): string {
+  const body = `
+  <div class="center"><form class="card" id="f">
+    <div class="brand">${LOGO} All Elite Cloud</div>
+    <h1>Choose a new password</h1>
+    <p class="sub">Enter your organization and a new password for your account.</p>
+    <label for="org">Organization</label>
+    <input id="org" placeholder="your-organization" autocomplete="organization" required />
+    <label for="password">New password</label>
+    <input id="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required />
+    <label for="confirm">Confirm password</label>
+    <input id="confirm" type="password" autocomplete="new-password" required />
+    <div class="msg" id="msg"></div>
+    <button class="btn" type="submit">Set new password</button>
+    <div class="alt"><a href="/login">Back to sign in</a></div>
+  </form></div>`;
+  const script = `
+  var f=document.getElementById('f'),msg=document.getElementById('msg');
+  var token=new URLSearchParams(location.search).get('token')||'';
+  if(!token){msg.className='msg err';msg.textContent='This reset link is missing its token. Request a new one.';}
+  f.addEventListener('submit',async function(e){
+    e.preventDefault(); msg.className='msg';
+    if(password.value!==confirm.value){msg.className='msg err';msg.textContent='Passwords do not match.';return;}
+    msg.textContent='Saving…';
+    try{
+      var r=await fetch('/auth/reset-password',{method:'POST',credentials:'include',
+        headers:{'Content-Type':'application/json','X-Org-Slug':org.value.trim()},
+        body:JSON.stringify({token:token,newPassword:password.value})});
+      var d=await r.json().catch(function(){return {};});
+      if(r.ok){msg.className='msg ok';msg.textContent='Password updated. Redirecting to sign in…';setTimeout(function(){window.location='/login';},1500);}
+      else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not reset your password.';}
+    }catch(_){msg.className='msg err';msg.textContent='Network error.';}
+  });`;
+  return layout({
+    title: "Set new password · All Elite Cloud",
     body,
     script,
   });

@@ -135,6 +135,21 @@ export class PlatformUserService {
     return user;
   }
 
+  /**
+   * Looks up a user by email within the current tenant. Returns undefined
+   * when none matches (used by the password reset flow, which must not
+   * reveal whether an address exists).
+   */
+  async findByEmail(
+    email: string,
+  ): Promise<
+    PlatformUserRecord | undefined
+  > {
+    return this.repository.findByEmail(
+      email.trim().toLowerCase(),
+    );
+  }
+
   async list(): Promise<
     readonly PlatformUserRecord[]
   > {
@@ -211,6 +226,37 @@ export class PlatformUserService {
         "Your current password is incorrect.",
       );
     }
+
+    await this.repository.update({
+      ...user,
+      passwordHash: hashPassword(
+        newPassword,
+      ),
+      updatedAt:
+        new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Sets a user's password without knowing the old one. For flows that have
+   * already proven the caller's identity by another means — a valid,
+   * single-use password reset token. Not exposed to end users directly.
+   */
+  async setPassword(
+    userId: string,
+    newPassword: string,
+  ): Promise<void> {
+    if (
+      !newPassword ||
+      newPassword.length < 8
+    ) {
+      throw new Error(
+        "New password must be at least 8 characters.",
+      );
+    }
+
+    const user =
+      await this.get(userId);
 
     await this.repository.update({
       ...user,

@@ -15,6 +15,7 @@ import { createRequirePlatformAdmin } from "./admin/requirePlatformAdmin";
 import type { AiUsageRepository } from "./ai/AiUsageRepository";
 import type { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { createAuthRouter } from "./auth/authRouter";
+import type { PasswordResetService } from "./auth/PasswordResetService";
 import { createRequireUser } from "./auth/requireUser";
 import { BillingService } from "./billing/BillingService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
@@ -44,8 +45,10 @@ import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PlatformUserService } from "./users/PlatformUserService";
 import {
   dashboardPage,
+  forgotPasswordPage,
   landingPage,
   loginPage,
+  resetPasswordPage,
   signupPage,
 } from "./web/pages";
 
@@ -58,6 +61,7 @@ export interface PlatformAppDependencies {
   projects: PlatformProjectService;
   invoices: PlatformInvoiceService;
   signup: PlatformSignupService;
+  passwordReset?: PasswordResetService;
   domains: OrganizationDomainService;
   hosting?: PlatformHostingService;
   tickets?: PlatformTicketService;
@@ -229,6 +233,16 @@ export function createPlatformApp(
       .type("html")
       .send(signupPage());
   });
+  app.get("/forgot", (_req, res) => {
+    res
+      .type("html")
+      .send(forgotPasswordPage());
+  });
+  app.get("/reset", (_req, res) => {
+    res
+      .type("html")
+      .send(resetPasswordPage());
+  });
   app.get("/app", (_req, res) => {
     res
       .type("html")
@@ -307,10 +321,14 @@ export function createPlatformApp(
       users: deps.users,
       sessions: deps.sessions,
       signup: deps.signup,
+      passwordReset:
+        deps.passwordReset,
+      email: deps.email,
       organizations:
         deps.organizations,
       tenantMiddleware,
       requireUser,
+      baseDomain: deps.baseDomain,
       secureCookie:
         deps.secureCookie,
     }),

@@ -68,6 +68,8 @@ import { createPlatformApp } from "./createPlatformApp";
 import { PlatformSessionRepository } from "./sessions/PlatformSessionRepository";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
+import { PasswordResetService } from "./auth/PasswordResetService";
+import { PasswordResetRepository } from "./auth/PasswordResetRepository";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -151,6 +153,11 @@ async function start(): Promise<void> {
       organizations,
       users,
       sessions,
+    );
+  const passwordReset =
+    new PasswordResetService(
+      new PasswordResetRepository(db),
+      users,
     );
   const domains =
     new OrganizationDomainService(
@@ -369,6 +376,7 @@ async function start(): Promise<void> {
     projects,
     invoices,
     signup,
+    passwordReset,
     domains,
     hosting,
     tickets,

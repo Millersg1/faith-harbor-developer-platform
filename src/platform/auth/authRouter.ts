@@ -4,11 +4,13 @@ import {
 } from "express";
 
 import type { OrganizationService } from "../../tenancy/OrganizationService";
+import type { PlatformEmailService } from "../email/PlatformEmailService";
 import { toPublicUser } from "../users/PlatformUser";
 import type { PlatformUserService } from "../users/PlatformUserService";
 import type { PlatformSessionRecord } from "../sessions/PlatformSession";
 import type { PlatformSessionService } from "../sessions/PlatformSessionService";
 import type { PlatformSignupService } from "../signup/PlatformSignupService";
+import type { PasswordResetService } from "./PasswordResetService";
 import {
   readToken,
   SESSION_COOKIE,
@@ -40,6 +42,24 @@ export interface AuthRouterDependencies {
    * Self-serve org onboarding. When provided, POST /signup is exposed.
    */
   signup?: PlatformSignupService;
+
+  /**
+   * Drives the forgot-password flow. When provided (with `email`), POST
+   * /forgot-password and POST /reset-password are exposed.
+   */
+  passwordReset?: PasswordResetService;
+
+  /**
+   * Sends the reset link. Required for /forgot-password to deliver mail.
+   */
+  email?: PlatformEmailService;
+
+  /**
+   * Platform base domain (e.g. "allelitecloud.com"). Used to build reset
+   * links on the tenant's own canonical host (`<slug>.<baseDomain>`) —
+   * never from the request's Host header, which a caller controls.
+   */
+  baseDomain?: string;
 
   /**
    * Whether to mark the session cookie Secure (HTTPS only). True in
@@ -264,6 +284,144 @@ export function createAuthRouter(
     },
   );
 
+  // Forgot / reset password. Both run within a tenant (you reset a password
+  // for a specific organization, resolved from the request's host) and only
+  // exist when a reset service is wired.
+  if (deps.passwordReset) {
+    const passwordReset =
+      deps.passwordReset;
+
+    router.post(
+      "/forgot-password",
+      deps.tenantMiddleware,
+      (req, res, next) => {
+        const body = (req.body ??
+          {}) as { email?: unknown };
+
+        // Respond identically whether or not the address has an account,
+        // so this can't be used to discover which emails exist.
+        const done = () =>
+          res.json({
+            ok: true,
+            message:
+              "If that email has an account, a reset link is on its way.",
+          });
+
+        if (
+          typeof body.email !==
+          "string"
+        ) {
+          done();
+
+          return;
+        }
+
+        passwordReset
+          .request(body.email)
+          .then(async (result) => {
+            if (!result) {
+              return;
+            }
+
+            // Canonical host from the tenant itself, NOT the request's
+            // Host header (which the caller controls — trusting it would
+            // let an attacker poison the reset link and steal the token).
+            const slug =
+              await resolveSlug(
+                deps.organizations,
+                result.user
+                  .organizationId,
+              );
+            const link =
+              buildResetLink(
+                deps.baseDomain,
+                slug,
+                result.token,
+              );
+
+            // Best-effort: never let a mail hiccup change the response.
+            await deps.email?.sendQuietly(
+              {
+                to: result.user
+                  .email,
+                subject:
+                  "Reset your password",
+                body: resetEmailBody(
+                  result.user.name,
+                  link,
+                ),
+              },
+            );
+          })
+          .then(done)
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/reset-password",
+      deps.tenantMiddleware,
+      (req, res, next) => {
+        const body = (req.body ??
+          {}) as {
+          token?: unknown;
+          newPassword?: unknown;
+        };
+
+        if (
+          typeof body.token !==
+            "string" ||
+          typeof body.newPassword !==
+            "string"
+        ) {
+          res.status(400).json({
+            error: {
+              code: "INVALID_REQUEST",
+              message:
+                "A reset token and new password are required.",
+            },
+          });
+
+          return;
+        }
+
+        passwordReset
+          .reset(
+            body.token,
+            body.newPassword,
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "";
+
+            if (
+              /invalid|expired|at least 8/i.test(
+                message,
+              )
+            ) {
+              res
+                .status(400)
+                .json({
+                  error: {
+                    code: "INVALID_RESET",
+                    message,
+                  },
+                });
+
+              return;
+            }
+
+            next(error);
+          });
+      },
+    );
+  }
+
   router.post(
     "/logout",
     (req, res, next) => {
@@ -397,6 +555,75 @@ export function createAuthRouter(
   );
 
   return router;
+}
+
+/**
+ * The tenant's slug, looked up server-side, or undefined. Used to build the
+ * canonical reset host — never derived from anything the caller supplies.
+ */
+async function resolveSlug(
+  organizations:
+    | OrganizationService
+    | undefined,
+  organizationId: string,
+): Promise<string | undefined> {
+  if (!organizations) {
+    return undefined;
+  }
+
+  try {
+    const org =
+      await organizations.get(
+        organizationId,
+      );
+
+    return org.slug;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Builds the absolute reset link on the tenant's own canonical host
+ * (`<slug>.<baseDomain>`), resolved server-side. Always HTTPS. The request's
+ * Host header is deliberately NOT used, so a forged Host can't poison the
+ * link and leak the token to an attacker's domain.
+ */
+function buildResetLink(
+  baseDomain: string | undefined,
+  slug: string | undefined,
+  token: string,
+): string {
+  const base = (
+    baseDomain || "allelitecloud.com"
+  ).trim();
+  const host = slug
+    ? `${slug}.${base}`
+    : base;
+
+  return `https://${host}/reset?token=${encodeURIComponent(token)}`;
+}
+
+/**
+ * The reset email body. Plain text; the link is the whole point.
+ */
+function resetEmailBody(
+  name: string | undefined,
+  link: string,
+): string {
+  const greeting = name
+    ? `Hi ${name},`
+    : "Hi,";
+
+  return (
+    `${greeting}\n\n` +
+    "We received a request to reset your password. Open the link below to " +
+    "choose a new one. It expires in one hour and can be used once.\n\n" +
+    `${link}\n\n` +
+    "If you didn't request this, you can safely ignore this email — your " +
+    "password won't change.\n\n" +
+    "— All Elite Cloud"
+  );
 }
 
 /**

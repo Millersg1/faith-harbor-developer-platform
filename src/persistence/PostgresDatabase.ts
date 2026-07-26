@@ -355,6 +355,23 @@ export class PostgresDatabase
       );
     `);
 
+    // Password reset tokens — only the SHA-256 hash of each token is stored.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        token_hash       TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        user_id          TEXT NOT NULL,
+        expires_at       TEXT NOT NULL,
+        used_at          TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS password_reset_tokens_user_idx
+        ON password_reset_tokens (organization_id, user_id);
+    `);
+
     // Client-portal logins — one per client contact, scoped to an org+client.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS portal_users (
