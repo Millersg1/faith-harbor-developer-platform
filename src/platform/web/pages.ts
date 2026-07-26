@@ -688,6 +688,16 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="wfmsg"></div>
       </div>
+      <div class="panel" id="aiConsolePanel" style="display:none;">
+        <h2>AI Command Center</h2>
+        <p class="hint">Ask about your business or ask the assistant to do something. It reads live data to answer, and anything that changes data is queued for you to confirm.</p>
+        <div id="aiChatLog" style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto;padding:4px 0;"></div>
+        <div class="inline" style="margin-top:8px;">
+          <div class="f" style="flex:1;"><label for="aiChatInput">Message</label><input id="aiChatInput" placeholder="e.g. How many leads do we have?" autocomplete="off" /></div>
+          <button class="btn" id="aiChatSend" style="width:auto;">Send</button>
+        </div>
+        <div class="msg" id="aicmsg"></div>
+      </div>
       <div class="panel" id="aiToolsPanel" style="display:none;">
         <h2>AI Actions <span class="pill">owner/admin</span></h2>
         <p class="hint">The actions an AI assistant can take on your behalf. Read actions run immediately; actions that change data are proposed here and only run when you confirm them.</p>
@@ -1448,6 +1458,54 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/workflows/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
     if(r.ok)loadWorkflows();
   }
+  var aiHistory=[];
+  function aiBubble(role,text){
+    var log=document.getElementById('aiChatLog');
+    var b=document.createElement('div');
+    b.style.cssText='max-width:85%;padding:8px 12px;border-radius:10px;white-space:pre-wrap;font-size:0.9rem;'+(role==='user'?'align-self:flex-end;background:#2563eb;color:#fff;':'align-self:flex-start;background:rgba(127,127,127,0.14);');
+    b.textContent=text;log.appendChild(b);log.scrollTop=log.scrollHeight;return b;
+  }
+  async function sendAiChat(){
+    var input=document.getElementById('aiChatInput');var msg=(input.value||'').trim();if(!msg)return;
+    input.value='';setMsg('aicmsg','','');
+    aiBubble('user',msg);
+    var thinking=aiBubble('assistant','\\u2026');
+    var r=await api('/api/platform/ai/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:aiHistory})});
+    if(!r.ok){thinking.textContent='Sorry — something went wrong.';return;}
+    var d=await r.json();
+    thinking.textContent=d.reply||'';
+    (d.steps||[]).forEach(function(s){
+      var line=document.createElement('div');line.className='sub';line.style.cssText='align-self:flex-start;font-size:0.78rem;opacity:0.8;';
+      line.textContent=(s.mode==='write'?'\\u270e ':'\\u2699 ')+s.tool+': '+s.summary;
+      document.getElementById('aiChatLog').appendChild(line);
+    });
+    if((d.pending||[]).length){
+      d.pending.forEach(function(inv){renderAiPending(inv);});
+      loadAiTools();
+    }
+    aiHistory.push({role:'user',content:msg});
+    aiHistory.push({role:'assistant',content:d.reply||''});
+    if(aiHistory.length>24)aiHistory=aiHistory.slice(-24);
+    document.getElementById('aiChatLog').scrollTop=document.getElementById('aiChatLog').scrollHeight;
+  }
+  function renderAiPending(inv){
+    var log=document.getElementById('aiChatLog');
+    var card=document.createElement('div');card.style.cssText='align-self:flex-start;max-width:85%;border:1px solid rgba(127,127,127,0.3);border-radius:10px;padding:10px 12px;';
+    var t=document.createElement('div');t.style.fontWeight='600';t.textContent='Confirm: '+esc(inv.toolName);card.appendChild(t);
+    var s=document.createElement('div');s.className='sub';s.textContent=summarizeArgs(inv.args);card.appendChild(s);
+    var canConfirm=(myRole==='owner'||myRole==='admin');
+    if(canConfirm){
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;margin-top:8px;';
+      var ok=document.createElement('button');ok.className='btn';ok.style.padding='6px 12px';ok.textContent='Confirm';
+      ok.addEventListener('click',function(){card.remove();decideAi(inv.id,'confirm');});actions.appendChild(ok);
+      var no=document.createElement('button');no.className='btn ghost';no.style.padding='6px 12px';no.textContent='Decline';
+      no.addEventListener('click',function(){card.remove();decideAi(inv.id,'reject');});actions.appendChild(no);
+      card.appendChild(actions);
+    }else{
+      var note=document.createElement('div');note.className='sub';note.style.marginTop='6px';note.textContent='An owner or admin can confirm this in AI Actions.';card.appendChild(note);
+    }
+    log.appendChild(card);log.scrollTop=log.scrollHeight;
+  }
   async function loadAiTools(){
     var tr=await api('/api/platform/ai/tools');
     if(tr.ok){
@@ -1717,6 +1775,7 @@ export function dashboardPage(): string {
     await loadActivity();
     await loadFiles();
     await loadCalendar();
+    document.getElementById('aiConsolePanel').style.display='';
     refreshUnread();
     setInterval(refreshUnread, 45000);
     buildSecNav();
@@ -1812,6 +1871,8 @@ export function dashboardPage(): string {
     document.addEventListener('keydown',function(e){ if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); if(isOpen())close(); else open(); } });
     var ob=document.getElementById('openPalette'); if(ob)ob.addEventListener('click',open);
   })();
+  document.getElementById('aiChatSend').addEventListener('click',sendAiChat);
+  document.getElementById('aiChatInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendAiChat();}});
   document.getElementById('addWorkflow').addEventListener('click',async function(){
     var tpl=WF_TEMPLATES[document.getElementById('wftemplate').value];
     if(!tpl){setMsg('wfmsg','err','Pick a template.');return;}

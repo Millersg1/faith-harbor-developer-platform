@@ -7,6 +7,17 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **AI Command Center** (P3-M3): a chat surface where the user asks about their
+  business or asks the assistant to do something. The assistant plans with the
+  tool registry's descriptors, runs **read** tools itself to gather live data
+  (never inventing numbers), and routes **write** tools through the registry —
+  so they become pending proposals the user confirms. The model can gather
+  information freely but can never change data on its own. Provider-neutral
+  chat client (OpenAI/OpenRouter/own key), injectable for tests; runs in the
+  caller's tenant scope; usage metered (`console_chat`); bounded plan→act loop.
+  API `/api/platform/ai/console/chat`, dashboard **AI Command Center** panel
+  (all users; write confirmation gated to owner/admin), 6 tests. Live-proved on
+  staging.
 - **AI tool registry** (P3-M2): the closed, code-defined catalogue of actions
   an AI surface may take for a tenant. Two safety properties are structural,
   not conventions: the tool set is fixed in code (no tenant can add or run

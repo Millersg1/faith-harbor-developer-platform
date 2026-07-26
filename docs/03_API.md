@@ -69,6 +69,7 @@ validation failures **400**; plan/quota limits **402**.
 | GET | /api/platform/ai/tools/invocations | user | recent invocations + pending |
 | POST | /api/platform/ai/tools/invocations/:id/confirm | owner/admin | run a pending write |
 | POST | /api/platform/ai/tools/invocations/:id/reject | owner/admin | decline a pending write |
+| POST | /api/platform/ai/console/chat | user | {message,history[]} → {available,reply,steps[],pending[]} |
 
 ## Tenant API — business modules
 

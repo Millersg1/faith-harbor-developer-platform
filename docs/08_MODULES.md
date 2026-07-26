@@ -55,6 +55,21 @@ Source lives under `src/platform/<module>/`.
 - **Purpose:** tenant email + outbox. **Tables:** emails. **Transport:** SMTP
   or logging. **API:** /emails.
 
+### AI Command Center (`ai/console/`)
+- **Purpose:** a chat surface that answers questions about the business and
+  takes actions — the human-facing front end of the tool registry.
+- **How it works:** builds tool specs from the registry (role-filtered), calls
+  a provider-neutral chat client (`ChatClient`: OpenAI/OpenRouter/own key,
+  injectable), and loops plan→act up to a bounded number of rounds. **Read
+  tools it runs itself; write tools go through `AiToolService` and become
+  pending proposals the user confirms** — the model can never change data on
+  its own. Runs in the caller's tenant scope; usage metered (`console_chat`);
+  honest when no key is configured (reports unavailable, doesn't fake).
+- **Pieces:** `ChatClient` (+ `OpenAiChatClient` / `DisconnectedChatClient` /
+  `createChatClient`), `AiConsoleService`.
+- **API:** /ai/console/chat. **UI:** dashboard **AI Command Center** panel (all
+  users; write confirmation gated to owner/admin).
+
 ### AI tools (`ai/tools/`)
 - **Purpose:** the closed, code-defined registry of actions an AI surface may
   take for a tenant — the foundation the AI Command Center and AI Employees

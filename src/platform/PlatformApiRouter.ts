@@ -60,6 +60,7 @@ import {
   AiToolValidationError,
   type AiToolService,
 } from "./ai/tools/AiToolService";
+import type { AiConsoleService } from "./ai/console/AiConsoleService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -108,6 +109,7 @@ export interface PlatformApiDependencies {
   audit?: AuditService;
   workflows?: WorkflowService;
   aiTools?: AiToolService;
+  aiConsole?: AiConsoleService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1381,6 +1383,61 @@ export function createPlatformApiRouter(
               error,
             ),
           );
+      },
+    );
+  }
+
+  // ---- AI Command Center ----
+  if (deps.aiConsole) {
+    const aiConsole = deps.aiConsole;
+
+    router.post(
+      "/ai/console/chat",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+        const message = optionalString(
+          body.message,
+        );
+
+        if (!message) {
+          badRequest(
+            res,
+            "INVALID_MESSAGE",
+            "A message is required.",
+          );
+
+          return;
+        }
+
+        const history = Array.isArray(
+          body.history,
+        )
+          ? (body.history as unknown[])
+              .map(normalizeTurn)
+              .filter(
+                (
+                  t,
+                ): t is {
+                  role:
+                    | "user"
+                    | "assistant";
+                  content: string;
+                } => t !== null,
+              )
+          : [];
+
+        aiConsole
+          .chat(
+            message,
+            history,
+            toolContext(req),
+          )
+          .then((reply) =>
+            res.json(reply),
+          )
+          .catch(next);
       },
     );
   }
@@ -5429,6 +5486,27 @@ function toolContext(req: unknown): {
     actorLabel:
       auth?.user.name ||
       auth?.user.email,
+  };
+}
+
+/** Normalizes a client-supplied chat turn, or null if it isn't usable. */
+function normalizeTurn(value: unknown): {
+  role: "user" | "assistant";
+  content: string;
+} | null {
+  const obj = asObject(value);
+  const content = optionalString(
+    obj.content,
+  );
+
+  if (!content) return null;
+
+  return {
+    role:
+      obj.role === "assistant"
+        ? "assistant"
+        : "user",
+    content,
   };
 }
 

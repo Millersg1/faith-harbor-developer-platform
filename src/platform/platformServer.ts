@@ -95,6 +95,13 @@ import { AiToolRegistry } from "./ai/tools/AiToolRegistry";
 import { AiToolService } from "./ai/tools/AiToolService";
 import { AiToolInvocationRepository } from "./ai/tools/AiToolInvocationRepository";
 import { buildDefaultAiTools } from "./ai/tools/defaultAiTools";
+import { AiConsoleService } from "./ai/console/AiConsoleService";
+import {
+  createChatClient,
+  DisconnectedChatClient,
+  OpenAiChatClient,
+  type ChatClient,
+} from "./ai/console/ChatClient";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -507,6 +514,33 @@ async function start(): Promise<void> {
     { audit },
   );
 
+  // AI Command Center — chats using the tool registry. Uses the platform's
+  // included client when present (else disconnected), and a tenant's own key
+  // when they've configured one.
+  const defaultChatClient: ChatClient =
+    openAiKey
+      ? new OpenAiChatClient({
+          apiKey: openAiKey,
+          model:
+            process.env
+              .OPENAI_MODEL ||
+            undefined,
+        })
+      : new DisconnectedChatClient();
+  const aiConsole =
+    new AiConsoleService(
+      aiToolRegistry,
+      aiTools,
+      {
+        aiSettings,
+        aiUsage,
+        clientFactory:
+          createChatClient,
+        defaultClient:
+          defaultChatClient,
+      },
+    );
+
   const search = new SearchService({
     clients,
     leads,
@@ -559,6 +593,7 @@ async function start(): Promise<void> {
     audit,
     workflows,
     aiTools,
+    aiConsole,
     websites,
     aiSettings,
     aiUsage,
