@@ -338,6 +338,23 @@ export class PostgresDatabase
       );
     `);
 
+    // Email outbox — a record of every email a tenant sent (or attempted).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS emails (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        to_address       TEXT NOT NULL,
+        subject          TEXT NOT NULL,
+        body             TEXT NOT NULL,
+        from_address     TEXT NOT NULL,
+        status           TEXT NOT NULL,
+        provider         TEXT NOT NULL,
+        error            TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
+
     // Client-portal logins — one per client contact, scoped to an org+client.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS portal_users (

@@ -23,6 +23,7 @@ import { PlatformBrandService } from "./brands/PlatformBrandService";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
+import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import { ClientUserService } from "./portal/ClientUserService";
 import { portalPage } from "./portal/portalPage";
@@ -70,6 +71,7 @@ export interface PlatformAppDependencies {
   programs?: PlatformProgramService;
   clientUsers?: ClientUserService;
   portalSessions?: PortalSessionService;
+  email?: PlatformEmailService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -346,6 +348,7 @@ export function createPlatformApp(
       books: deps.books,
       programs: deps.programs,
       clientUsers: deps.clientUsers,
+      email: deps.email,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

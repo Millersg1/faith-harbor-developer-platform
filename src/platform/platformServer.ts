@@ -28,6 +28,13 @@ import { PlatformLeadRepository } from "./crm/PlatformLeadRepository";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { PlatformCampaignRepository } from "./marketing/PlatformCampaignRepository";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
+import {
+  LoggingEmailTransport,
+  type EmailTransport,
+} from "../communications/EmailTransport";
+import { SmtpEmailTransport } from "../communications/SmtpEmailTransport";
+import { PlatformEmailRepository } from "./email/PlatformEmailRepository";
+import { PlatformEmailService } from "./email/PlatformEmailService";
 import { ClientUserRepository } from "./portal/ClientUserRepository";
 import { ClientUserService } from "./portal/ClientUserService";
 import { PortalSessionRepository } from "./portal/PortalSessionRepository";
@@ -216,6 +223,41 @@ async function start(): Promise<void> {
       ),
       clients,
     );
+  // Email: a real SMTP transport when SMTP_* is configured (e.g. a cPanel
+  // mailbox), otherwise a logging transport that records but doesn't deliver.
+  const smtpHost =
+    process.env.SMTP_HOST?.trim();
+  const smtpUser =
+    process.env.SMTP_USER?.trim();
+  const smtpPass =
+    process.env.SMTP_PASSWORD?.trim();
+  const emailConnected = Boolean(
+    smtpHost && smtpUser && smtpPass,
+  );
+  const emailTransport: EmailTransport =
+    emailConnected
+      ? new SmtpEmailTransport({
+          host: smtpHost as string,
+          port: Number(
+            process.env.SMTP_PORT ??
+              465,
+          ),
+          user: smtpUser as string,
+          password:
+            smtpPass as string,
+        })
+      : new LoggingEmailTransport();
+  const email =
+    new PlatformEmailService(
+      new PlatformEmailRepository(db),
+      emailTransport,
+      {
+        connected: emailConnected,
+        fromDefault:
+          process.env.SMTP_FROM?.trim() ||
+          undefined,
+      },
+    );
   const clientUsers =
     new ClientUserService(
       new ClientUserRepository(db),
@@ -340,6 +382,7 @@ async function start(): Promise<void> {
     programs,
     clientUsers,
     portalSessions,
+    email,
     websites,
     aiSettings,
     aiUsage,

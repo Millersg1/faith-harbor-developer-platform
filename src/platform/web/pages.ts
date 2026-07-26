@@ -432,6 +432,16 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="pumsg"></div>
       </div>
+      <div class="panel" id="emailPanel" style="display:none;">
+        <h2>Email <span class="pill">owner/admin</span></h2>
+        <p class="hint" id="emailStatus">Send email and view your outbox.</p>
+        <div class="list" id="emails"><div class="empty">Loading…</div></div>
+        <div class="f"><label for="emto">To</label><input id="emto" type="email" placeholder="someone@example.com" /></div>
+        <div class="f"><label for="emsub">Subject</label><input id="emsub" placeholder="Subject" /></div>
+        <div class="f"><label for="embody">Message</label><input id="embody" placeholder="Your message" /></div>
+        <button class="btn" id="sendEmail" style="width:auto;margin-top:12px;">Send email</button>
+        <div class="msg" id="emmsg"></div>
+      </div>
       <div class="panel">
         <h2>Account</h2>
         <p class="hint">Change your password.</p>
@@ -784,6 +794,12 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/portal-users/'+encodeURIComponent(id),{method:'DELETE'});
     if(r.ok){setMsg('pumsg','ok','Removed.');loadPortalUsers();}
   }
+  async function loadEmails(){
+    var r=await api('/api/platform/emails'); if(!r.ok)return;
+    var d=await r.json();
+    document.getElementById('emailStatus').textContent=d.connected?'Email is connected — messages are delivered.':'No mail server configured yet — messages are recorded in your outbox but not delivered.';
+    renderList('emails',(d.emails||[]).slice(0,20),function(m){return item(esc(m.subject),esc(m.to),esc(m.status));});
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -909,9 +925,11 @@ export function dashboardPage(): string {
       document.getElementById('brandsPanel').style.display='';
       document.getElementById('teamPanel').style.display='';
       document.getElementById('portalPanel').style.display='';
+      document.getElementById('emailPanel').style.display='';
       loadBrands();
       loadTeam();
       loadPortalUsers();
+      loadEmails();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
@@ -921,6 +939,15 @@ export function dashboardPage(): string {
     if(u.role==='owner'){await loadAiSettings();}
     buildSecNav();
   }
+  document.getElementById('sendEmail').addEventListener('click',async function(){
+    var to=document.getElementById('emto'),su=document.getElementById('emsub'),bo=document.getElementById('embody');
+    if(!to.value.trim()||!su.value.trim()||!bo.value.trim()){setMsg('emmsg','err','To, subject, and message are required.');return;}
+    setMsg('emmsg','','Sending\\u2026');
+    var r=await api('/api/platform/emails',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:to.value.trim(),subject:su.value.trim(),body:bo.value.trim()})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){to.value='';su.value='';bo.value='';var st=(x.email&&x.email.status)||'';setMsg('emmsg','ok',st==='sent'?'Sent.':'Recorded ('+st+').');loadEmails();}
+    else{setMsg('emmsg','err',(x.error&&x.error.message)||'Could not send.');}
+  });
   document.getElementById('changePw').addEventListener('click',async function(){
     var c=document.getElementById('cpcur'),n=document.getElementById('cpnew');
     if(!c.value||!n.value){setMsg('cpmsg','err','Both fields are required.');return;}

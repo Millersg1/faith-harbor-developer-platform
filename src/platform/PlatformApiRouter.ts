@@ -21,6 +21,7 @@ import type { AiUsageRepository } from "./ai/AiUsageRepository";
 import type { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { PLANS } from "./billing/Plan";
 import type { PlatformBrandService } from "./brands/PlatformBrandService";
+import type { PlatformEmailService } from "./email/PlatformEmailService";
 import type { PlatformClientService } from "./clients/PlatformClientService";
 import type { PlatformLeadService } from "./crm/PlatformLeadService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -59,6 +60,7 @@ export interface PlatformApiDependencies {
   books?: PlatformBookService;
   programs?: PlatformProgramService;
   clientUsers?: ClientUserService;
+  email?: PlatformEmailService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -288,12 +290,19 @@ export function createPlatformApiRouter(
               name,
             }),
           )
-          .then((user) =>
+          .then((user) => {
+            deps.email?.sendQuietly({
+              to: user.email,
+              subject:
+                "You've been added to a workspace",
+              body: "You've been added to a workspace on the platform. Sign in with the temporary password you were given, then change it under Account.",
+            });
+
             res.status(201).json({
               member:
                 toPublicUser(user),
-            }),
-          )
+            });
+          })
           .catch(
             (error: unknown) => {
               if (
@@ -2650,6 +2659,97 @@ export function createPlatformApiRouter(
     );
   }
 
+  // ---- Email (outbox + send) ----
+  if (deps.email) {
+    const email = deps.email;
+
+    router.get(
+      "/emails",
+      requireRole("owner", "admin"),
+      (_req, res, next) => {
+        email
+          .list()
+          .then((rows) =>
+            res.json({
+              connected:
+                email.connected(),
+              emails: rows,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/emails",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.to,
+          ) ||
+          !isNonEmptyString(
+            body.subject,
+          ) ||
+          !isNonEmptyString(
+            body.body,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_EMAIL",
+            "A recipient, subject, and body are required.",
+          );
+
+          return;
+        }
+
+        email
+          .send({
+            to: String(body.to),
+            subject: String(
+              body.subject,
+            ),
+            body: String(body.body),
+          })
+          .then((record) =>
+            res
+              .status(201)
+              .json({ email: record }),
+          )
+          .catch(
+            (error: unknown) => {
+              const message =
+                error instanceof
+                Error
+                  ? error.message
+                  : "";
+
+              if (
+                /valid recipient/i.test(
+                  message,
+                )
+              ) {
+                badRequest(
+                  res,
+                  "INVALID_EMAIL",
+                  message,
+                );
+
+                return;
+              }
+
+              next(error);
+            },
+          );
+      },
+    );
+  }
+
   // ---- Client portal logins (owner/admin manage) ----
   if (deps.clientUsers) {
     const clientUsers =
@@ -2712,14 +2812,21 @@ export function createPlatformApiRouter(
               body.password,
             ),
           })
-          .then((user) =>
+          .then((user) => {
+            deps.email?.sendQuietly({
+              to: user.email,
+              subject:
+                "Your client portal login is ready",
+              body: "A portal login has been created for you. Visit /portal and sign in with the temporary password you were given, then change it.",
+            });
+
             res.status(201).json({
               portalUser:
                 toPublicClientUser(
                   user,
                 ),
-            }),
-          )
+            });
+          })
           .catch(
             (error: unknown) => {
               const message =
