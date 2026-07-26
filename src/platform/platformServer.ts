@@ -85,6 +85,8 @@ import { PlatformFormService } from "./forms/PlatformFormService";
 import { PlatformFormRepository } from "./forms/PlatformFormRepository";
 import { CalendarService } from "./calendar/CalendarService";
 import { CalendarEventRepository } from "./calendar/CalendarEventRepository";
+import { KnowledgeService } from "./knowledge/KnowledgeService";
+import { KnowledgeRepository } from "./knowledge/KnowledgeRepository";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -432,6 +434,10 @@ async function start(): Promise<void> {
   const calendar = new CalendarService(
     new CalendarEventRepository(db),
   );
+  const knowledge =
+    new KnowledgeService(
+      new KnowledgeRepository(db),
+    );
 
   const search = new SearchService({
     clients,

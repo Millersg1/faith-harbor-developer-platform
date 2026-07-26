@@ -672,6 +672,23 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="fmmsg"></div>
       </div>
+      <div class="panel" id="knowledgePanel" style="display:none;">
+        <h2>AI Knowledge Base <span class="pill">owner/admin</span></h2>
+        <p class="hint">Add documents, then ask questions grounded in them — answers cite their sources.</p>
+        <div class="inline">
+          <div class="f"><label for="kbcname">New collection</label><input id="kbcname" placeholder="Policies" /></div>
+          <button class="btn" id="addCollection" style="width:auto;">Create</button>
+        </div>
+        <div class="f"><label for="kbcollection">Collection</label><select id="kbcollection"></select></div>
+        <div class="f"><label for="kbdocname">Document name</label><input id="kbdocname" placeholder="Refund policy" /></div>
+        <div class="f"><label for="kbdoccontent">Document text</label><textarea id="kbdoccontent" rows="4" placeholder="Paste text content to index…" style="width:100%;"></textarea></div>
+        <button class="btn" id="addDocument" style="width:auto;">Add document</button>
+        <div class="list" id="kbdocs" style="margin-top:12px;"><div class="empty">No documents.</div></div>
+        <div class="f" style="margin-top:12px;"><label for="kbquestion">Ask a question</label><input id="kbquestion" placeholder="What is our refund window?" /></div>
+        <button class="btn" id="askKnowledge" style="width:auto;">Ask</button>
+        <div class="list" id="kbanswer"></div>
+        <div class="msg" id="kbmsg"></div>
+      </div>
       <div class="panel" id="emailPanel" style="display:none;">
         <h2>Email <span class="pill">owner/admin</span></h2>
         <p class="hint" id="emailStatus">Send email and view your outbox.</p>
@@ -1368,6 +1385,37 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/calendar/events/'+encodeURIComponent(id),{method:'DELETE'});
     if(r.ok)loadCalendar();
   }
+  async function loadCollections(){
+    var r=await api('/api/platform/knowledge/collections'); if(!r.ok)return;
+    var d=await r.json();
+    var sel=document.getElementById('kbcollection'); var prev=sel.value; clear(sel);
+    (d.collections||[]).forEach(function(c){var o=document.createElement('option');o.value=c.id;o.textContent=c.name;sel.appendChild(o);});
+    if(prev)sel.value=prev;
+    if((d.collections||[]).length)loadKbDocs();
+    else{var el=document.getElementById('kbdocs');clear(el);el.appendChild(emptyMsg('Create a collection to begin.'));}
+  }
+  async function loadKbDocs(){
+    var sel=document.getElementById('kbcollection'); var id=sel.value; if(!id)return;
+    var r=await api('/api/platform/knowledge/collections/'+encodeURIComponent(id)+'/documents'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('kbdocs'); clear(el);
+    var list=d.documents||[];
+    if(!list.length){el.appendChild(emptyMsg('No documents in this collection.'));return;}
+    list.forEach(function(doc){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(doc.name);t.style.fontWeight='600';left.appendChild(t);
+      var s=document.createElement('div');s.className='sub';s.textContent=doc.chunkCount+' chunk(s) \\u00b7 '+esc(doc.status);left.appendChild(s);
+      row.appendChild(left);
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.cssText='width:auto;padding:6px 12px;flex:none;';rm.textContent='Delete';
+      rm.addEventListener('click',function(){deleteKbDoc(doc.id);});row.appendChild(rm);
+      el.appendChild(row);
+    });
+  }
+  async function deleteKbDoc(id){
+    var r=await api('/api/platform/knowledge/documents/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok)loadKbDocs();
+  }
   var aiReady=true;
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
@@ -1496,6 +1544,7 @@ export function dashboardPage(): string {
       document.getElementById('emailPanel').style.display='';
       document.getElementById('dripPanel').style.display='';
       document.getElementById('formsPanel').style.display='';
+      document.getElementById('knowledgePanel').style.display='';
       loadBrands();
       loadTeam();
       loadPortalUsers();
@@ -1503,6 +1552,7 @@ export function dashboardPage(): string {
       loadDrip();
       loadDripEnrollments();
       loadForms();
+      loadCollections();
     }
     if(u.role==='owner'){
       document.getElementById('planPickerWrap').style.display='flex';
@@ -1608,6 +1658,45 @@ export function dashboardPage(): string {
     document.addEventListener('keydown',function(e){ if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); if(isOpen())close(); else open(); } });
     var ob=document.getElementById('openPalette'); if(ob)ob.addEventListener('click',open);
   })();
+  document.getElementById('addCollection').addEventListener('click',async function(){
+    var n=document.getElementById('kbcname');
+    if(!n.value.trim()){setMsg('kbmsg','err','A collection needs a name.');return;}
+    var r=await api('/api/platform/knowledge/collections',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n.value.trim()})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){n.value='';setMsg('kbmsg','ok','Collection created.');loadCollections();}
+    else{setMsg('kbmsg','err',(x.error&&x.error.message)||'Could not create collection.');}
+  });
+  document.getElementById('addDocument').addEventListener('click',async function(){
+    var id=document.getElementById('kbcollection').value;
+    var nm=document.getElementById('kbdocname'),ct=document.getElementById('kbdoccontent');
+    if(!id){setMsg('kbmsg','err','Create/select a collection first.');return;}
+    if(!nm.value.trim()||!ct.value.trim()){setMsg('kbmsg','err','A document needs a name and text.');return;}
+    setMsg('kbmsg','','Indexing\\u2026');
+    var r=await api('/api/platform/knowledge/collections/'+encodeURIComponent(id)+'/documents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm.value.trim(),content:ct.value,mimeType:'text/plain'})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){nm.value='';ct.value='';setMsg('kbmsg','ok','Document indexed.');loadKbDocs();}
+    else{setMsg('kbmsg','err',(x.error&&x.error.message)||'Could not add document.');}
+  });
+  document.getElementById('kbcollection').addEventListener('change',loadKbDocs);
+  document.getElementById('askKnowledge').addEventListener('click',async function(){
+    var id=document.getElementById('kbcollection').value;
+    var q=document.getElementById('kbquestion');
+    if(!id||!q.value.trim()){setMsg('kbmsg','err','Select a collection and ask a question.');return;}
+    setMsg('kbmsg','','Searching\\u2026');
+    var r=await api('/api/platform/knowledge/collections/'+encodeURIComponent(id)+'/query',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q.value.trim()})});
+    var d=r.ok?await r.json():{chunks:[]};
+    var el=document.getElementById('kbanswer'); clear(el);
+    if(!r.ok){setMsg('kbmsg','err','Search failed.');return;}
+    setMsg('kbmsg','','');
+    if(!(d.chunks||[]).length){el.appendChild(emptyMsg('No relevant passages found in this collection.'));return;}
+    var cite=document.createElement('div');cite.className='hint';cite.textContent='Sources: '+(d.citations||[]).map(esc).join(', ');el.appendChild(cite);
+    d.chunks.forEach(function(c){
+      var row=document.createElement('div');row.className='item';row.style.flexDirection='column';row.style.alignItems='stretch';
+      var src=document.createElement('div');src.className='sub';src.textContent=esc(c.documentName);src.style.fontWeight='600';row.appendChild(src);
+      var body=document.createElement('div');body.style.fontSize='0.85rem';body.textContent=esc(c.content.slice(0,400))+(c.content.length>400?'…':'');row.appendChild(body);
+      el.appendChild(row);
+    });
+  });
   document.getElementById('addForm').addEventListener('click',async function(){
     var n=document.getElementById('fmname'),tpl=document.getElementById('fmtemplate');
     if(!n.value.trim()){setMsg('fmmsg','err','A form needs a name.');return;}

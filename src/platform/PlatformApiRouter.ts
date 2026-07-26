@@ -43,6 +43,11 @@ import {
   CalendarValidationError,
   type CalendarService,
 } from "./calendar/CalendarService";
+import {
+  KnowledgeNotFoundError,
+  KnowledgeValidationError,
+  type KnowledgeService,
+} from "./knowledge/KnowledgeService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -87,6 +92,7 @@ export interface PlatformApiDependencies {
   files?: PlatformFileService;
   forms?: PlatformFormService;
   calendar?: CalendarService;
+  knowledge?: KnowledgeService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -251,6 +257,235 @@ export function createPlatformApiRouter(
             res.json({ groups }),
           )
           .catch(next);
+      },
+    );
+  }
+
+  // ---- AI Knowledge Base ----
+  if (deps.knowledge) {
+    const knowledge = deps.knowledge;
+
+    const knowledgeError = (
+      res: Response,
+      next: NextFunction,
+      error: unknown,
+    ): void => {
+      if (
+        error instanceof
+        KnowledgeValidationError
+      ) {
+        badRequest(
+          res,
+          "INVALID_KNOWLEDGE",
+          error.message,
+        );
+
+        return;
+      }
+
+      if (
+        error instanceof
+        KnowledgeNotFoundError
+      ) {
+        res.status(404).json({
+          error: {
+            code: "NOT_FOUND",
+            message: (
+              error as Error
+            ).message,
+          },
+        });
+
+        return;
+      }
+
+      next(error);
+    };
+
+    router.get(
+      "/knowledge/collections",
+      (_req, res, next) => {
+        knowledge
+          .listCollections()
+          .then((collections) =>
+            res.json({
+              collections,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/knowledge/collections",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_KNOWLEDGE",
+            "A collection needs a name.",
+          );
+
+          return;
+        }
+
+        knowledge
+          .createCollection({
+            name: String(body.name),
+            description:
+              optionalString(
+                body.description,
+              ),
+          })
+          .then((collection) =>
+            res
+              .status(201)
+              .json({ collection }),
+          )
+          .catch((error: unknown) =>
+            knowledgeError(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    router.get(
+      "/knowledge/collections/:id/documents",
+      (req, res, next) => {
+        knowledge
+          .listDocuments(
+            String(req.params.id),
+          )
+          .then((documents) =>
+            res.json({ documents }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/knowledge/collections/:id/documents",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.name,
+          ) ||
+          !isNonEmptyString(
+            body.content,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_KNOWLEDGE",
+            "A document needs a name and content.",
+          );
+
+          return;
+        }
+
+        knowledge
+          .addDocument({
+            collectionId: String(
+              req.params.id,
+            ),
+            name: String(body.name),
+            mimeType:
+              optionalString(
+                body.mimeType,
+              ) || "text/plain",
+            content: String(
+              body.content,
+            ),
+          })
+          .then((document) =>
+            res
+              .status(201)
+              .json({ document }),
+          )
+          .catch((error: unknown) =>
+            knowledgeError(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    router.delete(
+      "/knowledge/documents/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        knowledge
+          .deleteDocument(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch((error: unknown) =>
+            knowledgeError(
+              res,
+              next,
+              error,
+            ),
+          );
+      },
+    );
+
+    router.post(
+      "/knowledge/collections/:id/query",
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        if (
+          !isNonEmptyString(
+            body.question,
+          )
+        ) {
+          badRequest(
+            res,
+            "INVALID_KNOWLEDGE",
+            "A question is required.",
+          );
+
+          return;
+        }
+
+        knowledge
+          .query(
+            String(req.params.id),
+            String(body.question),
+          )
+          .then((answer) =>
+            res.json(answer),
+          )
+          .catch((error: unknown) =>
+            knowledgeError(
+              res,
+              next,
+              error,
+            ),
+          );
       },
     );
   }

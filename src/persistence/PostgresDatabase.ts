@@ -372,6 +372,50 @@ export class PostgresDatabase
         ON password_reset_tokens (organization_id, user_id);
     `);
 
+    // AI knowledge base — collections, documents, and chunks (tenant-scoped).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_collections (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        description      TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_documents (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        collection_id    TEXT NOT NULL
+                           REFERENCES knowledge_collections (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        mime_type        TEXT NOT NULL,
+        status           TEXT NOT NULL DEFAULT 'processing',
+        chunk_count      INTEGER NOT NULL DEFAULT 0,
+        error            TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_chunks (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        collection_id    TEXT NOT NULL,
+        document_id      TEXT NOT NULL,
+        position         INTEGER NOT NULL,
+        content          TEXT NOT NULL,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS knowledge_chunks_collection_idx
+        ON knowledge_chunks (organization_id, collection_id);
+    `);
+
     // Calendar events — tenant-scoped; times stored as UTC ISO strings.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS calendar_events (
