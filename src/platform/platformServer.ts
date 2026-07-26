@@ -77,6 +77,7 @@ import { ActivityEventRepository } from "./events/ActivityEventRepository";
 import { NotificationService } from "./notifications/NotificationService";
 import { NotificationRepository } from "./notifications/NotificationRepository";
 import { createNotificationActivityHandler } from "./notifications/NotificationActivityHandler";
+import { SearchService } from "./search/SearchService";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 
@@ -408,6 +409,23 @@ async function start(): Promise<void> {
     }
   }
 
+  const search = new SearchService({
+    clients,
+    leads,
+    projects,
+    proposals,
+    invoices,
+    tickets,
+    campaigns,
+    reviews,
+    brands,
+    products,
+    books,
+    programs,
+    hosting,
+    users,
+  });
+
   const app = createPlatformApp({
     organizations,
     users,
@@ -435,6 +453,7 @@ async function start(): Promise<void> {
     drip,
     activity,
     notifications,
+    search,
     websites,
     aiSettings,
     aiUsage,

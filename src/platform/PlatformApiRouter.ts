@@ -27,6 +27,7 @@ import type { PlatformLeadService } from "./crm/PlatformLeadService";
 import type { DripService } from "./drip/DripService";
 import type { ActivityService } from "./events/ActivityService";
 import type { NotificationService } from "./notifications/NotificationService";
+import type { SearchService } from "./search/SearchService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -67,6 +68,7 @@ export interface PlatformApiDependencies {
   drip?: DripService;
   activity?: ActivityService;
   notifications?: NotificationService;
+  search?: SearchService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -202,6 +204,33 @@ export function createPlatformApiRouter(
           .markAllRead(auth.user.id)
           .then(() =>
             res.json({ ok: true }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Universal search ----
+  if (deps.search) {
+    const search = deps.search;
+
+    router.get(
+      "/search",
+      (req, res, next) => {
+        const q = optionalString(
+          req.query.q,
+        );
+
+        if (!q) {
+          res.json({ groups: [] });
+
+          return;
+        }
+
+        search
+          .search(q)
+          .then((groups) =>
+            res.json({ groups }),
           )
           .catch(next);
       },

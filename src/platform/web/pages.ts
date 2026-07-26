@@ -298,6 +298,7 @@ export function dashboardPage(): string {
     <div class="brand">${LOGO} <span id="orgName">All Elite Cloud</span></div>
     <div class="row" style="align-items:center; gap:14px;">
       <span class="muted" id="who" style="font-size:0.85rem;"></span>
+      <button class="btn ghost" id="openPalette" title="Search (Ctrl/Cmd+K)" aria-label="Search" style="width:auto;padding:8px 12px;">&#128269; Search</button>
       <div style="position:relative;">
         <button class="btn ghost" id="bell" title="Notifications" aria-label="Notifications" style="width:auto;padding:8px 12px;position:relative;">
           &#128276;<span id="bellCount" style="display:none;position:absolute;top:-4px;right:-4px;background:#e5484d;color:#fff;border-radius:10px;font-size:0.68rem;line-height:1;padding:3px 6px;font-weight:700;">0</span>
@@ -313,6 +314,13 @@ export function dashboardPage(): string {
       <button class="btn ghost" id="logout">Sign out</button>
     </div>
   </div></div>
+  <div id="palette" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;padding:10vh 16px 16px;">
+    <div style="max-width:580px;margin:0 auto;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,0.35);overflow:hidden;">
+      <input id="paletteInput" placeholder="Search clients, leads, invoices… or type a command" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;border:0;outline:0;padding:16px 18px;font-size:1rem;background:transparent;color:inherit;border-bottom:1px solid var(--line,#eee);" />
+      <div id="paletteResults" style="max-height:56vh;overflow:auto;"></div>
+      <div style="padding:8px 14px;font-size:0.72rem;opacity:0.6;border-top:1px solid var(--line,#eee);">&#8593;&#8595; to navigate · Enter to open · Esc to close</div>
+    </div>
+  </div>
   <div class="wrap">
     <div class="secnav" id="secnav"></div>
     <div class="panel" id="billingPanel" style="margin-bottom:18px;">
@@ -1229,6 +1237,68 @@ export function dashboardPage(): string {
       ev.stopPropagation();
       api('/api/platform/notifications/read-all',{method:'POST'}).then(function(){loadNotifications();});
     });
+  })();
+  (function(){
+    var overlay=document.getElementById('palette');
+    var input=document.getElementById('paletteInput');
+    var results=document.getElementById('paletteResults');
+    if(!overlay||!input||!results)return;
+    var items=[]; var sel=0; var timer=null;
+    function go(anchor,focusId){ close(); if(anchor)location.hash=anchor; if(focusId){var el=document.getElementById(focusId); if(el){el.scrollIntoView({block:'center'}); if(el.focus)el.focus();}} }
+    var ACTIONS=[
+      {label:'Add client',hint:'Clients',run:function(){go('clients','cname');}},
+      {label:'Add lead',hint:'Sales pipeline',run:function(){go('leads','lname');}},
+      {label:'Create project',hint:'Projects',run:function(){go('projects','pname');}},
+      {label:'Create invoice',hint:'Invoices',run:function(){go('invoices','iclient');}},
+      {label:'Create support ticket',hint:'Support',run:function(){go('tickets','tsubject');}},
+      {label:'Create proposal',hint:'Proposals',run:function(){go('proposals','prtitle');}},
+      {label:'Create campaign',hint:'Marketing',run:function(){go('campaigns','mname');}},
+      {label:'Build a website',hint:'AI Website Builder',run:function(){go('websites','wbrief');}},
+      {label:'New autoresponder',hint:'Autoresponders',run:function(){go('dripSequences','dsname');}},
+      {label:'Invite team member',hint:'Team',run:function(){go('team','tmemail');}},
+      {label:'Open notifications',hint:'',run:function(){close();var b=document.getElementById('bell');if(b)b.click();}},
+      {label:'Change password',hint:'Account',run:function(){go('','cpcur');}},
+      {label:'Sign out',hint:'',run:function(){var l=document.getElementById('logout');if(l)l.click();}}
+    ];
+    function isOpen(){ return overlay.style.display!=='none'; }
+    function open(){ overlay.style.display=''; input.value=''; render([],ACTIONS); input.focus(); }
+    function close(){ overlay.style.display='none'; items=[]; sel=0; }
+    function header(text){ var h=document.createElement('div'); h.textContent=text; h.style.cssText='padding:8px 16px 4px;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em;opacity:0.55;'; return h; }
+    function addItem(title,sub,run){
+      var idx=items.length;
+      var row=document.createElement('div');
+      row.style.cssText='padding:10px 16px;cursor:pointer;';
+      var t=document.createElement('div'); t.textContent=esc(title); t.style.cssText='font-weight:600;font-size:0.9rem;'; row.appendChild(t);
+      if(sub){ var s=document.createElement('div'); s.textContent=esc(sub); s.style.cssText='font-size:0.78rem;opacity:0.65;margin-top:2px;'; row.appendChild(s); }
+      row.addEventListener('mouseenter',function(){ sel=idx; highlight(); });
+      row.addEventListener('click',run);
+      results.appendChild(row);
+      items.push({row:row,run:run});
+    }
+    function render(groups,actions){
+      clear(results); items=[];
+      if(actions&&actions.length){ results.appendChild(header('Actions')); actions.forEach(function(a){ addItem(a.label,a.hint,a.run); }); }
+      (groups||[]).forEach(function(g){ results.appendChild(header(g.label)); g.results.forEach(function(r){ addItem(r.title,[r.subtitle,r.status].filter(Boolean).join(' \\u00b7 '),function(){ close(); window.location=r.url; }); }); });
+      if(!items.length){ var d=document.createElement('div'); d.style.cssText='padding:16px 18px;opacity:0.6;font-size:0.85rem;'; d.textContent='No matches.'; results.appendChild(d); }
+      sel=0; highlight();
+    }
+    function highlight(){ items.forEach(function(it,i){ it.row.style.background=(i===sel)?'rgba(99,102,241,0.14)':'transparent'; }); if(items[sel]&&items[sel].row.scrollIntoView)items[sel].row.scrollIntoView({block:'nearest'}); }
+    function filterActions(q){ if(!q)return ACTIONS; var lc=q.toLowerCase(); return ACTIONS.filter(function(a){return a.label.toLowerCase().indexOf(lc)>=0||(a.hint&&a.hint.toLowerCase().indexOf(lc)>=0);}); }
+    function doSearch(q){
+      if(q.length<2){ render([],filterActions(q)); return; }
+      render([],filterActions(q));
+      api('/api/platform/search?q='+encodeURIComponent(q)).then(function(r){return r.ok?r.json():{groups:[]};}).then(function(d){ if(isOpen())render(d.groups||[],filterActions(q)); }).catch(function(){});
+    }
+    input.addEventListener('input',function(){ var q=input.value.trim(); if(timer)clearTimeout(timer); timer=setTimeout(function(){doSearch(q);},200); });
+    input.addEventListener('keydown',function(e){
+      if(e.key==='ArrowDown'){e.preventDefault(); if(sel<items.length-1){sel++;highlight();}}
+      else if(e.key==='ArrowUp'){e.preventDefault(); if(sel>0){sel--;highlight();}}
+      else if(e.key==='Enter'){e.preventDefault(); if(items[sel])items[sel].run();}
+      else if(e.key==='Escape'){e.preventDefault(); close();}
+    });
+    overlay.addEventListener('click',function(e){ if(e.target===overlay)close(); });
+    document.addEventListener('keydown',function(e){ if((e.ctrlKey||e.metaKey)&&(e.key==='k'||e.key==='K')){ e.preventDefault(); if(isOpen())close(); else open(); } });
+    var ob=document.getElementById('openPalette'); if(ob)ob.addEventListener('click',open);
   })();
   document.getElementById('addSequence').addEventListener('click',async function(){
     var n=document.getElementById('dsname'),tr=document.getElementById('dstrigger');
