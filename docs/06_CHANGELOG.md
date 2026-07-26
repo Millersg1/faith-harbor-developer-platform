@@ -37,6 +37,10 @@ Faith Harbor OS is unaffected.
   `884497a`.
 
 ### Security
+- **Automated database backups** — daily `pg_dump` → gzip →
+  `~/aecloud/backups`, 14-day retention, best-effort off-box mirror to Google
+  Drive via rclone; cron `30 3 * * *`. `scripts/aecloud-backup.sh`. Hardening
+  pass item 3.
 - **Audit logging** — append-only, tenant-scoped security trail
   (`auth.login`/`login_failed`/`password_changed`/`password_reset`,
   `user.role_changed`/`removed`); `GET /api/platform/audit` + dashboard panel

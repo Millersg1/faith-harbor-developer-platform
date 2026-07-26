@@ -140,4 +140,5 @@ storage keys.
 3. ~~Audit logging~~ ✅ done for auth + team actions (expand coverage over
    time).
 4. CSRF tokens for state-changing tenant routes.
-5. Automated **backups** + tested restore.
+5. ~~Automated backups~~ ✅ daily `pg_dump` + off-box mirror (see
+   `10_DEPLOYMENT.md`); still to do: periodically test a full restore.

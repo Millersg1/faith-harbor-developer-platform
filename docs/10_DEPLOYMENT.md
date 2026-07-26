@@ -58,8 +58,22 @@ prior tar) and restart. No DB down-migrations yet — schema changes are additiv
 
 ## Backups
 
-**Outstanding.** Recommended: nightly `pg_dump` of `faithhosting_aecloud` to
-`~/backups` via cron, plus off-box copy; document + test restore.
+Automated. `scripts/aecloud-backup.sh` (deployed to `~/aecloud/backup.sh`) runs
+daily at **03:30** via cron: `pg_dump` of the platform DB → gzip →
+`~/aecloud/backups/aecloud-<ts>.sql.gz`, prunes local copies older than 14 days
+(`AECLOUD_BACKUP_RETAIN_DAYS`), and best-effort mirrors off-box to Google Drive
+via rclone (`gdrive:AllEliteCloud-Backups`, mirroring the legacy OS pattern).
+Outcomes are logged to `~/aecloud/backups/backup.log`. Safe to run manually and
+repeatedly.
+
+**Restore:**
+```
+gunzip -c ~/aecloud/backups/aecloud-<ts>.sql.gz \
+  | psql -h 127.0.0.1 -U <PG_USER> -d <PG_DATABASE>
+```
+(Restore into a fresh/empty database or a staging DB first to verify.)
+
+**To do:** periodically test a full restore into a scratch database.
 
 ## Cron jobs / workers
 
