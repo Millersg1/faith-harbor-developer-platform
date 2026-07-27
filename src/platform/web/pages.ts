@@ -500,6 +500,7 @@ export function dashboardPage(): string {
       <div class="panel">
         <h2>Marketplace <span class="pill">templates</span></h2>
         <p class="hint">Start from a ready-made, industry-specific website template. Using one creates a draft you can then generate and publish.</p>
+        <p class="hint" style="font-style:italic;">Any preview images are AI-generated <strong>samples</strong> — each site is generated fresh for your business, so your result will be unique and may differ from the sample shown.</p>
         <div class="sub" style="margin:6px 0 4px;font-weight:600;">Industry editions</div>
         <p class="hint" style="margin-top:0;">One click sets up a whole line of business — a website draft, your brand accent, and ready-to-use AI assistants.</p>
         <div class="list" id="editions"><div class="empty">Loading…</div></div>
