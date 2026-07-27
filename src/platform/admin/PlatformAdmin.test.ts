@@ -21,7 +21,10 @@ import { PlatformSessionService } from "../sessions/PlatformSessionService";
 import { PlatformSignupService } from "../signup/PlatformSignupService";
 import { PlatformUserRepository } from "../users/PlatformUserRepository";
 import { PlatformUserService } from "../users/PlatformUserService";
-import { PlatformAdminService } from "./PlatformAdminService";
+import {
+  AdminPasswordError,
+  PlatformAdminService,
+} from "./PlatformAdminService";
 import { PlatformAdminSessionService } from "./PlatformAdminSessionService";
 
 async function build() {
@@ -136,6 +139,57 @@ describe("PlatformAdminService", () => {
         "nope",
       ),
     ).rejects.toThrow(/invalid/i);
+  });
+
+  it("changes the password after verifying the current one", async () => {
+    const admins =
+      new PlatformAdminService();
+    const a = await admins.create({
+      email: "c@x.com",
+      password: "oldpass123",
+    });
+
+    await admins.changePassword(
+      a.id,
+      "oldpass123",
+      "newpass456",
+    );
+
+    // Old password no longer works; new one does.
+    await expect(
+      admins.authenticate(
+        "c@x.com",
+        "oldpass123",
+      ),
+    ).rejects.toThrow(/invalid/i);
+    expect(
+      (
+        await admins.authenticate(
+          "c@x.com",
+          "newpass456",
+        )
+      ).email,
+    ).toBe("c@x.com");
+
+    // Wrong current password and too-short new password are rejected.
+    await expect(
+      admins.changePassword(
+        a.id,
+        "wrong",
+        "another12",
+      ),
+    ).rejects.toBeInstanceOf(
+      AdminPasswordError,
+    );
+    await expect(
+      admins.changePassword(
+        a.id,
+        "newpass456",
+        "short",
+      ),
+    ).rejects.toBeInstanceOf(
+      AdminPasswordError,
+    );
   });
 
   it("bootstraps only the first admin", async () => {
@@ -307,6 +361,76 @@ describe("Platform admin console (HTTP)", () => {
       .get(
         "/platform/admin/api/organizations",
       )
+      .expect(401);
+  });
+
+  it("lets the signed-in admin change their password", async () => {
+    const app = await build();
+    const cookie =
+      await adminLogin(app);
+
+    // Wrong current password → 400.
+    const bad = await request(app)
+      .post(
+        "/platform/admin/api/change-password",
+      )
+      .set("Cookie", cookie)
+      .send({
+        currentPassword: "wrong",
+        newPassword: "newadminpass",
+      });
+    expect(bad.status).toBe(400);
+
+    // Correct current → 200.
+    const ok = await request(app)
+      .post(
+        "/platform/admin/api/change-password",
+      )
+      .set("Cookie", cookie)
+      .send({
+        currentPassword:
+          "adminpass123",
+        newPassword: "newadminpass",
+      });
+    expect(ok.status).toBe(200);
+
+    // Old password no longer logs in; the new one does.
+    const oldLogin = await request(app)
+      .post(
+        "/platform/admin/api/login",
+      )
+      .send({
+        email:
+          "root@allelitecloud.com",
+        password: "adminpass123",
+      });
+    expect(oldLogin.status).toBe(401);
+
+    const newLogin = await request(app)
+      .post(
+        "/platform/admin/api/login",
+      )
+      .send({
+        email:
+          "root@allelitecloud.com",
+        password: "newadminpass",
+      });
+    expect(newLogin.status).toBe(200);
+    // Generous timeout: this does several scrypt hash/verify operations
+    // (create + change + two logins), which can exceed Vitest's 5s default
+    // under the forks pool on a loaded machine.
+  }, 20000);
+
+  it("rejects an unauthenticated password change", async () => {
+    const app = await build();
+    await request(app)
+      .post(
+        "/platform/admin/api/change-password",
+      )
+      .send({
+        currentPassword: "x",
+        newPassword: "yyyyyyyy",
+      })
       .expect(401);
   });
 

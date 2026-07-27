@@ -91,6 +91,16 @@ export function adminConsolePage(): string {
       <div class="empty">Select a document.</div>
     </div>
   </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <h2>Change password</h2>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;max-width:420px;">
+      <div><label for="cpCur">Current password</label><input id="cpCur" type="password" autocomplete="current-password" style="width:100%;padding:11px 13px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:10px;color:var(--text);" /></div>
+      <div><label for="cpNew">New password (min 8 characters)</label><input id="cpNew" type="password" autocomplete="new-password" style="width:100%;padding:11px 13px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:10px;color:var(--text);" /></div>
+      <button id="cpBtn" style="padding:11px 18px;background:var(--accent,#6d28d9);color:#fff;border:none;border-radius:10px;font-weight:600;cursor:pointer;width:auto;align-self:flex-start;">Update password</button>
+      <div id="cpMsg" style="font-size:.9rem;min-height:1.2em;"></div>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -196,6 +206,15 @@ export function adminConsolePage(): string {
     if(r.ok){boot();}else{var x=await r.json().catch(function(){return{};});m.className='msg err';m.textContent=(x.error&&x.error.message)||'Sign in failed.';}
   });
   document.getElementById('logout').addEventListener('click',async function(){await api('/logout',{method:'POST'});location.reload();});
+  document.getElementById('cpBtn').addEventListener('click',async function(){
+    var cur=document.getElementById('cpCur'),nw=document.getElementById('cpNew'),m=document.getElementById('cpMsg');
+    if(!cur.value||nw.value.length<8){m.style.color='#f87171';m.textContent='Enter your current password and a new one of at least 8 characters.';return;}
+    m.style.color='';m.textContent='Updating\\u2026';
+    var r=await api('/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({currentPassword:cur.value,newPassword:nw.value})});
+    var x=await r.json().catch(function(){return{};});
+    if(r.ok){m.style.color='#4ade80';m.textContent='Password updated. Use it next time you sign in.';cur.value='';nw.value='';}
+    else{m.style.color='#f87171';m.textContent=(x.error&&x.error.message)||'Could not update password.';}
+  });
   boot();
 </script>
 </body></html>`;

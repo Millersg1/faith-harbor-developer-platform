@@ -109,6 +109,33 @@ export class PlatformAdminRepository {
     return this.memory.get(id);
   }
 
+  async updatePassword(
+    id: string,
+    passwordHash: string,
+  ): Promise<void> {
+    const updatedAt =
+      new Date().toISOString();
+
+    if (this.db) {
+      await this.db.query(
+        "UPDATE platform_admins SET password_hash = $1, updated_at = $2 WHERE id = $3",
+        [passwordHash, updatedAt, id],
+      );
+
+      return;
+    }
+
+    const existing =
+      this.memory.get(id);
+    if (existing) {
+      this.memory.set(id, {
+        ...existing,
+        passwordHash,
+        updatedAt,
+      });
+    }
+  }
+
   async count(): Promise<number> {
     if (this.db) {
       const result =

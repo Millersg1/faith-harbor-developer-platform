@@ -10,6 +10,9 @@ import type {
 } from "./PlatformAdmin";
 import { PlatformAdminRepository } from "./PlatformAdminRepository";
 
+/** A wrong current password or an invalid new one during a change. */
+export class AdminPasswordError extends Error {}
+
 /**
  * Manages platform administrators and their authentication. Admins are
  * global (not tenant-scoped): authenticate matches across the whole
@@ -116,6 +119,44 @@ export class PlatformAdminService {
     }
 
     return admin;
+  }
+
+  /**
+   * Changes an admin's password after verifying the current one. Throws
+   * {@link AdminPasswordError} for a wrong current password or a too-short new
+   * one (mapped to 400 by the router).
+   */
+  async changePassword(
+    id: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const admin = await this.get(id);
+
+    if (
+      !verifyPassword(
+        currentPassword,
+        admin.passwordHash,
+      )
+    ) {
+      throw new AdminPasswordError(
+        "Your current password is incorrect.",
+      );
+    }
+
+    if (
+      !newPassword ||
+      newPassword.length < 8
+    ) {
+      throw new AdminPasswordError(
+        "New password must be at least 8 characters.",
+      );
+    }
+
+    await this.repository.updatePassword(
+      id,
+      hashPassword(newPassword),
+    );
   }
 
   async count(): Promise<number> {

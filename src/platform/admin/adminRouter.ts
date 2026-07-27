@@ -12,7 +12,10 @@ import {
 
 import type { OrganizationService } from "../../tenancy/OrganizationService";
 import { toPublicAdmin } from "./PlatformAdmin";
-import type { PlatformAdminService } from "./PlatformAdminService";
+import {
+  AdminPasswordError,
+  type PlatformAdminService,
+} from "./PlatformAdminService";
 import type { PlatformAdminSessionService } from "./PlatformAdminSessionService";
 import {
   ADMIN_COOKIE,
@@ -150,6 +153,72 @@ export function createAdminRouter(
           req as AdminedRequest
         ).admin,
       });
+    },
+  );
+
+  // Self-service password change for the signed-in admin.
+  router.post(
+    "/change-password",
+    deps.requireAdmin,
+    (req, res, next) => {
+      const admin = (
+        req as AdminedRequest
+      ).admin;
+
+      if (!admin) {
+        res.status(401).json({
+          error: {
+            code: "UNAUTHENTICATED",
+            message:
+              "You must be signed in.",
+          },
+        });
+
+        return;
+      }
+
+      const body =
+        req.body &&
+        typeof req.body === "object"
+          ? (req.body as Record<
+              string,
+              unknown
+            >)
+          : {};
+      const currentPassword = String(
+        body.currentPassword ?? "",
+      );
+      const newPassword = String(
+        body.newPassword ?? "",
+      );
+
+      deps.admins
+        .changePassword(
+          admin.id,
+          currentPassword,
+          newPassword,
+        )
+        .then(() =>
+          res.json({ ok: true }),
+        )
+        .catch((error: unknown) => {
+          if (
+            error instanceof
+            AdminPasswordError
+          ) {
+            res.status(400).json({
+              error: {
+                code: "INVALID_PASSWORD_CHANGE",
+                message:
+                  error.message,
+              },
+            });
+
+            return;
+          }
+
+          next(error);
+        });
     },
   );
 

@@ -54,6 +54,14 @@ Faith Harbor OS is unaffected.
   it grows (every template has an edition; every employee tool is real).
 
 ### Security
+- **Superadmin self-service password change.** The platform-admin console now
+  has a **Change password** panel (`POST /platform/admin/api/change-password`):
+  verifies the current password, requires ≥8 chars, updates the scrypt hash.
+  Previously the platform-admin password could only be set once via
+  `PLATFORM_ADMIN_PASSWORD` at bootstrap, then only rotated by a DB script.
+  `PlatformAdminService.changePassword` + `PlatformAdminRepository.updatePassword`;
+  4 tests (service verify/reject, HTTP 400 wrong-current, re-login with new, 401
+  unauth).
 - **CSRF guard + security response headers** (hardening). A CSRF guard
   (`security/CsrfGuard.ts`) protects the authenticated state-changing surfaces
   (`/api/platform`, `/portal/api`, `/platform/admin/api`): unsafe methods are
