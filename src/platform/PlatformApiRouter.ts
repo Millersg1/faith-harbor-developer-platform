@@ -62,9 +62,12 @@ import {
 } from "./ai/tools/AiToolService";
 import type { AiConsoleService } from "./ai/console/AiConsoleService";
 import {
+  getIndustryEdition,
   getWebsiteTemplate,
+  listIndustryEditions,
   listWebsiteTemplates,
 } from "./marketplace/MarketplaceCatalog";
+import type { BrandingService } from "./branding/BrandingService";
 import {
   AiEmployeeValidationError,
   type AiEmployeeService,
@@ -119,6 +122,7 @@ export interface PlatformApiDependencies {
   aiTools?: AiToolService;
   aiConsole?: AiConsoleService;
   aiEmployees?: AiEmployeeService;
+  branding?: BrandingService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -5589,6 +5593,132 @@ export function createPlatformApiRouter(
                 },
               }),
           )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              PlanLimitError
+            ) {
+              res.status(402).json({
+                error: {
+                  code: "PLAN_LIMIT",
+                  message:
+                    error.message,
+                },
+              });
+
+              return;
+            }
+
+            next(error);
+          });
+      },
+    );
+
+    // Browse industry editions.
+    router.get(
+      "/marketplace/editions",
+      (_req, res) => {
+        res.json({
+          editions:
+            listIndustryEditions(),
+        });
+      },
+    );
+
+    // Apply an edition: create a website draft from its template (plan-gated,
+    // required), set the brand accent, and set up its suggested AI employees.
+    // Additive only — it never deletes existing data. Returns what it did.
+    router.post(
+      "/marketplace/editions/:id/apply",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const edition =
+          getIndustryEdition(
+            String(req.params.id),
+          );
+
+        if (!edition) {
+          res.status(404).json({
+            error: {
+              code: "EDITION_NOT_FOUND",
+              message:
+                "Unknown edition.",
+            },
+          });
+
+          return;
+        }
+
+        const template =
+          getWebsiteTemplate(
+            edition.websiteTemplateId,
+          );
+        const billing = deps.billing;
+        const gate = billing
+          ? websites
+              .count()
+              .then((count) =>
+                billing.assertWithinLimit(
+                  "sites",
+                  count,
+                ),
+              )
+          : Promise.resolve();
+
+        gate
+          .then(() =>
+            websites.create({
+              name: edition.name,
+              brief: template?.brief,
+              accentColor:
+                edition.accentColor,
+            }),
+          )
+          .then(async (website) => {
+            // Accent + employees are enhancements — best-effort so one
+            // failure doesn't undo the created site. Report what stuck.
+            let accentApplied = false;
+            try {
+              await deps.branding?.update(
+                {
+                  primaryColor:
+                    edition.accentColor,
+                },
+              );
+              accentApplied = Boolean(
+                deps.branding,
+              );
+            } catch {
+              accentApplied = false;
+            }
+
+            let employeesCreated = 0;
+            if (deps.aiEmployees) {
+              for (const emp of edition.employees) {
+                try {
+                  await deps.aiEmployees.create(
+                    emp,
+                  );
+                  employeesCreated += 1;
+                } catch {
+                  // Skip a failed employee; keep going.
+                }
+              }
+            }
+
+            res.status(201).json({
+              edition: {
+                id: edition.id,
+                name: edition.name,
+              },
+              website: {
+                id: website.id,
+                name: website.name,
+              },
+              accentApplied,
+              employeesCreated,
+            });
+          })
           .catch((error: unknown) => {
             if (
               error instanceof

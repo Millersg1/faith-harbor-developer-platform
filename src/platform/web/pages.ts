@@ -500,6 +500,10 @@ export function dashboardPage(): string {
       <div class="panel">
         <h2>Marketplace <span class="pill">templates</span></h2>
         <p class="hint">Start from a ready-made, industry-specific website template. Using one creates a draft you can then generate and publish.</p>
+        <div class="sub" style="margin:6px 0 4px;font-weight:600;">Industry editions</div>
+        <p class="hint" style="margin-top:0;">One click sets up a whole line of business — a website draft, your brand accent, and ready-to-use AI assistants.</p>
+        <div class="list" id="editions"><div class="empty">Loading…</div></div>
+        <div class="sub" style="margin:14px 0 4px;font-weight:600;">Website templates</div>
         <div class="list" id="marketplace"><div class="empty">Loading…</div></div>
         <div class="msg" id="mktmsg"></div>
       </div>
@@ -1699,6 +1703,38 @@ export function dashboardPage(): string {
     });
   }
   var aiReady=true;
+  async function loadEditions(){
+    var r=await api('/api/platform/marketplace/editions'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('editions'); if(!el)return; clear(el);
+    var list=d.editions||[];
+    if(!list.length){el.appendChild(emptyMsg('No editions available.'));return;}
+    var canUse=(myRole==='owner'||myRole==='admin');
+    list.forEach(function(e){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var n=document.createElement('div');n.textContent=esc(e.name);n.style.fontWeight='600';left.appendChild(n);
+      var s=document.createElement('div');s.className='sub';s.textContent=esc(e.description)+' \\u00b7 '+((e.employees||[]).length)+' assistant(s)';left.appendChild(s);
+      row.appendChild(left);
+      if(canUse){
+        var b=document.createElement('button');b.className='btn';b.style.padding='6px 12px';b.style.flex='none';b.textContent='Apply';
+        b.addEventListener('click',function(){applyEdition(e.id,e.name);});row.appendChild(b);
+      }
+      el.appendChild(row);
+    });
+  }
+  async function applyEdition(id,name){
+    setMsg('mktmsg','','Applying \\u201c'+esc(name)+'\\u201d\\u2026');
+    var r=await api('/api/platform/marketplace/editions/'+encodeURIComponent(id)+'/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){
+      setMsg('mktmsg','ok','Applied: created a website draft'+(x.employeesCreated?(' and '+x.employeesCreated+' AI assistant(s)'):'')+(x.accentApplied?', set your brand accent':'')+'. Check the AI Website Builder + AI Employees.');
+      loadWebsites();loadBranding();
+      if(typeof loadAiEmployees==='function')loadAiEmployees();
+    }
+    else if(r.status===402){setMsg('mktmsg','err','Your plan\\u2019s site limit is reached — upgrade to apply an edition.');}
+    else{setMsg('mktmsg','err',(x.error&&x.error.message)||'Could not apply that edition.');}
+  }
   async function loadMarketplace(){
     var r=await api('/api/platform/marketplace/website-templates'); if(!r.ok)return;
     var d=await r.json();
@@ -1875,7 +1911,7 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadMarketplace(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadMarketplace(); await loadEditions(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
     await loadActivity();
     await loadFiles();

@@ -90,3 +90,121 @@ export function getWebsiteTemplate(
     (t) => t.id === id,
   );
 }
+
+/** A suggested AI employee an edition sets up (persona + tool whitelist). */
+export interface EditionEmployee {
+  name: string;
+  title: string;
+  persona: string;
+  toolNames: string[];
+}
+
+/**
+ * An industry edition: a one-click bundle that seeds a tenant for a line of
+ * business — a website draft (by template), a brand accent, and a couple of
+ * ready-to-use AI employees scoped to relevant tools. Applying one only ever
+ * ADDS (a draft website, employees) and sets the accent; it never deletes
+ * existing data. Code-defined, closed set.
+ */
+export interface IndustryEdition {
+  id: string;
+  name: string;
+  description: string;
+  /** References a template in {@link WEBSITE_TEMPLATES}. */
+  websiteTemplateId: string;
+  accentColor: string;
+  employees: EditionEmployee[];
+}
+
+const INDUSTRY_EDITIONS: readonly IndustryEdition[] =
+  [
+    {
+      id: "restaurant",
+      name: "Restaurant Edition",
+      description:
+        "A restaurant website, warm brand accent, and assistants for leads and reviews.",
+      websiteTemplateId:
+        "restaurant-classic",
+      accentColor: "#c2410c",
+      employees: [
+        {
+          name: "Reservations Assistant",
+          title: "Front of House",
+          persona:
+            "You help capture and follow up with diners and reservation enquiries. Be warm and prompt.",
+          toolNames: [
+            "crm.leads.list",
+            "crm.leads.create",
+            "notifications.send",
+          ],
+        },
+        {
+          name: "Reviews Responder",
+          title: "Guest Relations",
+          persona:
+            "You summarize guest feedback and draft thoughtful responses. Never invent reviews.",
+          toolNames: [
+            "notes.add",
+            "notifications.send",
+          ],
+        },
+      ],
+    },
+    {
+      id: "professional-services",
+      name: "Professional Services Edition",
+      description:
+        "A services website, a trustworthy blue accent, and a client-intake assistant.",
+      websiteTemplateId:
+        "professional-services",
+      accentColor: "#1d4ed8",
+      employees: [
+        {
+          name: "Intake Assistant",
+          title: "New Business",
+          persona:
+            "You qualify inbound enquiries and capture them as leads with clear notes. Be concise and professional.",
+          toolNames: [
+            "crm.leads.list",
+            "crm.leads.create",
+            "crm.leads.update_stage",
+            "notes.add",
+          ],
+        },
+      ],
+    },
+    {
+      id: "fitness",
+      name: "Fitness Edition",
+      description:
+        "A fitness-studio website, energetic green accent, and a membership assistant.",
+      websiteTemplateId:
+        "fitness-studio",
+      accentColor: "#15803d",
+      employees: [
+        {
+          name: "Membership Assistant",
+          title: "Front Desk",
+          persona:
+            "You help prospective members and capture them as leads, and can open support tickets for facility issues.",
+          toolNames: [
+            "crm.leads.create",
+            "tickets.create",
+            "notifications.send",
+          ],
+        },
+      ],
+    },
+  ];
+
+export function listIndustryEditions(): readonly IndustryEdition[] {
+  return INDUSTRY_EDITIONS;
+}
+
+export function getIndustryEdition(
+  id: string,
+): IndustryEdition | undefined {
+  return INDUSTRY_EDITIONS.find(
+    (e) => e.id === id,
+  );
+}

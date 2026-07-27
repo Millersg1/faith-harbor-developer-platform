@@ -7,6 +7,16 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **Marketplace — industry editions** (P4-M2): one-click bundles that set up a
+  whole line of business. Applying an edition (restaurant, professional
+  services, fitness) creates a website draft from its template (plan-gated),
+  sets the brand accent, and creates its suggested AI Employees (persona +
+  tool whitelist). Additive only — never deletes existing data; the website is
+  the required step, accent + employees are best-effort and the response
+  reports exactly what was created. API
+  `/api/platform/marketplace/editions` (+ `/:id/apply`), dashboard editions
+  section. 3 new tests (8 marketplace total). Editions reference real templates
+  and registry tools (verified by test).
 - **Marketplace — website templates** (P4-M1): a code-defined catalogue of
   industry-specific website templates (restaurant, professional services,
   trades, fitness, boutique, nonprofit) a tenant browses and "uses". Using one

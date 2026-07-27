@@ -62,8 +62,15 @@ Source lives under `src/platform/<module>/`.
 - **Use flow:** "use" a template → creates a draft in the AI Website Builder
   seeded with its brief/color (via `PlatformWebsiteService`), plan-gated on the
   site limit like any website. Closed set — no tenant-supplied templates/code.
-- **API:** /marketplace/website-templates (+ /:id/use). **UI:** dashboard
-  **Marketplace** panel. **Next:** industry editions, installable modules.
+- **Industry editions:** `INDUSTRY_EDITIONS` — one-click bundles (restaurant,
+  professional services, fitness) that reference a website template + accent +
+  suggested AI employees. "Apply" creates the website draft (plan-gated,
+  required), sets the brand accent, and creates the employees (best-effort,
+  additive — never deletes). Composes `PlatformWebsiteService` + `BrandingService`
+  + `AiEmployeeService`.
+- **API:** /marketplace/website-templates (+ /:id/use), /marketplace/editions
+  (+ /:id/apply). **UI:** dashboard **Marketplace** panel. **Next:** installable
+  modules.
 
 ### AI Employees (`ai/employees/`)
 - **Purpose:** saved, reusable assistants — a persona plus a whitelisted subset

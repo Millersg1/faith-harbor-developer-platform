@@ -25,8 +25,12 @@ import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
 import { PlatformWebsiteRepository } from "./websites/PlatformWebsiteRepository";
 import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
+import { AiEmployeeRepository } from "./ai/employees/AiEmployeeRepository";
+import { AiEmployeeService } from "./ai/employees/AiEmployeeService";
 import {
+  getIndustryEdition,
   getWebsiteTemplate,
+  listIndustryEditions,
   listWebsiteTemplates,
 } from "./marketplace/MarketplaceCatalog";
 
@@ -61,6 +65,33 @@ describe("MarketplaceCatalog", () => {
     ).toBeDefined();
     expect(
       getWebsiteTemplate("nope"),
+    ).toBeUndefined();
+  });
+
+  it("industry editions reference real templates and known tools", () => {
+    const editions =
+      listIndustryEditions();
+    expect(
+      editions.length,
+    ).toBeGreaterThan(0);
+
+    for (const e of editions) {
+      // Every edition's website template must exist.
+      expect(
+        getWebsiteTemplate(
+          e.websiteTemplateId,
+        ),
+      ).toBeDefined();
+      expect(
+        e.employees.length,
+      ).toBeGreaterThan(0);
+    }
+
+    expect(
+      getIndustryEdition("restaurant"),
+    ).toBeDefined();
+    expect(
+      getIndustryEdition("nope"),
     ).toBeUndefined();
   });
 });
@@ -104,6 +135,10 @@ async function buildApp() {
         new PlatformWebsiteRepository(),
         undefined,
         clients,
+      ),
+    aiEmployees:
+      new AiEmployeeService(
+        new AiEmployeeRepository(),
       ),
     signup: new PlatformSignupService(
       organizations,
@@ -174,6 +209,54 @@ describe("Marketplace API", () => {
     expect(
       list.body.websites,
     ).toHaveLength(1);
+  });
+
+  it("applies an industry edition: website draft + AI employees", async () => {
+    const { app, cookie } =
+      await buildApp();
+
+    const applied = await request(app)
+      .post(
+        "/api/platform/marketplace/editions/restaurant/apply",
+      )
+      .set("Cookie", cookie)
+      .send({});
+    expect(applied.status).toBe(201);
+    expect(
+      applied.body.website.id,
+    ).toBeTruthy();
+    expect(
+      applied.body.employeesCreated,
+    ).toBe(2);
+
+    // The website draft and the employees actually exist now.
+    const sites = await request(app)
+      .get("/api/platform/websites")
+      .set("Cookie", cookie);
+    expect(
+      sites.body.websites,
+    ).toHaveLength(1);
+
+    const emps = await request(app)
+      .get(
+        "/api/platform/ai/employees",
+      )
+      .set("Cookie", cookie);
+    expect(
+      emps.body.employees,
+    ).toHaveLength(2);
+  });
+
+  it("404s an unknown edition", async () => {
+    const { app, cookie } =
+      await buildApp();
+    const res = await request(app)
+      .post(
+        "/api/platform/marketplace/editions/nope/apply",
+      )
+      .set("Cookie", cookie)
+      .send({});
+    expect(res.status).toBe(404);
   });
 
   it("404s an unknown template", async () => {

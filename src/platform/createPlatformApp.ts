@@ -586,6 +586,7 @@ export function createPlatformApp(
       aiTools: deps.aiTools,
       aiConsole: deps.aiConsole,
       aiEmployees: deps.aiEmployees,
+      branding: deps.branding,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,
