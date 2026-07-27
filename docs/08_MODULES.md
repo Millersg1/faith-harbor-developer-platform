@@ -66,6 +66,20 @@ Source lives under `src/platform/<module>/`.
   subscription = the default entry plan, matching billing's synthesized
   default). **Superadmin-only** (`GET /platform/admin/api/analytics`).
 
+### Platform health (`health/`)
+- **Purpose:** an at-a-glance operational health snapshot for the superadmin
+  console — database reachability, the background drip/workflow worker's
+  liveness, and SMTP / platform-AI-key / Stripe connectivity, plus version and
+  uptime.
+- **How:** `PlatformHealthService` is pure — it takes injected `HealthChecks`
+  (a `pingDb` thunk, connectivity booleans, a `workerLastTickAt` getter,
+  interval, `startedAt`, `version`, and an optional `now`) so it's trivially
+  unit-tested. `platformServer` wires the real `SELECT 1` ping, `email
+  .connected()` / `openAiKey` / `billing.billingConnected()`, and a
+  `workerLastTickAt` that the drip tick updates each cycle; the worker reads
+  "running" when it ticked within 3 intervals. **Superadmin-only**
+  (`GET /platform/admin/api/system-health`).
+
 ### Marketplace (`marketplace/`)
 - **Purpose:** a code-defined catalogue a tenant browses and installs from — the
   first Phase 4 surface. `MarketplaceCatalog` holds `WEBSITE_TEMPLATES`

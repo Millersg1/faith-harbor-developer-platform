@@ -31,6 +31,7 @@ Prioritized. Effort is rough (S/M/L/XL). Status: ✅ done · 🚧 in progress ·
 | Hardening: security headers + CSRF guard | M | Live-proved through the HTTPS proxy |
 | P4-M1: Marketplace — website templates | M | Industry starter templates seed the AI builder; live-proved |
 | P5-M1: Superadmin analytics (MRR) | M | Cross-tenant revenue + plan mix + AI cost in the admin console |
+| P5-M2: System health panel | M | Live DB ping + worker heartbeat + SMTP/AI/Stripe connectivity in the admin console; live-proved |
 | Living documentation (`/docs`) | M | Established 2026-07-26 |
 
 ## Next Release 🚧 / ⏳ (recommended order)

@@ -7,6 +7,14 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **System health panel** (P5-M2): a superadmin view at `/platform/admin`
+  showing real, checked signals — a live database ping, the background
+  drip/workflow worker's heartbeat (running if it ticked within 3 intervals),
+  and SMTP / platform-AI-key / Stripe connectivity — plus version and uptime.
+  `PlatformHealthService` takes injected checks so it's fully unit-tested; the
+  server wires the real `SELECT 1` ping and a per-tick heartbeat. API
+  `GET /platform/admin/api/system-health` (admin session required). 5 new tests
+  (949 total). Live-proved: route 401-gated unauthenticated, panel present.
 - **Marketplace — industry editions** (P4-M2): one-click bundles that set up a
   whole line of business. Applying an edition (restaurant, professional
   services, fitness) creates a website draft from its template (plan-gated),
