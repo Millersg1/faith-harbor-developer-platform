@@ -7,6 +7,13 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **Invoice mark-paid + `invoice.paid` event** (Phase 3 polish): invoices can
+  now be marked paid (`PATCH /api/platform/invoices/:id`, dashboard "Mark paid"
+  button). It emits an `invoice.paid` activity event **only on the transition
+  into paid** (so an automation can't double-fire), which makes the
+  "Invoice paid → notify team" workflow template actually fire — previously
+  that trigger was never emitted. Added workflow templates for
+  `ticket.created` and `client.created` (both already-emitted events). +2 tests.
 - **Expanded the AI tool registry** (Phase 3 polish): the Command Center and
   AI Employees can now do materially more. New read tools —
   `crm.pipeline.summary` (leads grouped by stage + total estimated value),

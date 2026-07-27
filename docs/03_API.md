@@ -79,6 +79,8 @@ Standard REST per module: `GET /x` (list), `POST /x` (create), `PATCH /x/:id`,
 `DELETE /x/:id` (owner/admin) for: clients, projects, invoices, tickets, leads,
 proposals, campaigns, reviews, brands, products, books, programs, hosting,
 domains, websites, team, portal users, billing/plans, ai-settings, ai-usage.
+`PATCH /api/platform/invoices/:id` (owner/admin) also marks an invoice paid and
+emits `invoice.paid` on the transition into paid.
 
 ## Public routes
 

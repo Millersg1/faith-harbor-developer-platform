@@ -2346,6 +2346,73 @@ export function createPlatformApiRouter(
           );
       },
     );
+
+    // Update an invoice — notably, mark it paid. Emits `invoice.paid` only on
+    // the transition into paid (so a workflow/drip trigger can't double-fire).
+    router.patch(
+      "/invoices/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+        const id = String(
+          req.params.id,
+        );
+        const nextStatus =
+          optionalString(body.status);
+
+        invoices
+          .get(id)
+          .then((prev) => {
+            const wasPaid =
+              prev.status === "paid";
+
+            return invoices
+              .update(id, {
+                status:
+                  nextStatus as never,
+                paidDate:
+                  body.paidDate === null
+                    ? null
+                    : optionalString(
+                        body.paidDate,
+                      ),
+              })
+              .then((invoice) => {
+                if (
+                  !wasPaid &&
+                  invoice.status ===
+                    "paid" &&
+                  invoice.clientId
+                ) {
+                  void deps.activity?.record(
+                    {
+                      ...actor(req),
+                      type: "invoice.paid",
+                      subjectType:
+                        "client",
+                      subjectId:
+                        invoice.clientId,
+                      title: `Invoice ${invoice.number} paid`,
+                      summary: `$${Number(invoice.amount || 0).toLocaleString()}`,
+                    },
+                  );
+                }
+
+                res.json({ invoice });
+              });
+          })
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "INVOICE_NOT_FOUND",
+            ),
+          );
+      },
+    );
   }
 
   // ---- Custom (white-label) domains ----

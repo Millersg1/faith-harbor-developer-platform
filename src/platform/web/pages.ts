@@ -683,6 +683,8 @@ export function dashboardPage(): string {
             <option value="form_reply">Form submission → notify + auto-reply</option>
             <option value="invoice_paid">Invoice paid → notify team</option>
             <option value="proposal_accepted">Proposal accepted → notify team</option>
+            <option value="ticket_created">New support ticket → notify team</option>
+            <option value="client_created">New client → notify team</option>
           </select></div>
           <button class="btn" id="addWorkflow" style="width:auto;">Create</button>
         </div>
@@ -861,7 +863,28 @@ export function dashboardPage(): string {
   async function loadInvoices(){
     var r=await api('/api/platform/invoices'); if(!r.ok)return;
     var d=await r.json();
-    renderList('invoices',d.invoices||[],function(v){return item(esc(v.number)+' · '+money(v.amount),'',esc(v.status));});
+    var el=document.getElementById('invoices'); clear(el);
+    var list=d.invoices||[];
+    if(!list.length){el.appendChild(emptyMsg('No invoices yet.'));return;}
+    var canPay=(myRole==='owner'||myRole==='admin');
+    list.forEach(function(v){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(v.number)+' · '+money(v.amount);t.style.fontWeight='600';left.appendChild(t);
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
+      var st=document.createElement('span');st.className='pill';st.textContent=esc(v.status);actions.appendChild(st);
+      if(canPay&&v.status!=='paid'){
+        var pb=document.createElement('button');pb.className='btn ghost';pb.style.padding='6px 12px';pb.textContent='Mark paid';
+        pb.addEventListener('click',function(){markInvoicePaid(v.id);});actions.appendChild(pb);
+      }
+      row.appendChild(actions);
+      el.appendChild(row);
+    });
+  }
+  async function markInvoicePaid(id){
+    var r=await api('/api/platform/invoices/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'paid',paidDate:new Date().toISOString()})});
+    if(r.ok)loadInvoices();
   }
   async function loadBranding(){
     if(!slug)return;
@@ -1442,7 +1465,9 @@ export function dashboardPage(): string {
     lead_welcome:{name:'New lead → welcome email',trigger:'lead.created',steps:[{type:'email',delayHours:0,config:{subject:'Thanks for reaching out',body:'Hi {{name}},\\n\\nThanks for your interest — we received your details and will be in touch shortly.'}}]},
     form_reply:{name:'Form submission → notify + auto-reply',trigger:'form.submitted',steps:[{type:'notify',delayHours:0,config:{title:'New form submission',body:'Someone submitted one of your forms.'}},{type:'email',delayHours:0,config:{subject:'We got your message',body:'Hi {{name}},\\n\\nThanks — we received your submission and will get back to you soon.'}}]},
     invoice_paid:{name:'Invoice paid → notify team',trigger:'invoice.paid',steps:[{type:'notify',delayHours:0,config:{title:'Invoice paid',body:'An invoice was just paid.'}}]},
-    proposal_accepted:{name:'Proposal accepted → notify team',trigger:'proposal.accepted',steps:[{type:'notify',delayHours:0,config:{title:'Proposal accepted',body:'A proposal was accepted — time to kick off.'}}]}
+    proposal_accepted:{name:'Proposal accepted → notify team',trigger:'proposal.accepted',steps:[{type:'notify',delayHours:0,config:{title:'Proposal accepted',body:'A proposal was accepted — time to kick off.'}}]},
+    ticket_created:{name:'New support ticket → notify team',trigger:'ticket.created',steps:[{type:'notify',delayHours:0,config:{title:'New support ticket',body:'A new support ticket was opened.'}}]},
+    client_created:{name:'New client → notify team',trigger:'client.created',steps:[{type:'notify',delayHours:0,config:{title:'New client',body:'A new client was just added.'}}]}
   };
   async function loadWorkflows(){
     var r=await api('/api/platform/workflows'); if(!r.ok)return;
