@@ -690,10 +690,15 @@ async function resolveSlug(
 }
 
 /**
- * Builds the absolute reset link on the tenant's own canonical host
- * (`<slug>.<baseDomain>`), resolved server-side. Always HTTPS. The request's
- * Host header is deliberately NOT used, so a forged Host can't poison the
- * link and leak the token to an attacker's domain.
+ * Builds the absolute reset link, resolved server-side. Always HTTPS. Points at
+ * the base host (`<baseDomain>/reset`) with the tenant slug carried as an `org`
+ * query param — the reset page reads it to pre-fill the Organization field.
+ *
+ * We deliberately do NOT use a per-tenant subdomain (`<slug>.<baseDomain>`):
+ * tenant subdomains require wildcard DNS that isn't guaranteed, which would make
+ * the link a dead end. The base host always resolves. The request's Host header
+ * is still never used, so a forged Host can't poison the link and leak the
+ * token; both the host and slug are derived server-side.
  */
 function buildResetLink(
   baseDomain: string | undefined,
@@ -703,11 +708,12 @@ function buildResetLink(
   const base = (
     baseDomain || "allelitecloud.com"
   ).trim();
-  const host = slug
-    ? `${slug}.${base}`
-    : base;
 
-  return `https://${host}/reset?token=${encodeURIComponent(token)}`;
+  const org = slug
+    ? `&org=${encodeURIComponent(slug)}`
+    : "";
+
+  return `https://${base}/reset?token=${encodeURIComponent(token)}${org}`;
 }
 
 /**

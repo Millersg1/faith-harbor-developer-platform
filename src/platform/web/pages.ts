@@ -282,7 +282,11 @@ export function resetPasswordPage(): string {
   var orgEl=document.getElementById('org');
   var pwEl=document.getElementById('password');
   var confirmEl=document.getElementById('confirm');
-  var token=new URLSearchParams(location.search).get('token')||'';
+  var params=new URLSearchParams(location.search);
+  var token=params.get('token')||'';
+  // Pre-fill the organization from the emailed link so the user needn't know it.
+  var orgParam=params.get('org')||'';
+  if(orgParam){orgEl.value=orgParam;}
   if(!token){msg.className='msg err';msg.textContent='This reset link is missing its token. Request a new one.';}
   f.addEventListener('submit',async function(e){
     e.preventDefault(); msg.className='msg';

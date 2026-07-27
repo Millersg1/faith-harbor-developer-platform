@@ -165,9 +165,13 @@ describe("Password reset", () => {
     expect(token.length).toBeGreaterThan(
       10,
     );
-    // The link is on the tenant's canonical host, not a request-derived one.
+    // The link is built server-side on the base host with the tenant slug as an
+    // `org` param (not a request-derived host).
     expect(sent[0].body).toContain(
-      "https://acme.allelitecloud.com/reset",
+      "https://allelitecloud.com/reset",
+    );
+    expect(sent[0].body).toContain(
+      "org=acme",
     );
 
     const reset = await request(app)
@@ -219,7 +223,10 @@ describe("Password reset", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0].body).toContain(
-      "https://acme.allelitecloud.com/reset",
+      "https://allelitecloud.com/reset",
+    );
+    expect(sent[0].body).toContain(
+      "org=acme",
     );
     expect(sent[0].body).not.toContain(
       "evil.attacker.com",
