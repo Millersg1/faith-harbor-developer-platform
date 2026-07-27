@@ -271,5 +271,8 @@ describe("createPlatformApp (composition root)", () => {
         needle,
       );
     }
-  });
+    // Generous timeout: this makes 4 sequential HTTP round-trips including the
+    // first-request cold start, which can exceed Vitest's 5s default on a
+    // loaded machine (forks pool). Not a slow assertion — just warmup headroom.
+  }, 20000);
 });
