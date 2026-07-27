@@ -942,8 +942,10 @@ export function dashboardPage(): string {
       var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
       var st=document.createElement('span');st.className='pill';st.textContent=esc(v.status);actions.appendChild(st);
       if(canPay){
-        var pv=document.createElement('a');pv.className='btn ghost';pv.style.cssText='padding:6px 12px;text-decoration:none;';pv.textContent='Print / PDF';
+        var pv=document.createElement('a');pv.className='btn ghost';pv.style.cssText='padding:6px 12px;text-decoration:none;';pv.textContent='Print';
         pv.href='/api/platform/invoices/'+encodeURIComponent(v.id)+'/printable';pv.target='_blank';pv.rel='noopener';actions.appendChild(pv);
+        var dl=document.createElement('a');dl.className='btn ghost';dl.style.cssText='padding:6px 12px;text-decoration:none;';dl.textContent='Download PDF';
+        dl.href='/api/platform/invoices/'+encodeURIComponent(v.id)+'/pdf';actions.appendChild(dl);
       }
       if(canPay&&v.status!=='paid'){
         var pb=document.createElement('button');pb.className='btn ghost';pb.style.padding='6px 12px';pb.textContent='Mark paid';

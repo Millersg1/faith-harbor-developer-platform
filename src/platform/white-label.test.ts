@@ -31,6 +31,7 @@ import { createPlatformApp } from "./createPlatformApp";
 import { renderBrandedEmailHtml } from "./email/emailLayout";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { renderInvoiceDocument } from "./invoices/invoiceDocument";
+import { renderInvoicePdf } from "./invoices/invoicePdf";
 import { PlatformInvoiceRepository } from "./invoices/PlatformInvoiceRepository";
 import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { ClientUserRepository } from "./portal/ClientUserRepository";
@@ -192,6 +193,48 @@ describe("renderInvoiceDocument", () => {
       DEFAULT_BRAND_NAME,
     );
     expect(html).toContain("INV-0007");
+  });
+});
+
+describe("renderInvoicePdf", () => {
+  it("produces a valid, non-trivial PDF buffer", async () => {
+    const pdf = await renderInvoicePdf({
+      invoice: INVOICE,
+      client: { name: "Acme Co" },
+      branding: BRAND,
+    });
+
+    expect(Buffer.isBuffer(pdf)).toBe(
+      true,
+    );
+    // A real PDF starts with the "%PDF" signature and ends with "%%EOF".
+    expect(
+      pdf.subarray(0, 5).toString(
+        "latin1",
+      ),
+    ).toBe("%PDF-");
+    expect(
+      pdf.toString("latin1"),
+    ).toContain("%%EOF");
+    // Not an empty document.
+    expect(
+      pdf.length,
+    ).toBeGreaterThan(800);
+  });
+
+  it("renders with no branding and no client without throwing", async () => {
+    const pdf = await renderInvoicePdf({
+      invoice: {
+        ...INVOICE,
+        clientId: undefined,
+      },
+    });
+
+    expect(
+      pdf.subarray(0, 5).toString(
+        "latin1",
+      ),
+    ).toBe("%PDF-");
   });
 });
 
@@ -400,6 +443,68 @@ describe("White-label API (HTTP)", () => {
     expect(res.text).toContain(
       "INV-0001",
     );
+  });
+
+  it("downloads an invoice as a PDF attachment", async () => {
+    const { app, cookie } =
+      await buildApp();
+
+    const client = await request(app)
+      .post("/api/platform/clients")
+      .set("Cookie", cookie)
+      .send({ name: "PDF Co" });
+
+    const invoice = await request(app)
+      .post("/api/platform/invoices")
+      .set("Cookie", cookie)
+      .send({
+        clientId:
+          client.body.client.id,
+        lineItems: [
+          {
+            description: "Work",
+            quantity: 1,
+            unitPrice: 250,
+          },
+        ],
+      });
+
+    const res = await request(app)
+      .get(
+        `/api/platform/invoices/${invoice.body.invoice.id}/pdf`,
+      )
+      .set("Cookie", cookie)
+      .buffer(true)
+      .parse((r, cb) => {
+        const parts: Buffer[] = [];
+        r.on("data", (c: Buffer) =>
+          parts.push(
+            Buffer.from(c),
+          ),
+        );
+        r.on("end", () =>
+          cb(
+            null,
+            Buffer.concat(parts),
+          ),
+        );
+      });
+
+    expect(res.status).toBe(200);
+    expect(
+      res.headers["content-type"],
+    ).toContain("application/pdf");
+    expect(
+      res.headers[
+        "content-disposition"
+      ],
+    ).toContain("INV-0001.pdf");
+    const body = res.body as Buffer;
+    expect(
+      body
+        .subarray(0, 5)
+        .toString("latin1"),
+    ).toBe("%PDF-");
   });
 
   it("sends a branded HTML email from the tenant composer", async () => {

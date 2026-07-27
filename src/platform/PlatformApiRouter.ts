@@ -80,6 +80,7 @@ import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { renderInvoiceDocument } from "./invoices/invoiceDocument";
+import { renderInvoicePdf } from "./invoices/invoicePdf";
 import { renderBrandedEmailHtml } from "./email/emailLayout";
 import {
   toPublicClientUser,
@@ -2504,6 +2505,83 @@ export function createPlatformApiRouter(
                   },
                 ),
               );
+          })
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "INVOICE_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    // Branded invoice as a real downloadable PDF (server-side, pdfkit). Same
+    // brand + client + line items as the printable view; served as an
+    // attachment so the browser saves it as a file.
+    router.get(
+      "/invoices/:id/pdf",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const id = String(
+          req.params.id,
+        );
+
+        invoices
+          .get(id)
+          .then(async (invoice) => {
+            const branding =
+              deps.branding
+                ? await deps.branding
+                    .get()
+                    .catch(
+                      () => undefined,
+                    )
+                : undefined;
+
+            let client:
+              | {
+                  name: string;
+                  email?: string;
+                }
+              | undefined;
+            if (
+              invoice.clientId &&
+              deps.clients
+            ) {
+              const record =
+                await deps.clients
+                  .get(
+                    invoice.clientId,
+                  )
+                  .catch(
+                    () => undefined,
+                  );
+              if (record) {
+                client = {
+                  name: record.name,
+                  email: record.email,
+                };
+              }
+            }
+
+            const pdf =
+              await renderInvoicePdf({
+                invoice,
+                client,
+                branding,
+              });
+
+            res.setHeader(
+              "Content-Type",
+              "application/pdf",
+            );
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${invoice.number}.pdf"`,
+            );
+            res.send(pdf);
           })
           .catch((error: unknown) =>
             notFoundOrNext(
