@@ -55,6 +55,17 @@ Source lives under `src/platform/<module>/`.
 - **Purpose:** tenant email + outbox. **Tables:** emails. **Transport:** SMTP
   or logging. **API:** /emails.
 
+### AI Employees (`ai/employees/`)
+- **Purpose:** saved, reusable assistants — a persona plus a whitelisted subset
+  of registry tools (e.g. a "Sales Assistant" scoped to lead tools).
+- **Safety:** running the Command Center "as" an employee **narrows** the tool
+  set — the console intersects the employee's whitelist with the acting user's
+  role-allowed tools, so an employee can never grant access the role lacks.
+- **Pieces:** `AiEmployeeService` (CRUD + validation), `AiEmployeeRepository`
+  (tenant-scoped). **Tables:** ai_employees. **API:** /ai/employees (+ /:id
+  PATCH/DELETE) and an `employeeId` on /ai/console/chat. **UI:** dashboard **AI
+  Employees** panel (owner/admin) + assistant picker in the Command Center.
+
 ### AI Command Center (`ai/console/`)
 - **Purpose:** a chat surface that answers questions about the business and
   takes actions — the human-facing front end of the tool registry.

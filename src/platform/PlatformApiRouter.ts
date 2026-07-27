@@ -61,6 +61,10 @@ import {
   type AiToolService,
 } from "./ai/tools/AiToolService";
 import type { AiConsoleService } from "./ai/console/AiConsoleService";
+import {
+  AiEmployeeValidationError,
+  type AiEmployeeService,
+} from "./ai/employees/AiEmployeeService";
 import type { PlatformCampaignService } from "./marketing/PlatformCampaignService";
 import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
@@ -110,6 +114,7 @@ export interface PlatformApiDependencies {
   workflows?: WorkflowService;
   aiTools?: AiToolService;
   aiConsole?: AiConsoleService;
+  aiEmployees?: AiEmployeeService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -1428,16 +1433,192 @@ export function createPlatformApiRouter(
               )
           : [];
 
-        aiConsole
-          .chat(
-            message,
-            history,
-            toolContext(req),
+        const employeeId = optionalString(
+          body.employeeId,
+        );
+
+        // Running "as" a saved employee applies its persona + tool whitelist.
+        // Loading is tenant-scoped; the console intersects the whitelist with
+        // the caller's role, so an employee can never grant extra access.
+        const personaPromise =
+          employeeId && deps.aiEmployees
+            ? deps.aiEmployees
+                .get(employeeId)
+                .then((e) => ({
+                  persona: e.persona,
+                  toolNames: e.toolNames,
+                }))
+                .catch(() => undefined)
+            : Promise.resolve(undefined);
+
+        personaPromise
+          .then((persona) =>
+            aiConsole.chat(
+              message,
+              history,
+              toolContext(req),
+              persona,
+            ),
           )
           .then((reply) =>
             res.json(reply),
           )
           .catch(next);
+      },
+    );
+  }
+
+  // ---- AI employees (saved assistants) ----
+  if (deps.aiEmployees) {
+    const aiEmployees = deps.aiEmployees;
+
+    router.get(
+      "/ai/employees",
+      (_req, res, next) => {
+        aiEmployees
+          .list()
+          .then((employees) =>
+            res.json({ employees }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.post(
+      "/ai/employees",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        aiEmployees
+          .create({
+            name: String(
+              body.name ?? "",
+            ),
+            title: optionalString(
+              body.title,
+            ),
+            persona: optionalString(
+              body.persona,
+            ),
+            toolNames: toolNameList(
+              body.toolNames,
+            ),
+          })
+          .then((employee) =>
+            res
+              .status(201)
+              .json({ employee }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              AiEmployeeValidationError
+            ) {
+              badRequest(
+                res,
+                "INVALID_EMPLOYEE",
+                error.message,
+              );
+
+              return;
+            }
+
+            next(error);
+          });
+      },
+    );
+
+    router.patch(
+      "/ai/employees/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+
+        aiEmployees
+          .update(
+            String(req.params.id),
+            {
+              name: optionalString(
+                body.name,
+              ),
+              title: optionalString(
+                body.title,
+              ),
+              persona:
+                body.persona ===
+                undefined
+                  ? undefined
+                  : String(
+                      body.persona,
+                    ),
+              toolNames:
+                body.toolNames ===
+                undefined
+                  ? undefined
+                  : toolNameList(
+                      body.toolNames,
+                    ),
+              status:
+                body.status ===
+                "archived"
+                  ? "archived"
+                  : body.status ===
+                      "active"
+                    ? "active"
+                    : undefined,
+            },
+          )
+          .then((employee) =>
+            res.json({ employee }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              AiEmployeeValidationError
+            ) {
+              badRequest(
+                res,
+                "INVALID_EMPLOYEE",
+                error.message,
+              );
+
+              return;
+            }
+
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "EMPLOYEE_NOT_FOUND",
+            );
+          });
+      },
+    );
+
+    router.delete(
+      "/ai/employees/:id",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        aiEmployees
+          .remove(
+            String(req.params.id),
+          )
+          .then(() =>
+            res.json({ ok: true }),
+          )
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "EMPLOYEE_NOT_FOUND",
+            ),
+          );
       },
     );
   }
@@ -5508,6 +5689,19 @@ function normalizeTurn(value: unknown): {
         : "user",
     content,
   };
+}
+
+/** Coerces a value into a clean array of tool-name strings. */
+function toolNameList(
+  value: unknown,
+): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.filter(
+    (v): v is string =>
+      typeof v === "string" &&
+      v.trim().length > 0,
+  );
 }
 
 /** Maps AI-tool errors to HTTP status codes; otherwise defers. */

@@ -7,6 +7,17 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **AI Employees** (P3-M4): saved, tenant-scoped assistants — each a persona
+  plus a whitelisted subset of registry tools (e.g. a "Sales Assistant" limited
+  to lead tools). Running the Command Center "as" an employee injects its
+  persona and **narrows** the available tools. The security property is
+  structural: the console intersects the employee's tool list with the acting
+  user's role-allowed set, so an employee can only ever do *less* than the
+  role — never more. API `/api/platform/ai/employees` (+ `/:id` PATCH/DELETE)
+  and an `employeeId` on the chat endpoint; dashboard **AI Employees** panel
+  (owner/admin) + an assistant picker in the Command Center. Table
+  `ai_employees`. 7 tests (incl. "a whitelist can't grant tools the role
+  lacks"). Live-proved on staging.
 - **AI Command Center** (P3-M3): a chat surface where the user asks about their
   business or asks the assistant to do something. The assistant plans with the
   tool registry's descriptors, runs **read** tools itself to gather live data

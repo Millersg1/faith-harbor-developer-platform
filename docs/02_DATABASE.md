@@ -99,7 +99,16 @@ erDiagram
   organizations ||--o{ workflows : automates
   workflows ||--o{ workflow_runs : "spawns"
   organizations ||--o{ ai_tool_invocations : "records"
+  organizations ||--o{ ai_employees : "defines"
 ```
+
+### AI employees (P3-M4)
+
+- **`ai_employees`** — one saved assistant per row. Columns: `id`,
+  `organization_id`, `name`, `title`, `persona`, `tool_names` (JSONB array of
+  registry tool names to restrict to; empty = all role-allowed), `status`
+  (`active` | `archived`), `created_at`, `updated_at`. Indexed on
+  `(organization_id, created_at)`.
 
 ### AI tool invocations (P3-M2)
 

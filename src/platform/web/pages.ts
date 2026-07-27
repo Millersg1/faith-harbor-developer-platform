@@ -691,6 +691,7 @@ export function dashboardPage(): string {
       <div class="panel" id="aiConsolePanel" style="display:none;">
         <h2>AI Command Center</h2>
         <p class="hint">Ask about your business or ask the assistant to do something. It reads live data to answer, and anything that changes data is queued for you to confirm.</p>
+        <div class="f" style="max-width:320px;"><label for="aiEmployeeSelect">Assistant</label><select id="aiEmployeeSelect"><option value="">General assistant</option></select></div>
         <div id="aiChatLog" style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto;padding:4px 0;"></div>
         <div class="inline" style="margin-top:8px;">
           <div class="f" style="flex:1;"><label for="aiChatInput">Message</label><input id="aiChatInput" placeholder="e.g. How many leads do we have?" autocomplete="off" /></div>
@@ -706,6 +707,17 @@ export function dashboardPage(): string {
         <div class="sub" style="margin:14px 0 4px;font-weight:600;">Available actions</div>
         <div class="list" id="aiToolsList"><div class="empty">Loading…</div></div>
         <div class="msg" id="aitmsg"></div>
+      </div>
+      <div class="panel" id="aiEmployeesPanel" style="display:none;">
+        <h2>AI Employees <span class="pill">owner/admin</span></h2>
+        <p class="hint">Saved assistants with their own persona and a limited set of actions. Pick one in the Command Center to work with it. An assistant can only ever do less than your own role allows — never more.</p>
+        <div class="list" id="aiEmployees"><div class="empty">Loading…</div></div>
+        <div class="f"><label for="aeName">Name</label><input id="aeName" placeholder="Sales Assistant" /></div>
+        <div class="f"><label for="aeTitle">Title</label><input id="aeTitle" placeholder="Sales" /></div>
+        <div class="f"><label for="aePersona">Persona / instructions</label><textarea id="aePersona" rows="3" placeholder="You help qualify and follow up with new leads. Be concise and friendly." style="width:100%;"></textarea></div>
+        <div class="f"><label for="aeTools">Limit to actions (optional, comma-separated tool names)</label><input id="aeTools" placeholder="crm.leads.list, crm.leads.create" /></div>
+        <button class="btn" id="addEmployee" style="width:auto;">Create assistant</button>
+        <div class="msg" id="aemsg"></div>
       </div>
       <div class="panel" id="knowledgePanel" style="display:none;">
         <h2>AI Knowledge Base <span class="pill">owner/admin</span></h2>
@@ -1470,7 +1482,9 @@ export function dashboardPage(): string {
     input.value='';setMsg('aicmsg','','');
     aiBubble('user',msg);
     var thinking=aiBubble('assistant','\\u2026');
-    var r=await api('/api/platform/ai/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:aiHistory})});
+    var empSel=document.getElementById('aiEmployeeSelect');
+    var employeeId=empSel?empSel.value:'';
+    var r=await api('/api/platform/ai/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:aiHistory,employeeId:employeeId})});
     if(!r.ok){thinking.textContent='Sorry — something went wrong.';return;}
     var d=await r.json();
     thinking.textContent=d.reply||'';
@@ -1505,6 +1519,37 @@ export function dashboardPage(): string {
       var note=document.createElement('div');note.className='sub';note.style.marginTop='6px';note.textContent='An owner or admin can confirm this in AI Actions.';card.appendChild(note);
     }
     log.appendChild(card);log.scrollTop=log.scrollHeight;
+  }
+  async function loadAiEmployees(){
+    var r=await api('/api/platform/ai/employees');if(!r.ok)return;
+    var d=await r.json();var list=d.employees||[];
+    // Populate the Command Center selector.
+    var sel=document.getElementById('aiEmployeeSelect');
+    if(sel){
+      var cur=sel.value;
+      sel.innerHTML='<option value="">General assistant</option>';
+      list.filter(function(e){return e.status==='active';}).forEach(function(e){
+        var o=document.createElement('option');o.value=e.id;o.textContent=e.name;sel.appendChild(o);
+      });
+      sel.value=cur;
+    }
+    // Render the management list (owner/admin panel).
+    var el=document.getElementById('aiEmployees');if(!el)return;clear(el);
+    if(!list.length){el.appendChild(emptyMsg('No assistants yet. Create one below.'));return;}
+    list.forEach(function(e){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var t=document.createElement('div');t.textContent=esc(e.name);t.style.fontWeight='600';left.appendChild(t);
+      var s=document.createElement('div');s.className='sub';s.textContent=esc(e.title)+((e.toolNames&&e.toolNames.length)?(' \\u00b7 '+e.toolNames.length+' action(s)'):' \\u00b7 all your actions');left.appendChild(s);
+      row.appendChild(left);
+      var del=document.createElement('button');del.className='btn ghost';del.style.padding='6px 12px';del.style.flex='none';del.textContent='Delete';
+      del.addEventListener('click',function(){deleteEmployee(e.id);});row.appendChild(del);
+      el.appendChild(row);
+    });
+  }
+  async function deleteEmployee(id){
+    var r=await api('/api/platform/ai/employees/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok)loadAiEmployees();
   }
   async function loadAiTools(){
     var tr=await api('/api/platform/ai/tools');
@@ -1753,6 +1798,7 @@ export function dashboardPage(): string {
       document.getElementById('knowledgePanel').style.display='';
       document.getElementById('workflowsPanel').style.display='';
       document.getElementById('aiToolsPanel').style.display='';
+      document.getElementById('aiEmployeesPanel').style.display='';
       document.getElementById('auditPanel').style.display='';
       loadBrands();
       loadTeam();
@@ -1776,6 +1822,7 @@ export function dashboardPage(): string {
     await loadFiles();
     await loadCalendar();
     document.getElementById('aiConsolePanel').style.display='';
+    await loadAiEmployees();
     refreshUnread();
     setInterval(refreshUnread, 45000);
     buildSecNav();
@@ -1873,6 +1920,17 @@ export function dashboardPage(): string {
   })();
   document.getElementById('aiChatSend').addEventListener('click',sendAiChat);
   document.getElementById('aiChatInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendAiChat();}});
+  document.getElementById('addEmployee').addEventListener('click',async function(){
+    var name=document.getElementById('aeName').value.trim();
+    if(!name){setMsg('aemsg','err','Give the assistant a name.');return;}
+    var toolsRaw=document.getElementById('aeTools').value.trim();
+    var toolNames=toolsRaw?toolsRaw.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
+    setMsg('aemsg','','Creating\\u2026');
+    var r=await api('/api/platform/ai/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,title:document.getElementById('aeTitle').value.trim(),persona:document.getElementById('aePersona').value,toolNames:toolNames})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('aemsg','ok','Assistant created.');document.getElementById('aeName').value='';document.getElementById('aeTitle').value='';document.getElementById('aePersona').value='';document.getElementById('aeTools').value='';loadAiEmployees();}
+    else{setMsg('aemsg','err',(x.error&&x.error.message)||'Could not create assistant.');}
+  });
   document.getElementById('addWorkflow').addEventListener('click',async function(){
     var tpl=WF_TEMPLATES[document.getElementById('wftemplate').value];
     if(!tpl){setMsg('wfmsg','err','Pick a template.');return;}

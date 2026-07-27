@@ -8,6 +8,7 @@ import type { AiToolRegistry } from "../tools/AiToolRegistry";
 import type { AiToolService } from "../tools/AiToolService";
 import type {
   AiToolContext,
+  AiToolDescriptor,
   AiToolInvocationRecord,
 } from "../tools/AiToolTypes";
 import {
@@ -28,6 +29,13 @@ export interface AiConsoleStep {
   tool: string;
   mode: "read" | "write";
   summary: string;
+}
+
+/** Persona + tool whitelist for running a chat "as" a saved AI employee. */
+export interface AiConsolePersona {
+  persona?: string;
+  /** Registry tool names to restrict to; empty/absent = all role-allowed. */
+  toolNames?: string[];
 }
 
 export interface AiConsoleReply {
@@ -82,6 +90,7 @@ export class AiConsoleService {
     message: string,
     history: AiConsoleTurn[],
     ctx: AiToolContext,
+    persona?: AiConsolePersona,
   ): Promise<AiConsoleReply> {
     const client =
       await this.resolveClient();
@@ -99,9 +108,15 @@ export class AiConsoleService {
       };
     }
 
-    const tools = this.toolSpecs(
+    // The tools this conversation may use: the role-allowed set, further
+    // narrowed to the employee's whitelist when running "as" one. An employee
+    // can only ever restrict, never expand beyond what the role permits.
+    const allowed = this.allowedTools(
       ctx.role,
+      persona?.toolNames,
     );
+    const tools =
+      allowed.map(toChatToolSpec);
     // OpenAI tool names can't contain dots, but registry names do
     // (e.g. "crm.leads.list"). Map the wire name the model sees back to the
     // real registry name when it calls a tool.
@@ -109,18 +124,20 @@ export class AiConsoleService {
       string,
       string
     >();
-    for (const t of this.registry.describe(
-      ctx.role,
-    )) {
+    for (const t of allowed) {
       realName.set(
         wireName(t.name),
         t.name,
       );
     }
+    const systemContent =
+      persona?.persona
+        ? `${SYSTEM_PROMPT}\n\nYou are acting as this assistant. Stay in character and follow these instructions:\n${persona.persona}`
+        : SYSTEM_PROMPT;
     const messages: ChatMessage[] = [
       {
         role: "system",
-        content: SYSTEM_PROMPT,
+        content: systemContent,
       },
       ...history
         .slice(-12)
@@ -252,40 +269,27 @@ export class AiConsoleService {
     };
   }
 
-  /** The tools the given role may use, as chat tool specs. */
-  private toolSpecs(
+  /**
+   * The tools this conversation may use: the role-allowed set, optionally
+   * narrowed to a whitelist (an employee's tools). The whitelist can only
+   * remove tools the role already allows — it can never add others.
+   */
+  private allowedTools(
     role: PlatformUserRole,
-  ): ChatToolSpec[] {
-    return this.registry
-      .describe(role)
-      .map((t) => {
-        const properties: ChatToolSpec["parameters"]["properties"] =
-          {};
-        const required: string[] = [];
+    whitelist?: string[],
+  ): AiToolDescriptor[] {
+    const roleAllowed =
+      this.registry.describe(role);
 
-        for (const p of t.params) {
-          properties[p.name] = {
-            type: p.type,
-            description:
-              p.description,
-          };
-          if (p.required)
-            required.push(p.name);
-        }
+    if (!whitelist || !whitelist.length) {
+      return roleAllowed;
+    }
 
-        return {
-          name: wireName(t.name),
-          description:
-            t.mode === "write"
-              ? `${t.description} (Changes data — will require user confirmation.)`
-              : t.description,
-          parameters: {
-            type: "object" as const,
-            properties,
-            required,
-          },
-        };
-      });
+    const allow = new Set(whitelist);
+
+    return roleAllowed.filter((t) =>
+      allow.has(t.name),
+    );
   }
 
   /** Resolves the tenant's own client, else the platform default. */
@@ -381,6 +385,37 @@ export class AiConsoleService {
  */
 function wireName(name: string): string {
   return name.replace(/\./g, "__");
+}
+
+/** Converts a registry descriptor to an OpenAI-style tool spec. */
+function toChatToolSpec(
+  t: AiToolDescriptor,
+): ChatToolSpec {
+  const properties: ChatToolSpec["parameters"]["properties"] =
+    {};
+  const required: string[] = [];
+
+  for (const p of t.params) {
+    properties[p.name] = {
+      type: p.type,
+      description: p.description,
+    };
+    if (p.required)
+      required.push(p.name);
+  }
+
+  return {
+    name: wireName(t.name),
+    description:
+      t.mode === "write"
+        ? `${t.description} (Changes data — will require user confirmation.)`
+        : t.description,
+    parameters: {
+      type: "object",
+      properties,
+      required,
+    },
+  };
 }
 
 function toolResultText(

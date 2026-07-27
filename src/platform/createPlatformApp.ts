@@ -39,6 +39,7 @@ import type { AuditService } from "./audit/AuditService";
 import type { WorkflowService } from "./workflows/WorkflowService";
 import type { AiToolService } from "./ai/tools/AiToolService";
 import type { AiConsoleService } from "./ai/console/AiConsoleService";
+import type { AiEmployeeService } from "./ai/employees/AiEmployeeService";
 import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformEmailService } from "./email/PlatformEmailService";
 import { PlatformCampaignService } from "./marketing/PlatformCampaignService";
@@ -105,6 +106,7 @@ export interface PlatformAppDependencies {
   workflows?: WorkflowService;
   aiTools?: AiToolService;
   aiConsole?: AiConsoleService;
+  aiEmployees?: AiEmployeeService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
@@ -541,6 +543,7 @@ export function createPlatformApp(
       workflows: deps.workflows,
       aiTools: deps.aiTools,
       aiConsole: deps.aiConsole,
+      aiEmployees: deps.aiEmployees,
       websites: deps.websites,
       aiSettings: deps.aiSettings,
       aiUsage: deps.aiUsage,

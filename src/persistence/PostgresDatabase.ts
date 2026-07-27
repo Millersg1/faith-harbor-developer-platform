@@ -542,6 +542,26 @@ export class PostgresDatabase
         ON ai_tool_invocations (organization_id, status, created_at);
     `);
 
+    // AI employees — saved, role-scoped assistants, tenant-scoped.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_employees (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        name             TEXT NOT NULL,
+        title            TEXT NOT NULL DEFAULT 'Assistant',
+        persona          TEXT NOT NULL DEFAULT '',
+        tool_names       JSONB NOT NULL DEFAULT '[]'::jsonb,
+        status           TEXT NOT NULL DEFAULT 'active',
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS ai_employees_org_idx
+        ON ai_employees (organization_id, created_at);
+    `);
+
     // Audit log — append-only security trail, tenant-scoped.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS audit_events (

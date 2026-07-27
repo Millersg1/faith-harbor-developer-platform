@@ -14,7 +14,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Authorization | ~75% | Service-layer role guards; RLS backstop pending |
 | Billing | ~70% | Stripe subscriptions (live-capable); customer portal + tax pending |
 | Website Builder | ~70% | Generate + publish to verified domain; template marketplace pending |
-| AI | ~60% | BYO keys, metering, caps, KB retrieval, tool registry, Command Center (chat + tools, confirm-gated writes); Employees pending |
+| AI | ~70% | BYO keys, metering, caps, KB retrieval, tool registry, Command Center, Employees (role-scoped assistants); Phase 3 complete |
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
 | Marketplace | 0% | Not started (Phase 4) |
 | Forms | ~80% | Public forms + submissions + lead capture; drag-drop editor pending |
@@ -26,15 +26,15 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 
 ## Current milestone
 
-Phase 3 underway. **P3-M1 Workflow engine**, **P3-M2 AI tool registry**, and
-**P3-M3 AI Command Center** shipped (all live-proved on staging). Hardening
-pass (rate limiting, audit logging, daily backups) also complete.
+**Phase 3 complete.** Workflow engine (M1), AI tool registry (M2), AI Command
+Center (M3), and AI Employees (M4) all shipped and live-proved on staging.
+Hardening pass (rate limiting, audit logging, daily backups) also complete.
 
 ## Next milestone
 
-Phase 3 finishes with **AI Employees** (role-based assistants built on the tool
-registry + Command Center). Deferred hardening: Postgres RLS backstop, CSRF
-tokens, periodic restore test.
+Phase 4 (Marketplace) or the deferred hardening — **Postgres RLS backstop**,
+CSRF tokens, periodic restore test — recommended before broadening the tenant
+surface further.
 
 ## Known technical debt
 
