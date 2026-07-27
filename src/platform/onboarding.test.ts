@@ -14,6 +14,10 @@ import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { createPlatformApp } from "./createPlatformApp";
+import { PlatformProjectRepository } from "./projects/PlatformProjectRepository";
+import { PlatformProjectService } from "./projects/PlatformProjectService";
+import { PlatformInvoiceRepository } from "./invoices/PlatformInvoiceRepository";
+import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { OnboardingService } from "./onboarding/OnboardingService";
 import { PlatformSessionRepository } from "./sessions/PlatformSessionRepository";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
@@ -145,6 +149,16 @@ describe("Onboarding API (HTTP)", () => {
         new BrandingRepository(),
       ),
       clients,
+      projects:
+        new PlatformProjectService(
+          new PlatformProjectRepository(),
+          clients,
+        ),
+      invoices:
+        new PlatformInvoiceService(
+          new PlatformInvoiceRepository(),
+          clients,
+        ),
       signup:
         new PlatformSignupService(
           organizations,
