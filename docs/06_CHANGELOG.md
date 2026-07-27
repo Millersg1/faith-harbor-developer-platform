@@ -7,6 +7,14 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **Expanded the AI tool registry** (Phase 3 polish): the Command Center and
+  AI Employees can now do materially more. New read tools —
+  `crm.pipeline.summary` (leads grouped by stage + total estimated value),
+  `revenue.summary` (invoices paid vs outstanding), `tickets.list`. New
+  write tools (still confirmation-gated) — `crm.leads.update_stage`,
+  `projects.create`, `tickets.create`. All wrap existing tenant-scoped
+  services; the ticket/lead services validate their own enums so the tool's
+  string inputs are safe. 4 tests for the default catalogue.
 - **AI Employees** (P3-M4): saved, tenant-scoped assistants — each a persona
   plus a whitelisted subset of registry tools (e.g. a "Sales Assistant" limited
   to lead tools). Running the Command Center "as" an employee injects its

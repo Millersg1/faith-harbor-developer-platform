@@ -498,10 +498,34 @@ async function start(): Promise<void> {
     new AiToolRegistry();
   for (const tool of buildDefaultAiTools(
     {
-      leads,
+      // The lead service validates status via isLeadStatus (invalid → keeps
+      // the current stage), so the tool's string status is safe to pass.
+      leads: {
+        list: () => leads.list(),
+        create: (input) =>
+          leads.create(input),
+        update: (id, changes) =>
+          leads.update(
+            id,
+            changes as Parameters<
+              typeof leads.update
+            >[1],
+          ),
+      },
       clients,
       projects,
       invoices,
+      // The ticket service validates/coerces priority + status internally, so
+      // the tool's looser string input is safe to hand through.
+      tickets: {
+        list: () => tickets.list(),
+        create: (input) =>
+          tickets.create(
+            input as Parameters<
+              typeof tickets.create
+            >[0],
+          ),
+      },
       activity,
       notifications,
       resolveNotifyRecipients:

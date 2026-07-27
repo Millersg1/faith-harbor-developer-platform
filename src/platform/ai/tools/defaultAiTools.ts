@@ -14,15 +14,39 @@ export interface AiToolServices {
       email?: string;
       company?: string;
     }) => Promise<{ id: string; name: string }>;
+    update?: (
+      id: string,
+      changes: { status?: string },
+    ) => Promise<{
+      id: string;
+      name: string;
+      status?: string;
+    }>;
   };
   clients?: {
     list: () => Promise<readonly unknown[]>;
   };
   projects?: {
     list: () => Promise<readonly unknown[]>;
+    create?: (input: {
+      name: string;
+      description?: string;
+      clientId?: string;
+    }) => Promise<{ id: string; name: string }>;
   };
   invoices?: {
     list: () => Promise<readonly unknown[]>;
+  };
+  tickets?: {
+    list: () => Promise<readonly unknown[]>;
+    create: (input: {
+      subject: string;
+      description?: string;
+      priority?: string;
+    }) => Promise<{
+      id: string;
+      subject: string;
+    }>;
   };
   activity?: {
     record: (input: {
@@ -338,6 +362,277 @@ export function buildDefaultAiTools(
         return {
           ok: true,
           summary: `Notified ${recipients.length} teammate(s).`,
+        };
+      },
+    });
+  }
+
+  if (services.leads) {
+    const leads = services.leads;
+
+    tools.push({
+      name: "crm.pipeline.summary",
+      title: "Sales pipeline summary",
+      description:
+        "Leads grouped by stage with total estimated value.",
+      mode: "read",
+      params: [],
+      run: async () => {
+        const rows =
+          (await leads.list()) as ReadonlyArray<{
+            status?: string;
+            estimatedValue?: number;
+          }>;
+        const byStage: Record<
+          string,
+          number
+        > = {};
+        let value = 0;
+
+        for (const r of rows) {
+          const stage =
+            typeof r.status === "string"
+              ? r.status
+              : "unknown";
+          byStage[stage] =
+            (byStage[stage] ?? 0) + 1;
+          value +=
+            typeof r.estimatedValue ===
+            "number"
+              ? r.estimatedValue
+              : 0;
+        }
+
+        const parts = Object.entries(
+          byStage,
+        ).map(
+          ([s, n]) => `${n} ${s}`,
+        );
+
+        return {
+          ok: true,
+          summary: `${rows.length} lead(s): ${parts.join(", ") || "none"} · ~$${value} in pipeline.`,
+          data: {
+            byStage,
+            estimatedValue: value,
+          },
+        };
+      },
+    });
+
+    if (leads.update) {
+      const update = leads.update;
+
+      tools.push({
+        name: "crm.leads.update_stage",
+        title: "Move a lead's stage",
+        description:
+          "Change a lead's pipeline stage. Requires confirmation.",
+        mode: "write",
+        roles: ["owner", "admin"],
+        params: [
+          {
+            name: "leadId",
+            type: "string",
+            description:
+              "The lead's id.",
+            required: true,
+          },
+          {
+            name: "status",
+            type: "string",
+            description:
+              "New stage: new, contacted, qualified, proposal, won, or lost.",
+            required: true,
+          },
+        ],
+        run: async (args) => {
+          const updated =
+            await update(
+              String(args.leadId),
+              {
+                status: String(
+                  args.status,
+                ),
+              },
+            );
+
+          return {
+            ok: true,
+            summary: `Moved "${updated.name}" to ${updated.status ?? "updated"}.`,
+          };
+        },
+      });
+    }
+  }
+
+  if (services.projects?.create) {
+    const create =
+      services.projects.create;
+
+    tools.push({
+      name: "projects.create",
+      title: "Create a project",
+      description:
+        "Start a new project. Requires confirmation.",
+      mode: "write",
+      roles: ["owner", "admin"],
+      params: [
+        {
+          name: "name",
+          type: "string",
+          description:
+            "The project name.",
+          required: true,
+        },
+        {
+          name: "description",
+          type: "string",
+          description:
+            "Optional description.",
+        },
+      ],
+      run: async (args) => {
+        const created =
+          await create({
+            name: String(args.name),
+            description:
+              args.description ===
+              undefined
+                ? undefined
+                : String(
+                    args.description,
+                  ),
+          });
+
+        return {
+          ok: true,
+          summary: `Created project "${created.name}".`,
+          data: { id: created.id },
+        };
+      },
+    });
+  }
+
+  if (services.tickets) {
+    const tickets = services.tickets;
+
+    tools.push({
+      name: "tickets.list",
+      title: "List support tickets",
+      description:
+        "Count and preview open support tickets.",
+      mode: "read",
+      params: [],
+      run: async () => {
+        const rows =
+          await tickets.list();
+
+        return {
+          ok: true,
+          summary: `${rows.length} ticket(s).`,
+          data: rows.slice(0, 20),
+        };
+      },
+    });
+
+    tools.push({
+      name: "tickets.create",
+      title: "Open a support ticket",
+      description:
+        "Open a new support ticket. Requires confirmation.",
+      mode: "write",
+      roles: ["owner", "admin"],
+      params: [
+        {
+          name: "subject",
+          type: "string",
+          description:
+            "The ticket subject.",
+          required: true,
+        },
+        {
+          name: "description",
+          type: "string",
+          description:
+            "Optional detail.",
+        },
+        {
+          name: "priority",
+          type: "string",
+          description:
+            "low, medium, high, or urgent.",
+        },
+      ],
+      run: async (args) => {
+        const created =
+          await tickets.create({
+            subject: String(
+              args.subject,
+            ),
+            description:
+              args.description ===
+              undefined
+                ? undefined
+                : String(
+                    args.description,
+                  ),
+            priority:
+              args.priority ===
+              undefined
+                ? undefined
+                : String(
+                    args.priority,
+                  ),
+          });
+
+        return {
+          ok: true,
+          summary: `Opened ticket "${created.subject}".`,
+          data: { id: created.id },
+        };
+      },
+    });
+  }
+
+  if (services.invoices) {
+    const invoices = services.invoices;
+
+    tools.push({
+      name: "revenue.summary",
+      title: "Revenue summary",
+      description:
+        "Invoice totals: paid vs outstanding.",
+      mode: "read",
+      params: [],
+      run: async () => {
+        const rows =
+          (await invoices.list()) as ReadonlyArray<{
+            status?: string;
+            amount?: number;
+          }>;
+        let paid = 0;
+        let outstanding = 0;
+
+        for (const r of rows) {
+          const amount =
+            typeof r.amount === "number"
+              ? r.amount
+              : 0;
+          if (r.status === "paid") {
+            paid += amount;
+          } else {
+            outstanding += amount;
+          }
+        }
+
+        return {
+          ok: true,
+          summary: `${rows.length} invoice(s): $${paid} paid, $${outstanding} outstanding.`,
+          data: {
+            paid,
+            outstanding,
+          },
         };
       },
     });

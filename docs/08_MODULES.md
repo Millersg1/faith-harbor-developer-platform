@@ -97,6 +97,12 @@ Source lives under `src/platform/<module>/`.
 - **Tables:** ai_tool_invocations. **API:** /ai/tools (+ /:name/invoke,
   /invocations, /invocations/:id/confirm|reject). **UI:** dashboard **AI
   Actions** panel (owner/admin).
+- **Catalogue (`buildDefaultAiTools`):** reads — `crm.leads.list`,
+  `clients.list`, `projects.list`, `tickets.list`, `metrics.summary`,
+  `crm.pipeline.summary`, `revenue.summary`; writes (confirm-gated) —
+  `crm.leads.create`, `crm.leads.update_stage`, `projects.create`,
+  `tickets.create`, `notes.add`, `notifications.send`. Each wraps an existing
+  tenant-scoped service.
 
 ### Workflows (`workflows/`)
 - **Purpose:** tenant automations — a trigger starts a run that advances through
