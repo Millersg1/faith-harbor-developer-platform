@@ -6,6 +6,19 @@ Faith Harbor OS is unaffected.
 
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
+### Security
+- **CSRF guard + security response headers** (hardening). A CSRF guard
+  (`security/CsrfGuard.ts`) protects the authenticated state-changing surfaces
+  (`/api/platform`, `/portal/api`, `/platform/admin/api`): unsafe methods are
+  rejected (403 `CSRF_BLOCKED`) when the browser marks the request
+  `Sec-Fetch-Site: cross-site` or its `Origin` host doesn't match a served host
+  (`Host`/`X-Forwarded-Host`, proxy-aware). Requests with neither header are
+  allowed — `SameSite=Lax` remains the backstop — so same-origin calls,
+  Bearer-token clients, and the test suite are unaffected. Every response now
+  also carries `X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN`,
+  `Referrer-Policy`, `X-Permitted-Cross-Domain-Policies`, and (behind HTTPS)
+  HSTS. 7 tests.
+
 ### Added
 - **Invoice mark-paid + `invoice.paid` event** (Phase 3 polish): invoices can
   now be marked paid (`PATCH /api/platform/invoices/:id`, dashboard "Mark paid"

@@ -53,11 +53,35 @@ staging/prod (`PLATFORM_SECURE_COOKIE=true`), `Path=/`, explicit expiry.
 
 ## CSRF protections
 
-SameSite=Lax mitigates cross-site POST CSRF for the cookie surfaces. The public
-form submit endpoint is intentionally cross-origin (embeddable) and creates
-only low-trust submissions; it stores only known field keys. **To do:** add
-explicit CSRF tokens / origin checks for state-changing tenant routes as part
-of the hardening pass.
+Two layers. First, the session cookie is `SameSite=Lax` and host-only, which by
+itself stops a cross-site page from driving a POST/PATCH/DELETE with the
+victim's cookie. Second, a **CSRF guard** (`security/CsrfGuard.ts`) runs on the
+authenticated, state-changing surfaces — the tenant API (`/api/platform`), the
+client portal (`/portal/api`), and the admin console (`/platform/admin/api`).
+For unsafe methods it rejects (403 `CSRF_BLOCKED`) any request the browser
+marks `Sec-Fetch-Site: cross-site`, or whose `Origin` host doesn't match a host
+we serve (checking both `Host` and `X-Forwarded-Host`, since the app sits
+behind the cPanel proxy). It deliberately allows requests carrying neither
+header — same-origin form posts, non-browser Bearer-token API clients, and
+older browsers — for which `SameSite=Lax` remains the backstop. *Why this shape:*
+`Sec-Fetch-Site` is set by the browser and can't be forged cross-site, and it's
+unaffected by the reverse proxy, so it's a reliable primary signal without the
+token plumbing (and its regression risk) a synchronizer-token scheme would add.
+
+The public form-submit endpoint is intentionally cross-origin (embeddable) and
+is NOT behind the guard; it creates only low-trust submissions and stores only
+known field keys.
+
+## Security response headers
+
+Every response carries `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: SAMEORIGIN` (anti-clickjacking), `Referrer-Policy:
+strict-origin-when-cross-origin`, and `X-Permitted-Cross-Domain-Policies: none`.
+When behind HTTPS (`PLATFORM_SECURE_COOKIE=true`) it also sends
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`. No global CSP
+is set (the dashboard is self-contained inline HTML/JS); the one place
+untrusted HTML is served — the AI website preview — sets its own strict sandbox
+CSP.
 
 ## SQL injection protections
 
@@ -139,6 +163,7 @@ storage keys.
    app-layer isolation.
 3. ~~Audit logging~~ ✅ done for auth + team actions (expand coverage over
    time).
-4. CSRF tokens for state-changing tenant routes.
+4. ~~CSRF for state-changing tenant routes~~ ✅ done — `Sec-Fetch-Site`/`Origin`
+   guard on the authenticated mutating surfaces (see CSRF protections above).
 5. ~~Automated backups~~ ✅ daily `pg_dump` + off-box mirror (see
    `10_DEPLOYMENT.md`); still to do: periodically test a full restore.

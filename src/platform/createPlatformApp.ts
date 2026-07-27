@@ -57,6 +57,7 @@ import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApiRouter } from "./PlatformApiRouter";
+import { createCsrfGuard } from "./security/CsrfGuard";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PlatformUserService } from "./users/PlatformUserService";
@@ -159,6 +160,10 @@ export function createPlatformApp(
       users: deps.users,
     });
 
+  // CSRF defense-in-depth for authenticated, state-changing routes (applied
+  // to the portal, admin, and tenant API mounts below).
+  const csrfGuard = createCsrfGuard();
+
   const app = express();
 
   // Behind exactly ONE trusted hop (the cPanel HTTPS proxy). Trust only that
@@ -166,6 +171,39 @@ export function createPlatformApp(
   // spoof X-Forwarded-For to forge req.ip and bypass rate limiting. With `1`,
   // Express takes the last entry the trusted proxy appended as the client IP.
   app.set("trust proxy", 1);
+
+  // Baseline security headers on every response (defense-in-depth alongside
+  // the SameSite=Lax, host-only session cookie). No global CSP here — the
+  // dashboard is self-contained inline HTML/JS, and the one place untrusted
+  // HTML is served (the AI website preview) sets its own strict sandbox CSP.
+  app.use((_req, res, next) => {
+    res.setHeader(
+      "X-Content-Type-Options",
+      "nosniff",
+    );
+    res.setHeader(
+      "X-Frame-Options",
+      "SAMEORIGIN",
+    );
+    res.setHeader(
+      "Referrer-Policy",
+      "strict-origin-when-cross-origin",
+    );
+    res.setHeader(
+      "X-Permitted-Cross-Domain-Policies",
+      "none",
+    );
+    // HSTS only when we're actually behind HTTPS (staging/prod). Guarded by
+    // secureCookie so local http dev isn't pinned to HTTPS.
+    if (deps.secureCookie) {
+      res.setHeader(
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains",
+      );
+    }
+
+    next();
+  });
 
   // Stripe webhook — MUST be registered before express.json(), because
   // signature verification needs the exact raw request body. The signature
@@ -428,6 +466,7 @@ export function createPlatformApp(
   ) {
     app.use(
       "/portal/api",
+      csrfGuard,
       createPortalRouter({
         tenantMiddleware,
         clientUsers:
@@ -464,6 +503,7 @@ export function createPlatformApp(
 
   app.use(
     "/platform/admin/api",
+    csrfGuard,
     createAdminRouter({
       admins: deps.admins,
       adminSessions:
@@ -501,6 +541,7 @@ export function createPlatformApp(
   // Branding: GET is public (login screen), PUT is owner/admin only.
   app.use(
     "/api/platform",
+    csrfGuard,
     createBrandingRouter({
       branding: deps.branding,
       tenantMiddleware,
@@ -512,6 +553,7 @@ export function createPlatformApp(
   // branding routes above have had their chance).
   app.use(
     "/api/platform",
+    csrfGuard,
     requireUser,
     createPlatformApiRouter({
       clients: deps.clients,
