@@ -33,6 +33,53 @@ import {
   listIndustryEditions,
   listWebsiteTemplates,
 } from "./marketplace/MarketplaceCatalog";
+import { buildDefaultAiTools } from "./ai/tools/defaultAiTools";
+
+/** Every tool name the default catalogue can expose (all services present). */
+function allToolNames(): Set<string> {
+  const noop = async () => [];
+  const tools = buildDefaultAiTools({
+    leads: {
+      list: noop,
+      create: async () => ({
+        id: "x",
+        name: "x",
+      }),
+      update: async () => ({
+        id: "x",
+        name: "x",
+      }),
+    },
+    clients: { list: noop },
+    projects: {
+      list: noop,
+      create: async () => ({
+        id: "x",
+        name: "x",
+      }),
+    },
+    invoices: { list: noop },
+    tickets: {
+      list: noop,
+      create: async () => ({
+        id: "x",
+        subject: "x",
+      }),
+    },
+    activity: {
+      record: async () => ({}),
+    },
+    notifications: {
+      create: async () => ({}),
+    },
+    resolveNotifyRecipients:
+      async () => [],
+  });
+
+  return new Set(
+    tools.map((t) => t.name),
+  );
+}
 
 describe("MarketplaceCatalog", () => {
   it("exposes a non-empty catalogue with unique ids and briefs", () => {
@@ -93,6 +140,61 @@ describe("MarketplaceCatalog", () => {
     expect(
       getIndustryEdition("nope"),
     ).toBeUndefined();
+  });
+
+  it("every website template has a matching edition, and every edition has employees", () => {
+    const templates =
+      listWebsiteTemplates();
+    const editions =
+      listIndustryEditions();
+
+    const editionTemplateIds = new Set(
+      editions.map(
+        (e) => e.websiteTemplateId,
+      ),
+    );
+
+    // Every template is covered by an edition (the user requirement).
+    for (const t of templates) {
+      expect(
+        editionTemplateIds.has(t.id),
+      ).toBe(true);
+    }
+
+    // Every edition is well-formed: valid template + at least one employee,
+    // each with a persona and at least one tool.
+    for (const e of editions) {
+      expect(
+        getWebsiteTemplate(
+          e.websiteTemplateId,
+        ),
+      ).toBeDefined();
+      expect(
+        e.employees.length,
+      ).toBeGreaterThan(0);
+      for (const emp of e.employees) {
+        expect(
+          emp.persona.length,
+        ).toBeGreaterThan(10);
+        expect(
+          emp.toolNames.length,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("every edition employee references only real registry tools", () => {
+    const known = allToolNames();
+
+    for (const e of listIndustryEditions()) {
+      for (const emp of e.employees) {
+        for (const name of emp.toolNames) {
+          expect(
+            known.has(name),
+          ).toBe(true);
+        }
+      }
+    }
   });
 });
 

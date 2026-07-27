@@ -18,15 +18,22 @@ Faith Harbor OS is unaffected.
   section. 3 new tests (8 marketplace total). Editions reference real templates
   and registry tools (verified by test).
 - **Marketplace — website templates** (P4-M1): a code-defined catalogue of
-  industry-specific website templates (restaurant, professional services,
-  trades, fitness, boutique, nonprofit) a tenant browses and "uses". Using one
+  industry-specific website templates a tenant browses and "uses". Using one
   creates a draft in the AI Website Builder seeded with the template's brief +
   accent color, ready to generate — plan-gated on the site limit exactly like
   a normal website. Closed, code-defined set (no tenant-supplied templates or
   code), same pattern as the plan catalogue and AI tool registry. API
   `/api/platform/marketplace/website-templates` (+ `/:id/use`), dashboard
-  **Marketplace** panel. 5 tests. First Phase 4 surface; industry editions and
-  installable modules build on this.
+  **Marketplace** panel. First Phase 4 surface.
+- **Marketplace expanded to 13 template systems** — restaurant, professional
+  services, trades/contractor, fitness, boutique retail, nonprofit, real
+  estate, medical & dental, salon & spa, SaaS/technology, automotive service,
+  education & coaching, and **church & ministry**. Every template has a
+  matching industry edition (below), so it's a full "system" not just a page.
+  **Expandable by design:** adding an offering is a one-file, append-only
+  change to `MarketplaceCatalog.ts` — the list APIs and the data-driven
+  dashboard pick it up automatically. Invariant tests enforce consistency as
+  it grows (every template has an edition; every employee tool is real).
 
 ### Security
 - **CSRF guard + security response headers** (hardening). A CSRF guard
