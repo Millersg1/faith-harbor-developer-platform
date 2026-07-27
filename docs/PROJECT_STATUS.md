@@ -16,7 +16,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Website Builder | ~70% | Generate + publish to verified domain; template marketplace pending |
 | AI | ~70% | BYO keys, metering, caps, KB retrieval, tool registry, Command Center, Employees (role-scoped assistants); Phase 3 complete |
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
-| Marketplace | 0% | Not started (Phase 4) |
+| Marketplace | ~20% | Website-template catalogue live (P4-M1); industry editions + installable modules pending |
 | Forms | ~80% | Public forms + submissions + lead capture; drag-drop editor pending |
 | Calendar | ~55% | Agenda + CRUD; grid views + external sync pending |
 | Knowledge Base | ~55% | Collections/docs/chunks/keyword retrieval + citations; pgvector + LLM synthesis pending |

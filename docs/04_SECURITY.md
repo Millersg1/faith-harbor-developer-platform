@@ -160,7 +160,14 @@ storage keys.
 1. ~~Login/auth rate limiting~~ ✅ done (auth endpoints; extend to more
    endpoints as needed).
 2. Postgres **Row-Level Security** as a defense-in-depth backstop under the
-   app-layer isolation.
+   app-layer isolation. **Deferred by decision (2026-07-27)** to its own focused
+   effort: done correctly it needs `FORCE RLS` + per-table policies + a
+   per-connection `app.current_org` GUC set on the same pooled connection each
+   query runs on (connection-pinned transactions threaded through the base
+   repository), plus exemptions for pre-tenant and cross-tenant-worker paths.
+   The in-memory test suite can't cover the RLS path, so it's live-proof-only —
+   hence its own careful session. App-layer isolation remains the tested
+   primary guarantee in the meantime.
 3. ~~Audit logging~~ ✅ done for auth + team actions (expand coverage over
    time).
 4. ~~CSRF for state-changing tenant routes~~ ✅ done — `Sec-Fetch-Site`/`Origin`

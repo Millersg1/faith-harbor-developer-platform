@@ -70,6 +70,8 @@ validation failures **400**; plan/quota limits **402**.
 | POST | /api/platform/ai/tools/invocations/:id/confirm | owner/admin | run a pending write |
 | POST | /api/platform/ai/tools/invocations/:id/reject | owner/admin | decline a pending write |
 | POST | /api/platform/ai/console/chat | user | {message,history[],employeeId?} → {available,reply,steps[],pending[]} |
+| GET | /api/platform/marketplace/website-templates | user | code-defined template catalogue |
+| POST | /api/platform/marketplace/website-templates/:id/use | owner/admin | create a seeded website draft (402 if site limit hit) |
 | GET/POST | /api/platform/ai/employees | list / owner+admin create | {name,title,persona,toolNames[]} |
 | PATCH/DELETE | /api/platform/ai/employees/:id | owner/admin | update / remove |
 

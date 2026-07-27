@@ -55,6 +55,16 @@ Source lives under `src/platform/<module>/`.
 - **Purpose:** tenant email + outbox. **Tables:** emails. **Transport:** SMTP
   or logging. **API:** /emails.
 
+### Marketplace (`marketplace/`)
+- **Purpose:** a code-defined catalogue a tenant browses and installs from — the
+  first Phase 4 surface. `MarketplaceCatalog` holds `WEBSITE_TEMPLATES`
+  (industry-specific starter sites: brief + accent color).
+- **Use flow:** "use" a template → creates a draft in the AI Website Builder
+  seeded with its brief/color (via `PlatformWebsiteService`), plan-gated on the
+  site limit like any website. Closed set — no tenant-supplied templates/code.
+- **API:** /marketplace/website-templates (+ /:id/use). **UI:** dashboard
+  **Marketplace** panel. **Next:** industry editions, installable modules.
+
 ### AI Employees (`ai/employees/`)
 - **Purpose:** saved, reusable assistants — a persona plus a whitelisted subset
   of registry tools (e.g. a "Sales Assistant" scoped to lead tools).

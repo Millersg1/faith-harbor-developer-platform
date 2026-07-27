@@ -6,6 +6,18 @@ Faith Harbor OS is unaffected.
 
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
+### Added
+- **Marketplace — website templates** (P4-M1): a code-defined catalogue of
+  industry-specific website templates (restaurant, professional services,
+  trades, fitness, boutique, nonprofit) a tenant browses and "uses". Using one
+  creates a draft in the AI Website Builder seeded with the template's brief +
+  accent color, ready to generate — plan-gated on the site limit exactly like
+  a normal website. Closed, code-defined set (no tenant-supplied templates or
+  code), same pattern as the plan catalogue and AI tool registry. API
+  `/api/platform/marketplace/website-templates` (+ `/:id/use`), dashboard
+  **Marketplace** panel. 5 tests. First Phase 4 surface; industry editions and
+  installable modules build on this.
+
 ### Security
 - **CSRF guard + security response headers** (hardening). A CSRF guard
   (`security/CsrfGuard.ts`) protects the authenticated state-changing surfaces

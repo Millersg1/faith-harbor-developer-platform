@@ -62,6 +62,10 @@ import {
 } from "./ai/tools/AiToolService";
 import type { AiConsoleService } from "./ai/console/AiConsoleService";
 import {
+  getWebsiteTemplate,
+  listWebsiteTemplates,
+} from "./marketplace/MarketplaceCatalog";
+import {
   AiEmployeeValidationError,
   type AiEmployeeService,
 } from "./ai/employees/AiEmployeeService";
@@ -5500,6 +5504,109 @@ export function createPlatformApiRouter(
             res.json({ ok: true }),
           )
           .catch(next);
+      },
+    );
+  }
+
+  // ---- Marketplace (website templates) ----
+  if (deps.websites) {
+    const websites = deps.websites;
+
+    // Browse the code-defined catalogue of website templates.
+    router.get(
+      "/marketplace/website-templates",
+      (_req, res) => {
+        res.json({
+          templates:
+            listWebsiteTemplates(),
+        });
+      },
+    );
+
+    // Use a template: create a website draft seeded from it, ready to generate.
+    // Counts against the plan's site limit, exactly like POST /websites.
+    router.post(
+      "/marketplace/website-templates/:id/use",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const template =
+          getWebsiteTemplate(
+            String(req.params.id),
+          );
+
+        if (!template) {
+          res.status(404).json({
+            error: {
+              code: "TEMPLATE_NOT_FOUND",
+              message:
+                "Unknown template.",
+            },
+          });
+
+          return;
+        }
+
+        const body = asObject(
+          req.body,
+        );
+        const name =
+          optionalString(body.name) ??
+          template.name;
+
+        const billing = deps.billing;
+        const gate = billing
+          ? websites
+              .count()
+              .then((count) =>
+                billing.assertWithinLimit(
+                  "sites",
+                  count,
+                ),
+              )
+          : Promise.resolve();
+
+        gate
+          .then(() =>
+            websites.create({
+              name,
+              brief: template.brief,
+              accentColor:
+                template.accentColor,
+              clientId:
+                optionalString(
+                  body.clientId,
+                ),
+            }),
+          )
+          .then((website) =>
+            res
+              .status(201)
+              .json({
+                website,
+                template: {
+                  id: template.id,
+                  name: template.name,
+                },
+              }),
+          )
+          .catch((error: unknown) => {
+            if (
+              error instanceof
+              PlanLimitError
+            ) {
+              res.status(402).json({
+                error: {
+                  code: "PLAN_LIMIT",
+                  message:
+                    error.message,
+                },
+              });
+
+              return;
+            }
+
+            next(error);
+          });
       },
     );
   }

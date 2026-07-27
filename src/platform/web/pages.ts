@@ -498,6 +498,12 @@ export function dashboardPage(): string {
         <div class="msg" id="wmsg"></div>
       </div>
       <div class="panel">
+        <h2>Marketplace <span class="pill">templates</span></h2>
+        <p class="hint">Start from a ready-made, industry-specific website template. Using one creates a draft you can then generate and publish.</p>
+        <div class="list" id="marketplace"><div class="empty">Loading…</div></div>
+        <div class="msg" id="mktmsg"></div>
+      </div>
+      <div class="panel">
         <h2>Hosting accounts <span class="pill">All Elite Hosting</span></h2>
         <p class="hint">Hosted sites in your organization. New accounts start pending until provisioned.</p>
         <div class="list" id="hosting"><div class="empty">Loading…</div></div>
@@ -1693,6 +1699,34 @@ export function dashboardPage(): string {
     });
   }
   var aiReady=true;
+  async function loadMarketplace(){
+    var r=await api('/api/platform/marketplace/website-templates'); if(!r.ok)return;
+    var d=await r.json();
+    var el=document.getElementById('marketplace'); if(!el)return; clear(el);
+    var list=d.templates||[];
+    if(!list.length){el.appendChild(emptyMsg('No templates available.'));return;}
+    var canUse=(myRole==='owner'||myRole==='admin');
+    list.forEach(function(t){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var n=document.createElement('div');n.textContent=esc(t.name);n.style.fontWeight='600';left.appendChild(n);
+      var s=document.createElement('div');s.className='sub';s.textContent=esc(t.industry)+' \\u00b7 '+esc(t.description);left.appendChild(s);
+      row.appendChild(left);
+      if(canUse){
+        var b=document.createElement('button');b.className='btn ghost';b.style.padding='6px 12px';b.style.flex='none';b.textContent='Use template';
+        b.addEventListener('click',function(){useTemplate(t.id,t.name);});row.appendChild(b);
+      }
+      el.appendChild(row);
+    });
+  }
+  async function useTemplate(id,name){
+    setMsg('mktmsg','','Creating a draft from \\u201c'+esc(name)+'\\u201d\\u2026');
+    var r=await api('/api/platform/marketplace/website-templates/'+encodeURIComponent(id)+'/use',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){setMsg('mktmsg','ok','Draft created in the AI Website Builder — click Generate there to build it.');loadWebsites();}
+    else if(r.status===402){setMsg('mktmsg','err','Your plan\\u2019s site limit is reached — upgrade to add more.');}
+    else{setMsg('mktmsg','err',(x.error&&x.error.message)||'Could not use that template.');}
+  }
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;
     var d=await r.json(); aiReady=d.generationAvailable!==false;
@@ -1841,7 +1875,7 @@ export function dashboardPage(): string {
       document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
+    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadMarketplace(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
     await loadActivity();
     await loadFiles();
