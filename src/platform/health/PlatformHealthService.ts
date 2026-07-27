@@ -1,0 +1,114 @@
+/**
+ * A point-in-time health snapshot of the platform, for the superadmin console.
+ * Every field is a real, checked signal — nothing is assumed "ok".
+ */
+export interface SystemHealth {
+  /** Database reachability (a trivial query succeeded). */
+  db: "ok" | "error";
+  /** Outbound email transport (SMTP configured + connected). */
+  email: { connected: boolean };
+  /** Whether the platform's included AI key is configured. */
+  ai: { platformKey: boolean };
+  /** Whether Stripe billing is connected (live charges possible). */
+  stripe: { connected: boolean };
+  /** The drip/workflow background tick worker. */
+  worker: {
+    running: boolean;
+    lastTickAt: string | null;
+    intervalMs: number;
+  };
+  startedAt: string;
+  uptimeSeconds: number;
+  version: string;
+}
+
+export interface HealthChecks {
+  /** Runs a trivial DB query; resolves true when the database answers. */
+  pingDb: () => Promise<boolean>;
+  emailConnected: boolean;
+  aiPlatformKey: boolean;
+  stripeConnected: boolean;
+  /** The last background-worker tick time (ISO), or null if it hasn't ticked. */
+  workerLastTickAt: () => string | null;
+  workerIntervalMs: number;
+  startedAt: string;
+  version: string;
+  now?: () => number;
+}
+
+/**
+ * Assembles a {@link SystemHealth} snapshot from injected checks. Kept free of
+ * concrete dependencies so it's trivially testable; the server wires the real
+ * database ping, connectivity flags, and worker heartbeat.
+ */
+export class PlatformHealthService {
+  private readonly now: () => number;
+
+  constructor(
+    private readonly checks: HealthChecks,
+  ) {
+    this.now =
+      checks.now ?? (() => Date.now());
+  }
+
+  async snapshot(): Promise<SystemHealth> {
+    let db: "ok" | "error" = "error";
+    try {
+      db = (await this.checks.pingDb())
+        ? "ok"
+        : "error";
+    } catch {
+      db = "error";
+    }
+
+    const lastTickAt =
+      this.checks.workerLastTickAt();
+    // "Running" if it ticked within the last few intervals.
+    const running = lastTickAt
+      ? this.now() -
+          Date.parse(lastTickAt) <
+        this.checks.workerIntervalMs * 3
+      : false;
+
+    const startedMs = Date.parse(
+      this.checks.startedAt,
+    );
+
+    return {
+      db,
+      email: {
+        connected:
+          this.checks.emailConnected,
+      },
+      ai: {
+        platformKey:
+          this.checks.aiPlatformKey,
+      },
+      stripe: {
+        connected:
+          this.checks.stripeConnected,
+      },
+      worker: {
+        running,
+        lastTickAt,
+        intervalMs:
+          this.checks.workerIntervalMs,
+      },
+      startedAt:
+        this.checks.startedAt,
+      uptimeSeconds: Number.isFinite(
+        startedMs,
+      )
+        ? Math.max(
+            0,
+            Math.floor(
+              (this.now() -
+                startedMs) /
+                1000,
+            ),
+          )
+        : 0,
+      version: this.checks.version,
+    };
+  }
+}

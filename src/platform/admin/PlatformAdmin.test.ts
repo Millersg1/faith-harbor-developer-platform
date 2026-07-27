@@ -27,6 +27,7 @@ import {
 } from "./PlatformAdminService";
 import { PlatformAdminSessionService } from "./PlatformAdminSessionService";
 import { PlatformAnalyticsService } from "../analytics/PlatformAnalyticsService";
+import { PlatformHealthService } from "../health/PlatformHealthService";
 import { SubscriptionRepository } from "../billing/SubscriptionRepository";
 import { runWithTenant } from "../../tenancy/TenantContext";
 
@@ -81,6 +82,24 @@ async function build() {
         organizations,
         new SubscriptionRepository(),
       ),
+    platformHealth:
+      new PlatformHealthService({
+        pingDb: () =>
+          Promise.resolve(true),
+        emailConnected: false,
+        aiPlatformKey: true,
+        stripeConnected: false,
+        workerLastTickAt: () =>
+          new Date(
+            1_000_000,
+          ).toISOString(),
+        workerIntervalMs: 60_000,
+        startedAt: new Date(
+          0,
+        ).toISOString(),
+        version: "9.9.9-test",
+        now: () => 1_000_000 + 5_000,
+      }),
   });
 
   await admins.create({
@@ -283,6 +302,90 @@ describe("PlatformAnalyticsService", () => {
       (p) => p.planId === "business",
     );
     expect(business?.mrrUsd).toBe(99);
+  });
+});
+
+describe("PlatformHealthService", () => {
+  it("reports a healthy snapshot with a fresh worker tick", async () => {
+    const health =
+      new PlatformHealthService({
+        pingDb: () =>
+          Promise.resolve(true),
+        emailConnected: true,
+        aiPlatformKey: true,
+        stripeConnected: true,
+        workerLastTickAt: () =>
+          new Date(
+            100_000,
+          ).toISOString(),
+        workerIntervalMs: 60_000,
+        startedAt: new Date(
+          40_000,
+        ).toISOString(),
+        version: "1.2.3",
+        // 30s after the last tick, 90s after start.
+        now: () => 130_000,
+      });
+
+    const s = await health.snapshot();
+
+    expect(s.db).toBe("ok");
+    expect(s.worker.running).toBe(true);
+    expect(s.uptimeSeconds).toBe(90);
+    expect(s.version).toBe("1.2.3");
+  });
+
+  it("marks the worker stopped when it hasn't ticked in 3+ intervals", async () => {
+    const health =
+      new PlatformHealthService({
+        pingDb: () =>
+          Promise.resolve(true),
+        emailConnected: false,
+        aiPlatformKey: false,
+        stripeConnected: false,
+        workerLastTickAt: () =>
+          new Date(0).toISOString(),
+        workerIntervalMs: 60_000,
+        startedAt: new Date(
+          0,
+        ).toISOString(),
+        version: "x",
+        // 5 minutes later → well past 3 intervals.
+        now: () => 300_000,
+      });
+
+    const s = await health.snapshot();
+
+    expect(s.worker.running).toBe(
+      false,
+    );
+  });
+
+  it("reports db error when the ping throws", async () => {
+    const health =
+      new PlatformHealthService({
+        pingDb: () =>
+          Promise.reject(
+            new Error("down"),
+          ),
+        emailConnected: false,
+        aiPlatformKey: false,
+        stripeConnected: false,
+        workerLastTickAt: () => null,
+        workerIntervalMs: 60_000,
+        startedAt: new Date(
+          0,
+        ).toISOString(),
+        version: "x",
+        now: () => 1_000,
+      });
+
+    const s = await health.snapshot();
+
+    expect(s.db).toBe("error");
+    expect(s.worker.running).toBe(
+      false,
+    );
   });
 });
 
@@ -533,6 +636,42 @@ describe("Platform admin console (HTTP)", () => {
     await request(app)
       .get(
         "/platform/admin/api/analytics",
+      )
+      .expect(401);
+  });
+
+  it("exposes system health to the admin", async () => {
+    const app = await build();
+    const cookie =
+      await adminLogin(app);
+
+    const res = await request(app)
+      .get(
+        "/platform/admin/api/system-health",
+      )
+      .set("Cookie", cookie);
+
+    expect(res.status).toBe(200);
+    expect(res.body.db).toBe("ok");
+    expect(
+      res.body.worker.running,
+    ).toBe(true);
+    expect(
+      res.body.email.connected,
+    ).toBe(false);
+    expect(
+      res.body.ai.platformKey,
+    ).toBe(true);
+    expect(res.body.version).toBe(
+      "9.9.9-test",
+    );
+  });
+
+  it("rejects system health without an admin session", async () => {
+    const app = await build();
+    await request(app)
+      .get(
+        "/platform/admin/api/system-health",
       )
       .expect(401);
   });

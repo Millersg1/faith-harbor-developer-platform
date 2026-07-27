@@ -82,6 +82,10 @@ export function adminConsolePage(): string {
     <div id="planWrap" style="padding:4px 20px 18px;"><div class="empty">Loading…</div></div>
   </div>
   <div class="panel">
+    <h2>System health</h2>
+    <div id="healthWrap" style="padding:16px 20px 18px;"><div class="empty">Loading…</div></div>
+  </div>
+  <div class="panel">
     <h2>All organizations</h2>
     <div id="orgWrap"><div class="empty">Loading…</div></div>
   </div>
@@ -145,6 +149,28 @@ export function adminConsolePage(): string {
       var v=document.createElement('span');v.style.fontWeight='600';v.textContent=money(p.mrrUsd)+'/mo';
       row.appendChild(l);row.appendChild(v);pw.appendChild(row);
     });
+  }
+  function dot(ok){var s=document.createElement('span');s.style.cssText='display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:'+(ok?'#22c55e':'#ef4444')+';';return s;}
+  function healthRow(label,ok,detail){
+    var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:.9rem;';
+    var left=document.createElement('span');left.appendChild(dot(ok));left.appendChild(document.createTextNode(label));
+    var v=document.createElement('span');v.style.color='var(--muted)';v.textContent=detail;
+    row.appendChild(left);row.appendChild(v);return row;
+  }
+  function fmtUptime(sec){sec=Number(sec||0);var d=Math.floor(sec/86400),h=Math.floor((sec%86400)/3600),m=Math.floor((sec%3600)/60);
+    if(d)return d+'d '+h+'h';if(h)return h+'h '+m+'m';return m+'m';}
+  async function loadHealth(){
+    var wrap=document.getElementById('healthWrap'); wrap.textContent='';
+    var r=await api('/system-health'); if(!r.ok){var e=document.createElement('div');e.className='empty';e.textContent='Health unavailable.';wrap.appendChild(e);return;}
+    var h=await r.json();
+    wrap.appendChild(healthRow('Database',h.db==='ok',h.db==='ok'?'Reachable':'Unreachable'));
+    wrap.appendChild(healthRow('Background worker',!!(h.worker&&h.worker.running),h.worker&&h.worker.lastTickAt?('Last tick '+new Date(h.worker.lastTickAt).toLocaleTimeString()):'No tick yet'));
+    wrap.appendChild(healthRow('Email (SMTP)',!!(h.email&&h.email.connected),h.email&&h.email.connected?'Connected':'Not configured'));
+    wrap.appendChild(healthRow('AI (platform key)',!!(h.ai&&h.ai.platformKey),h.ai&&h.ai.platformKey?'Configured':'Not configured'));
+    wrap.appendChild(healthRow('Stripe billing',!!(h.stripe&&h.stripe.connected),h.stripe&&h.stripe.connected?'Connected':'Not connected'));
+    var foot=document.createElement('div');foot.style.cssText='padding-top:12px;color:var(--muted);font-size:.82rem;';
+    foot.textContent='Version '+esc(h.version)+' · up '+fmtUptime(h.uptimeSeconds);
+    wrap.appendChild(foot);
   }
   async function loadOrgs(){
     var r=await api('/organizations'); if(!r.ok)return;
@@ -220,7 +246,7 @@ export function adminConsolePage(): string {
     var me=await api('/me');
     if(me.ok){var d=await me.json();document.getElementById('who').textContent=esc(d.admin&&d.admin.email);
       show('login',false);show('console',true);document.getElementById('logout').style.display='';
-      await loadStats();await loadAnalytics();await loadOrgs();await loadDocs();}
+      await loadStats();await loadAnalytics();await loadHealth();await loadOrgs();await loadDocs();}
     else{show('login',true);show('console',false);}
   }
   document.getElementById('loginForm').addEventListener('submit',async function(e){

@@ -59,6 +59,7 @@ import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApiRouter } from "./PlatformApiRouter";
 import { createCsrfGuard } from "./security/CsrfGuard";
 import type { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
+import type { PlatformHealthService } from "./health/PlatformHealthService";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PlatformUserService } from "./users/PlatformUserService";
@@ -116,6 +117,7 @@ export interface PlatformAppDependencies {
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
   platformAnalytics?: PlatformAnalyticsService;
+  platformHealth?: PlatformHealthService;
 
   /**
    * Platform base domain used to resolve tenants from subdomains
@@ -538,6 +540,7 @@ export function createPlatformApp(
       requireAdmin,
       analytics:
         deps.platformAnalytics,
+      health: deps.platformHealth,
       secureCookie:
         deps.secureCookie,
       docsDir: deps.docsDir,

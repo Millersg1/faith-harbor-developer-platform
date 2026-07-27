@@ -8,6 +8,7 @@ import { OrganizationDomainService } from "../tenancy/OrganizationDomainService"
 import { PlatformAdminRepository } from "./admin/PlatformAdminRepository";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
+import { PlatformHealthService } from "./health/PlatformHealthService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { AiUsageRepository } from "./ai/AiUsageRepository";
 import { OrganizationAiSettingsRepository } from "./ai/OrganizationAiSettingsRepository";
@@ -596,6 +597,39 @@ async function start(): Promise<void> {
     users,
   });
 
+  // System health for the superadmin console: real DB ping + connectivity
+  // flags + the background-worker heartbeat (set on each tick below).
+  const startedAt = new Date().toISOString();
+  let workerLastTickAt:
+    | string
+    | null = null;
+  const DRIP_TICK_MS = Number(
+    process.env.DRIP_TICK_MS ??
+      60_000,
+  );
+  const platformHealth =
+    new PlatformHealthService({
+      pingDb: () =>
+        db
+          .query("SELECT 1")
+          .then(() => true),
+      emailConnected:
+        email.connected(),
+      aiPlatformKey:
+        Boolean(openAiKey),
+      stripeConnected:
+        billing.billingConnected(),
+      workerLastTickAt: () =>
+        workerLastTickAt,
+      workerIntervalMs: DRIP_TICK_MS,
+      startedAt,
+      version:
+        process.env.APP_VERSION ??
+        process.env
+          .npm_package_version ??
+        "unknown",
+    });
+
   const app = createPlatformApp({
     organizations,
     users,
@@ -640,6 +674,7 @@ async function start(): Promise<void> {
     admins,
     adminSessions,
     platformAnalytics,
+    platformHealth,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||
@@ -672,10 +707,11 @@ async function start(): Promise<void> {
 
   // Drip worker: every minute, send any due autoresponder steps across all
   // tenants. unref() so it never keeps the process alive on shutdown.
-  const DRIP_TICK_MS = Number(
-    process.env.DRIP_TICK_MS ?? 60_000,
-  );
+  // (DRIP_TICK_MS is declared above, alongside the health service.)
   const dripTimer = setInterval(() => {
+    // Heartbeat for the system-health panel: proves the worker is ticking.
+    workerLastTickAt =
+      new Date().toISOString();
     drip
       .runDue()
       .catch((error: unknown) => {

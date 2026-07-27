@@ -12,6 +12,7 @@ import {
 
 import type { OrganizationService } from "../../tenancy/OrganizationService";
 import type { PlatformAnalyticsService } from "../analytics/PlatformAnalyticsService";
+import type { PlatformHealthService } from "../health/PlatformHealthService";
 import { toPublicAdmin } from "./PlatformAdmin";
 import {
   AdminPasswordError,
@@ -30,6 +31,7 @@ export interface AdminRouterDependencies {
   organizations: OrganizationService;
   requireAdmin: RequestHandler;
   analytics?: PlatformAnalyticsService;
+  health?: PlatformHealthService;
   secureCookie?: boolean;
 
   /**
@@ -264,6 +266,23 @@ export function createAdminRouter(
           .summary()
           .then((summary) =>
             res.json(summary),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // System health (DB, workers, connectivity) — superadmin only.
+  if (deps.health) {
+    const health = deps.health;
+    router.get(
+      "/system-health",
+      deps.requireAdmin,
+      (_req, res, next) => {
+        health
+          .snapshot()
+          .then((snapshot) =>
+            res.json(snapshot),
           )
           .catch(next);
       },
