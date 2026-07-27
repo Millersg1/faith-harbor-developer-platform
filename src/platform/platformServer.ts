@@ -7,6 +7,7 @@ import { OrganizationDomainRepository } from "../tenancy/OrganizationDomainRepos
 import { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
 import { PlatformAdminRepository } from "./admin/PlatformAdminRepository";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
+import { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { AiUsageRepository } from "./ai/AiUsageRepository";
 import { OrganizationAiSettingsRepository } from "./ai/OrganizationAiSettingsRepository";
@@ -404,6 +405,13 @@ async function start(): Promise<void> {
     new PlatformAdminSessionService(
       db,
     );
+  // Cross-tenant business analytics for the superadmin console.
+  const platformAnalytics =
+    new PlatformAnalyticsService(
+      organizations,
+      new SubscriptionRepository(db),
+      aiUsage,
+    );
 
   // Bootstrap the first platform admin from the environment, once.
   const bootEmail =
@@ -631,6 +639,7 @@ async function start(): Promise<void> {
     billing,
     admins,
     adminSessions,
+    platformAnalytics,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

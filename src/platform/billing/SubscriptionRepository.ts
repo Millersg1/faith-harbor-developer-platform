@@ -52,6 +52,30 @@ export class SubscriptionRepository extends TenantScopedRepository {
   }
 
   /**
+   * SYSTEM ONLY — every tenant's subscription, across all organizations, for
+   * platform-level analytics (MRR, plan mix). Not tenant-scoped; only the
+   * platform-admin surface calls it.
+   */
+  async listAll(): Promise<
+    OrganizationSubscriptionRecord[]
+  > {
+    if (this.db) {
+      const result =
+        await this.db.query(
+          "SELECT * FROM organization_subscriptions",
+        );
+
+      return (
+        result.rows as unknown as SubscriptionRow[]
+      ).map(mapRow);
+    }
+
+    return [
+      ...this.memory.values(),
+    ];
+  }
+
+  /**
    * Inserts or replaces the current tenant's subscription. The
    * organization id comes from the tenant context, never the record.
    */

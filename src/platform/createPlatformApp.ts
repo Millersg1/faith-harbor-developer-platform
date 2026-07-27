@@ -58,6 +58,7 @@ import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApiRouter } from "./PlatformApiRouter";
 import { createCsrfGuard } from "./security/CsrfGuard";
+import type { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
 import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PlatformUserService } from "./users/PlatformUserService";
@@ -114,6 +115,7 @@ export interface PlatformAppDependencies {
   billing?: BillingService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
+  platformAnalytics?: PlatformAnalyticsService;
 
   /**
    * Platform base domain used to resolve tenants from subdomains
@@ -534,6 +536,8 @@ export function createPlatformApp(
       organizations:
         deps.organizations,
       requireAdmin,
+      analytics:
+        deps.platformAnalytics,
       secureCookie:
         deps.secureCookie,
       docsDir: deps.docsDir,

@@ -53,6 +53,18 @@ Faith Harbor OS is unaffected.
   dashboard pick it up automatically. Invariant tests enforce consistency as
   it grows (every template has an edition; every employee tool is real).
 
+### Added
+- **Platform analytics for the superadmin** (P5-M1): the `/platform/admin`
+  console now has a **Revenue & analytics** panel — MRR, ARR (run-rate), active
+  subscriptions, month-to-date platform AI cost, MRR net of AI, and a per-plan
+  breakdown. `PlatformAnalyticsService` aggregates across ALL tenants
+  (`SubscriptionRepository.listAll()` + a system-level
+  `AiUsageRepository.platformCostSinceAll()`), counting only active orgs on an
+  active plan (suspended/canceled excluded; no stored subscription = the
+  default plan). API `GET /platform/admin/api/analytics` (admin-guarded). 5
+  tests (cross-tenant MRR/plan-mix incl. suspended-excluded; HTTP 200 + shape;
+  401 unauth).
+
 ### Security
 - **Superadmin self-service password change.** The platform-admin console now
   has a **Change password** panel (`POST /platform/admin/api/change-password`):

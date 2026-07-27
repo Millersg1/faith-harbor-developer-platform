@@ -30,6 +30,7 @@ Prioritized. Effort is rough (S/M/L/XL). Status: ✅ done · 🚧 in progress ·
 | P3-M4: AI Employees | L | Role-scoped saved assistants (persona + tool whitelist); live-proved |
 | Hardening: security headers + CSRF guard | M | Live-proved through the HTTPS proxy |
 | P4-M1: Marketplace — website templates | M | Industry starter templates seed the AI builder; live-proved |
+| P5-M1: Superadmin analytics (MRR) | M | Cross-tenant revenue + plan mix + AI cost in the admin console |
 | Living documentation (`/docs`) | M | Established 2026-07-26 |
 
 ## Next Release 🚧 / ⏳ (recommended order)

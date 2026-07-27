@@ -55,6 +55,17 @@ Source lives under `src/platform/<module>/`.
 - **Purpose:** tenant email + outbox. **Tables:** emails. **Transport:** SMTP
   or logging. **API:** /emails.
 
+### Platform analytics (`analytics/`)
+- **Purpose:** cross-tenant business analytics for the superadmin console — MRR,
+  ARR (run-rate), active subscriptions, plan mix, month-to-date platform AI
+  cost, and MRR net of AI.
+- **How:** `PlatformAnalyticsService` reads every org (`OrganizationService`)
+  and every subscription (`SubscriptionRepository.listAll()` — system-only,
+  cross-tenant) + `AiUsageRepository.platformCostSinceAll()`. Counts only
+  active orgs on an active plan (suspended/canceled excluded; no stored
+  subscription = the default entry plan, matching billing's synthesized
+  default). **Superadmin-only** (`GET /platform/admin/api/analytics`).
+
 ### Marketplace (`marketplace/`)
 - **Purpose:** a code-defined catalogue a tenant browses and installs from — the
   first Phase 4 surface. `MarketplaceCatalog` holds `WEBSITE_TEMPLATES`

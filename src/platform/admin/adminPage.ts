@@ -77,6 +77,11 @@ export function adminConsolePage(): string {
   </div>
   <div class="stats" id="stats"></div>
   <div class="panel">
+    <h2>Revenue &amp; analytics</h2>
+    <div class="stats" id="revStats" style="padding:16px 20px 4px;"></div>
+    <div id="planWrap" style="padding:4px 20px 18px;"><div class="empty">Loading…</div></div>
+  </div>
+  <div class="panel">
     <h2>All organizations</h2>
     <div id="orgWrap"><div class="empty">Loading…</div></div>
   </div>
@@ -121,6 +126,25 @@ export function adminConsolePage(): string {
     el.appendChild(statCard(s.active,'Active'));
     el.appendChild(statCard(s.suspended,'Suspended'));
     el.appendChild(statCard(s.admins,'Admins'));
+  }
+  function money(n){return '$'+Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2});}
+  async function loadAnalytics(){
+    var r=await api('/analytics'); if(!r.ok)return; var a=await r.json();
+    var rev=document.getElementById('revStats'); rev.textContent='';
+    rev.appendChild(statCard(money(a.mrrUsd),'MRR'));
+    rev.appendChild(statCard(money(a.arrUsd),'ARR (run-rate)'));
+    rev.appendChild(statCard(esc(a.activeSubscriptions),'Active subscriptions'));
+    rev.appendChild(statCard(money(a.aiPlatformCostUsdMTD),'AI cost (this month)'));
+    rev.appendChild(statCard(money(a.netAfterAiUsd),'MRR net of AI'));
+    var pw=document.getElementById('planWrap'); pw.textContent='';
+    var plans=a.byPlan||[];
+    if(!plans.length){var e=document.createElement('div');e.className='empty';e.textContent='No active subscriptions yet.';pw.appendChild(e);return;}
+    plans.forEach(function(p){
+      var row=document.createElement('div');row.style.cssText='display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:.9rem;';
+      var l=document.createElement('span');l.textContent=esc(p.name)+'  \\u00d7'+esc(p.count);
+      var v=document.createElement('span');v.style.fontWeight='600';v.textContent=money(p.mrrUsd)+'/mo';
+      row.appendChild(l);row.appendChild(v);pw.appendChild(row);
+    });
   }
   async function loadOrgs(){
     var r=await api('/organizations'); if(!r.ok)return;
@@ -196,7 +220,7 @@ export function adminConsolePage(): string {
     var me=await api('/me');
     if(me.ok){var d=await me.json();document.getElementById('who').textContent=esc(d.admin&&d.admin.email);
       show('login',false);show('console',true);document.getElementById('logout').style.display='';
-      await loadStats();await loadOrgs();await loadDocs();}
+      await loadStats();await loadAnalytics();await loadOrgs();await loadDocs();}
     else{show('login',true);show('console',false);}
   }
   document.getElementById('loginForm').addEventListener('submit',async function(e){

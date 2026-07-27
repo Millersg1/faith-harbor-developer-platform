@@ -11,6 +11,7 @@ import {
 } from "express";
 
 import type { OrganizationService } from "../../tenancy/OrganizationService";
+import type { PlatformAnalyticsService } from "../analytics/PlatformAnalyticsService";
 import { toPublicAdmin } from "./PlatformAdmin";
 import {
   AdminPasswordError,
@@ -28,6 +29,7 @@ export interface AdminRouterDependencies {
   adminSessions: PlatformAdminSessionService;
   organizations: OrganizationService;
   requireAdmin: RequestHandler;
+  analytics?: PlatformAnalyticsService;
   secureCookie?: boolean;
 
   /**
@@ -250,6 +252,23 @@ export function createAdminRouter(
         .catch(next);
     },
   );
+
+  // Platform business analytics (MRR, plan mix, AI cost) — superadmin only.
+  if (deps.analytics) {
+    const analytics = deps.analytics;
+    router.get(
+      "/analytics",
+      deps.requireAdmin,
+      (_req, res, next) => {
+        analytics
+          .summary()
+          .then((summary) =>
+            res.json(summary),
+          )
+          .catch(next);
+      },
+    );
+  }
 
   router.get(
     "/organizations",

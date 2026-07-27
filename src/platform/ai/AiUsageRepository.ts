@@ -156,6 +156,47 @@ export class AiUsageRepository extends TenantScopedRepository {
     );
   }
 
+  /**
+   * SYSTEM ONLY — total platform-borne AI cost (micro-dollars) across ALL
+   * tenants since `sinceIso` (events NOT on a tenant's own key). Not
+   * tenant-scoped; only the platform-admin analytics surface calls it.
+   */
+  async platformCostSinceAll(
+    sinceIso: string,
+  ): Promise<number> {
+    if (this.db) {
+      const result =
+        await this.db.query(
+          `SELECT COALESCE(SUM(CASE WHEN own_key THEN 0 ELSE cost_micros END), 0) AS c
+             FROM ai_usage_events
+            WHERE created_at >= $1`,
+          [sinceIso],
+        );
+
+      return Number(
+        (
+          result.rows[0] as {
+            c?: unknown;
+          }
+        )?.c ?? 0,
+      );
+    }
+
+    return Array.from(
+      this.memory.values(),
+    )
+      .filter(
+        (e) =>
+          e.createdAt >= sinceIso &&
+          !e.ownKey,
+      )
+      .reduce(
+        (sum, e) =>
+          sum + e.costMicros,
+        0,
+      );
+  }
+
   /** Counts the current tenant's events of a kind since `sinceIso`. */
   async countSince(
     kind: string,

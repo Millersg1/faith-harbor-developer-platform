@@ -17,6 +17,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | AI | ~70% | BYO keys, metering, caps, KB retrieval, tool registry, Command Center, Employees (role-scoped assistants); Phase 3 complete |
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
 | Marketplace | ~20% | Website-template catalogue live (P4-M1); industry editions + installable modules pending |
+| Analytics | ~30% | Superadmin MRR/plan-mix/AI-cost console (P5-M1); per-tenant dashboards + health pending |
 | Forms | ~80% | Public forms + submissions + lead capture; drag-drop editor pending |
 | Calendar | ~55% | Agenda + CRUD; grid views + external sync pending |
 | Knowledge Base | ~55% | Collections/docs/chunks/keyword retrieval + citations; pgvector + LLM synthesis pending |

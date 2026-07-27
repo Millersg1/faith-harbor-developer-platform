@@ -26,6 +26,9 @@ import {
   PlatformAdminService,
 } from "./PlatformAdminService";
 import { PlatformAdminSessionService } from "./PlatformAdminSessionService";
+import { PlatformAnalyticsService } from "../analytics/PlatformAnalyticsService";
+import { SubscriptionRepository } from "../billing/SubscriptionRepository";
+import { runWithTenant } from "../../tenancy/TenantContext";
 
 async function build() {
   const organizations =
@@ -73,6 +76,11 @@ async function build() {
     admins,
     adminSessions:
       new PlatformAdminSessionService(),
+    platformAnalytics:
+      new PlatformAnalyticsService(
+        organizations,
+        new SubscriptionRepository(),
+      ),
   });
 
   await admins.create({
@@ -211,6 +219,70 @@ describe("PlatformAdminService", () => {
     expect(await admins.count()).toBe(
       1,
     );
+  });
+});
+
+describe("PlatformAnalyticsService", () => {
+  it("computes MRR and plan mix across tenants, excluding suspended orgs", async () => {
+    const organizations =
+      new OrganizationService();
+    const subscriptions =
+      new SubscriptionRepository();
+    const analytics =
+      new PlatformAnalyticsService(
+        organizations,
+        subscriptions,
+      );
+
+    const a =
+      await organizations.create({
+        name: "Alpha",
+      });
+    const b =
+      await organizations.create({
+        name: "Beta",
+      });
+    const c =
+      await organizations.create({
+        name: "Gamma",
+      });
+
+    // Beta upgrades to Business ($99); Alpha stays default (Essentials $19).
+    await runWithTenant(
+      { organizationId: b.id },
+      () =>
+        subscriptions.upsert({
+          planId: "business",
+          status: "active",
+          currentPeriodEnd: null,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          updatedAt: "",
+        }),
+    );
+    // Gamma is suspended → excluded from revenue.
+    await organizations.update(c.id, {
+      status: "suspended",
+    });
+
+    const s = await analytics.summary();
+
+    expect(
+      s.totalOrganizations,
+    ).toBe(3);
+    expect(
+      s.suspendedOrganizations,
+    ).toBe(1);
+    // Alpha $19 + Beta $99; Gamma suspended → not counted.
+    expect(s.mrrUsd).toBe(118);
+    expect(s.arrUsd).toBe(118 * 12);
+    expect(
+      s.activeSubscriptions,
+    ).toBe(2);
+    const business = s.byPlan.find(
+      (p) => p.planId === "business",
+    );
+    expect(business?.mrrUsd).toBe(99);
   });
 });
 
@@ -431,6 +503,37 @@ describe("Platform admin console (HTTP)", () => {
         currentPassword: "x",
         newPassword: "yyyyyyyy",
       })
+      .expect(401);
+  });
+
+  it("exposes platform analytics (MRR) to the admin", async () => {
+    const app = await build();
+    const cookie =
+      await adminLogin(app);
+
+    const res = await request(app)
+      .get(
+        "/platform/admin/api/analytics",
+      )
+      .set("Cookie", cookie);
+
+    expect(res.status).toBe(200);
+    // Two orgs from signup, both on the default (Essentials $19) plan.
+    expect(res.body.mrrUsd).toBe(38);
+    expect(
+      res.body.activeSubscriptions,
+    ).toBe(2);
+    expect(
+      res.body.byPlan,
+    ).toHaveLength(1);
+  });
+
+  it("rejects analytics without an admin session", async () => {
+    const app = await build();
+    await request(app)
+      .get(
+        "/platform/admin/api/analytics",
+      )
       .expect(401);
   });
 
