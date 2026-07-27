@@ -98,9 +98,11 @@ const STYLES = `
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
   .secnav { position: sticky; top: 0; z-index: 20; display: flex; gap: 8px; overflow-x: auto;
     padding: 10px; margin-bottom: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; }
-  .secnav a { white-space: nowrap; font-size: 0.78rem; color: var(--muted); text-decoration: none;
-    padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px; }
+  .secnav a { white-space: nowrap; font-size: 0.78rem; color: var(--muted); text-decoration: none; cursor: pointer;
+    padding: 6px 13px; border: 1px solid var(--border); border-radius: 999px; user-select: none; }
   .secnav a:hover { color: var(--text); border-color: var(--accent); }
+  .secnav a.active { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .sec-hide { display: none !important; }
   [id^="sec_"] { scroll-margin-top: 64px; }
   .dns { margin-top: 10px; padding: 12px 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; }
   .dns .hint { margin-bottom: 10px; }
@@ -1952,16 +1954,65 @@ export function dashboardPage(): string {
       });
     }
   }
+  // The dashboard is organized into a few sections shown one at a time, so the
+  // owner lands on a clean page instead of every panel at once. A panel's
+  // section is decided by its id, else by its heading text.
+  var SECTIONS=[
+    ['home','Home'],
+    ['clients','Clients & Sales'],
+    ['work','Projects & Support'],
+    ['web','Website'],
+    ['marketing','Marketing'],
+    ['ai','AI'],
+    ['catalog','Catalog'],
+    ['settings','Settings']
+  ];
+  var SEC_BY_ID={
+    onboardingPanel:'home',billingPanel:'home',activityPanel:'home',
+    brandPanel:'web',domainPanel:'web',brandsPanel:'web',
+    calendarPanel:'work',filesPanel:'work',
+    formsPanel:'marketing',dripPanel:'marketing',emailPanel:'marketing',workflowsPanel:'marketing',
+    aiConsolePanel:'ai',aiToolsPanel:'ai',aiEmployeesPanel:'ai',knowledgePanel:'ai',aiPanel:'ai',
+    teamPanel:'settings',portalPanel:'settings',auditPanel:'settings'
+  };
+  var SEC_BY_LABEL={
+    'Clients':'clients','Invoices':'clients','Sales pipeline':'clients','Proposals':'clients',
+    'Projects':'work','Support tickets':'work',
+    'AI Website Builder':'web','Marketplace':'web','Hosting accounts':'web',
+    'Marketing campaigns':'marketing','Reviews':'marketing',
+    'Products':'catalog','Books':'catalog','Programs':'catalog',
+    'Account':'settings'
+  };
+  function panelLabel(p){var h=p.querySelector('h2');return h?((h.firstChild&&h.firstChild.textContent||h.textContent||'').trim()):'';}
+  function sectionOf(p){return SEC_BY_ID[p.id]||SEC_BY_LABEL[panelLabel(p)]||'settings';}
+  function allPanels(){return document.querySelectorAll('.wrap .panel');}
+  // A panel is role-hidden when the init logic set an inline display:none.
+  function roleHidden(p){return p.style.display==='none';}
+  var activeSection='home';
+  function showSection(key){
+    activeSection=key;
+    var panels=allPanels();
+    for(var i=0;i<panels.length;i++){
+      var p=panels[i];
+      if(sectionOf(p)===key)p.classList.remove('sec-hide');
+      else p.classList.add('sec-hide');
+    }
+    var nav=document.getElementById('secnav');
+    if(nav){var tabs=nav.querySelectorAll('a');for(var j=0;j<tabs.length;j++){tabs[j].classList.toggle('active',tabs[j].getAttribute('data-sec')===key);}}
+    try{window.scrollTo(0,0);}catch(_){/* noop */}
+  }
   function buildSecNav(){
     var nav=document.getElementById('secnav'); if(!nav)return; clear(nav);
-    var panels=document.querySelectorAll('.wrap .panel');
-    for(var i=0;i<panels.length;i++){
-      var p=panels[i]; if(p.style.display==='none')continue;
-      var h=p.querySelector('h2'); if(!h)continue;
-      if(!p.id)p.id='sec_'+i;
-      var label=(h.firstChild&&h.firstChild.textContent||h.textContent||'').trim();
-      var a=document.createElement('a');a.href='#'+p.id;a.textContent=label;nav.appendChild(a);
-    }
+    // Which sections actually have at least one visible (role-allowed) panel?
+    var present={}; var panels=allPanels();
+    for(var i=0;i<panels.length;i++){var p=panels[i];if(!roleHidden(p))present[sectionOf(p)]=true;}
+    SECTIONS.forEach(function(s){
+      if(!present[s[0]])return;
+      var a=document.createElement('a');a.setAttribute('data-sec',s[0]);a.textContent=s[1];
+      a.addEventListener('click',function(){showSection(s[0]);});
+      nav.appendChild(a);
+    });
+    showSection('home');
   }
   async function init(){
     var me=await api('/auth/me');
