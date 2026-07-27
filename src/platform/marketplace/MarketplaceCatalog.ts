@@ -27,6 +27,10 @@
  * The set stays code-defined (closed) on purpose — tenants never supply
  * templates or code — which is the marketplace's core safety property.
  */
+export type MarketplaceTier =
+  | "free"
+  | "premium";
+
 export interface WebsiteTemplate {
   id: string;
   name: string;
@@ -38,6 +42,19 @@ export interface WebsiteTemplate {
   brief: string;
   /** Suggested accent color (hex). */
   accentColor: string;
+  /**
+   * "premium" templates require a plan that unlocks them (Business and up);
+   * absent/"free" means any plan can use them. There is no per-template
+   * charge — premium is gated by plan tier.
+   */
+  tier?: MarketplaceTier;
+}
+
+/** True when a template requires a premium (paid, higher-tier) plan. */
+export function isPremium(item: {
+  tier?: MarketplaceTier;
+}): boolean {
+  return item.tier === "premium";
 }
 
 const WEBSITE_TEMPLATES: readonly WebsiteTemplate[] =
@@ -159,6 +176,47 @@ const WEBSITE_TEMPLATES: readonly WebsiteTemplate[] =
       brief: "A warm, welcoming website for a church or ministry. Include a hero with the church name, a short welcome, weekend service times, and a plan-your-visit button; an about / what-we-believe section; a ministries section (kids, youth, small groups, outreach); a recent-sermons/messages section; an upcoming-events list; a giving/donate call-to-action; and location with service times in the footer. Warm, hopeful, and inclusive tone; no denominational assumptions beyond what a church would state about itself.",
       accentColor: "#5b21b6",
     },
+    // ── Premium template systems (require Business+ plan) ──────────────────
+    {
+      id: "wedding-events",
+      name: "Wedding & Events Venue",
+      industry: "Events & Hospitality",
+      description:
+        "Elegant, image-led site for a wedding or events venue with galleries and enquiry booking.",
+      brief: "An elegant, romantic website for a wedding and events venue. Include a full-bleed hero with the venue name and a check-availability button; an about section evoking the atmosphere; a spaces/packages section with 3 offerings; a gallery section; a testimonials section from couples; an FAQ; and an enquiry form capturing event date, guest count, and type. Refined, premium tone.",
+      accentColor: "#9d174d",
+      tier: "premium",
+    },
+    {
+      id: "boutique-hotel",
+      name: "Boutique Hotel & Hospitality",
+      industry: "Hospitality",
+      description:
+        "Refined site for a boutique hotel or B&B with rooms, amenities, and reservations.",
+      brief: "A refined website for a boutique hotel. Include a hero with the property name and a book-your-stay button; an about section on the experience; a rooms section with 3 room types, rates, and features; an amenities section; a local-area/things-to-do section; guest reviews; and a reservation enquiry form. Warm, upscale, hospitable tone.",
+      accentColor: "#115e59",
+      tier: "premium",
+    },
+    {
+      id: "financial-advisory",
+      name: "Financial Advisory",
+      industry: "Finance",
+      description:
+        "Authoritative site for a wealth manager, advisor, or accounting firm with a consultation CTA.",
+      brief: "An authoritative, trustworthy website for a financial advisory firm. Include a hero stating the firm's promise with a book-a-consultation button; an about section establishing credentials and fiduciary approach; a services section with 4 offerings (planning, investments, tax, retirement); a process section in 3 steps; a testimonials strip; and a contact/consultation form. Calm, credible, compliant tone; no guaranteed-return claims.",
+      accentColor: "#1e3a8a",
+      tier: "premium",
+    },
+    {
+      id: "luxury-real-estate",
+      name: "Luxury Real Estate",
+      industry: "Real Estate",
+      description:
+        "High-end, image-forward site for luxury listings and private-client representation.",
+      brief: "A high-end, image-forward website for a luxury real-estate practice. Include a cinematic hero with a signature-listings headline and a private-consultation button; a featured-properties grid of 4 premium listings with price and key details; an about-the-advisor section emphasizing discretion and track record; a marketing/approach section; client testimonials; and a private enquiry form. Sophisticated, understated, premium tone.",
+      accentColor: "#78350f",
+      tier: "premium",
+    },
   ];
 
 export function listWebsiteTemplates(): readonly WebsiteTemplate[] {
@@ -200,6 +258,8 @@ export interface IndustryEdition {
   websiteTemplateId: string;
   accentColor: string;
   employees: EditionEmployee[];
+  /** Premium editions require a plan that unlocks them (Business and up). */
+  tier?: MarketplaceTier;
 }
 
 const INDUSTRY_EDITIONS: readonly IndustryEdition[] =
@@ -620,6 +680,144 @@ const INDUSTRY_EDITIONS: readonly IndustryEdition[] =
           toolNames: [
             "notes.add",
             "tickets.create",
+            "notifications.send",
+          ],
+        },
+      ],
+    },
+    // ── Premium editions (require Business+ plan) ──────────────────────────
+    {
+      id: "wedding-events",
+      name: "Wedding & Events Edition",
+      description:
+        "A premium venue website, rose accent, and an events-coordination + venue-care team.",
+      websiteTemplateId:
+        "wedding-events",
+      accentColor: "#9d174d",
+      tier: "premium",
+      employees: [
+        {
+          name: "Events Coordinator",
+          title: "Sales & Events",
+          persona:
+            "You capture event enquiries as leads, keep their stage current, and alert the team to high-value dates. Be gracious, detail-oriented, and premium in tone.",
+          toolNames: [
+            "crm.leads.list",
+            "crm.leads.create",
+            "crm.leads.update_stage",
+            "notifications.send",
+          ],
+        },
+        {
+          name: "Venue Care Assistant",
+          title: "Operations",
+          persona:
+            "You track setup requests and day-of details as tickets and notes. Be meticulous and calm.",
+          toolNames: [
+            "tickets.create",
+            "notes.add",
+          ],
+        },
+      ],
+    },
+    {
+      id: "boutique-hotel",
+      name: "Boutique Hotel Edition",
+      description:
+        "A premium hotel website, deep-teal accent, and a reservations + guest-services team.",
+      websiteTemplateId:
+        "boutique-hotel",
+      accentColor: "#115e59",
+      tier: "premium",
+      employees: [
+        {
+          name: "Reservations Concierge",
+          title: "Front Desk",
+          persona:
+            "You capture stay enquiries as leads and follow up promptly and warmly. Be polished and hospitable.",
+          toolNames: [
+            "crm.leads.create",
+            "crm.leads.update_stage",
+            "notifications.send",
+          ],
+        },
+        {
+          name: "Guest Services Assistant",
+          title: "Guest Experience",
+          persona:
+            "You handle guest requests and issues via tickets and notes. Be attentive, discreet, and gracious.",
+          toolNames: [
+            "tickets.create",
+            "notes.add",
+          ],
+        },
+      ],
+    },
+    {
+      id: "financial-advisory",
+      name: "Financial Advisory Edition",
+      description:
+        "A premium advisory website, navy accent, and a client-advisory + onboarding team.",
+      websiteTemplateId:
+        "financial-advisory",
+      accentColor: "#1e3a8a",
+      tier: "premium",
+      employees: [
+        {
+          name: "Client Advisor Assistant",
+          title: "Advisory",
+          persona:
+            "You qualify prospective clients as leads, advance their stage, and log clear notes. Be professional, precise, and compliant; never give specific investment advice or promise returns.",
+          toolNames: [
+            "crm.leads.list",
+            "crm.leads.create",
+            "crm.leads.update_stage",
+            "notes.add",
+          ],
+        },
+        {
+          name: "Onboarding Coordinator",
+          title: "Client Onboarding",
+          persona:
+            "You set up new client engagements as projects and keep the team informed. Be organized and thorough.",
+          toolNames: [
+            "projects.create",
+            "clients.list",
+            "notifications.send",
+          ],
+        },
+      ],
+    },
+    {
+      id: "luxury-real-estate",
+      name: "Luxury Real Estate Edition",
+      description:
+        "A premium listings website, bronze accent, and a private-client + listing team.",
+      websiteTemplateId:
+        "luxury-real-estate",
+      accentColor: "#78350f",
+      tier: "premium",
+      employees: [
+        {
+          name: "Private Client Assistant",
+          title: "Sales",
+          persona:
+            "You capture buyer and seller enquiries as leads, advance their stage, and summarize the pipeline for the advisor. Be discreet, polished, and responsive.",
+          toolNames: [
+            "crm.leads.list",
+            "crm.leads.create",
+            "crm.leads.update_stage",
+            "crm.pipeline.summary",
+            "notifications.send",
+          ],
+        },
+        {
+          name: "Listing Concierge",
+          title: "Operations",
+          persona:
+            "You log showing requests and listing tasks as notes and keep the team informed. Be precise and proactive.",
+          toolNames: [
+            "notes.add",
             "notifications.send",
           ],
         },

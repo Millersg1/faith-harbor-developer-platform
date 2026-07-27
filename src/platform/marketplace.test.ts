@@ -34,6 +34,11 @@ import {
   listWebsiteTemplates,
 } from "./marketplace/MarketplaceCatalog";
 import { buildDefaultAiTools } from "./ai/tools/defaultAiTools";
+import { BillingService } from "./billing/BillingService";
+import {
+  isPremium,
+  type WebsiteTemplate,
+} from "./marketplace/MarketplaceCatalog";
 
 /** Every tool name the default catalogue can expose (all services present). */
 function allToolNames(): Set<string> {
@@ -270,6 +275,163 @@ async function buildApp() {
       signup.headers["set-cookie"],
   };
 }
+
+async function buildBillingApp() {
+  const organizations =
+    new OrganizationService();
+  const users =
+    new PlatformUserService(
+      new PlatformUserRepository(),
+    );
+  const sessions =
+    new PlatformSessionService(
+      new PlatformSessionRepository(),
+    );
+  const clients =
+    new PlatformClientService(
+      new PlatformClientRepository(),
+    );
+
+  const app = createPlatformApp({
+    organizations,
+    users,
+    sessions,
+    branding: new BrandingService(
+      new BrandingRepository(),
+    ),
+    clients,
+    projects:
+      new PlatformProjectService(
+        new PlatformProjectRepository(),
+        clients,
+      ),
+    invoices:
+      new PlatformInvoiceService(
+        new PlatformInvoiceRepository(),
+        clients,
+      ),
+    websites:
+      new PlatformWebsiteService(
+        new PlatformWebsiteRepository(),
+        undefined,
+        clients,
+      ),
+    billing: new BillingService(),
+    signup: new PlatformSignupService(
+      organizations,
+      users,
+      sessions,
+    ),
+    domains:
+      new OrganizationDomainService(),
+    admins: new PlatformAdminService(),
+    adminSessions:
+      new PlatformAdminSessionService(),
+    baseDomain: "allelitecloud.com",
+  });
+
+  const signup = await request(app)
+    .post("/auth/signup")
+    .send({
+      organizationName: "Acme",
+      slug: "acme",
+      email: "owner@acme.com",
+      password: "password123",
+    });
+
+  return {
+    app,
+    cookie:
+      signup.headers["set-cookie"],
+  };
+}
+
+describe("premium template gating", () => {
+  function premiumId(): string {
+    const premium =
+      listWebsiteTemplates().find(
+        (t: WebsiteTemplate) =>
+          isPremium(t),
+      );
+    if (!premium)
+      throw new Error(
+        "expected a premium template",
+      );
+
+    return premium.id;
+  }
+
+  it("has both free and premium templates", () => {
+    const templates =
+      listWebsiteTemplates();
+    expect(
+      templates.some(
+        (t) => !isPremium(t),
+      ),
+    ).toBe(true);
+    expect(
+      templates.some((t) =>
+        isPremium(t),
+      ),
+    ).toBe(true);
+  });
+
+  it("blocks a premium template on the default (Essentials) plan with 402", async () => {
+    const { app, cookie } =
+      await buildBillingApp();
+
+    const res = await request(app)
+      .post(
+        `/api/platform/marketplace/website-templates/${premiumId()}/use`,
+      )
+      .set("Cookie", cookie)
+      .send({});
+
+    expect(res.status).toBe(402);
+    expect(res.body.error.code).toBe(
+      "PREMIUM_REQUIRED",
+    );
+  });
+
+  it("allows a premium template after upgrading to Business", async () => {
+    const { app, cookie } =
+      await buildBillingApp();
+
+    const upgrade = await request(app)
+      .post("/api/platform/billing/plan")
+      .set("Cookie", cookie)
+      .send({ planId: "business" });
+    expect(
+      upgrade.status,
+    ).toBeLessThan(300);
+
+    const res = await request(app)
+      .post(
+        `/api/platform/marketplace/website-templates/${premiumId()}/use`,
+      )
+      .set("Cookie", cookie)
+      .send({});
+
+    expect(res.status).toBe(201);
+    expect(
+      res.body.website.status,
+    ).toBe("draft");
+  });
+
+  it("still allows a free template on Essentials", async () => {
+    const { app, cookie } =
+      await buildBillingApp();
+
+    const res = await request(app)
+      .post(
+        "/api/platform/marketplace/website-templates/restaurant-classic/use",
+      )
+      .set("Cookie", cookie)
+      .send({});
+
+    expect(res.status).toBe(201);
+  });
+});
 
 describe("Marketplace API", () => {
   it("lists website templates", async () => {

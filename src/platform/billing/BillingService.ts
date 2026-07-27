@@ -101,6 +101,12 @@ export class BillingService {
     );
   }
 
+  /** Whether the current plan unlocks the marketplace's premium templates. */
+  async includesPremiumTemplates(): Promise<boolean> {
+    return (await this.getPlan())
+      .premiumTemplates;
+  }
+
   /**
    * Switches the tenant to a different self-serve plan. Rejects unknown
    * plans and plans that aren't self-serve (Enterprise is contact-sales).

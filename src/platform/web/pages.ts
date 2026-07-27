@@ -1716,10 +1716,13 @@ export function dashboardPage(): string {
       var n=document.createElement('div');n.textContent=esc(e.name);n.style.fontWeight='600';left.appendChild(n);
       var s=document.createElement('div');s.className='sub';s.textContent=esc(e.description)+' \\u00b7 '+((e.employees||[]).length)+' assistant(s)';left.appendChild(s);
       row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
+      if(e.tier==='premium'){var pp=document.createElement('span');pp.className='pill';pp.textContent='Premium';actions.appendChild(pp);}
       if(canUse){
-        var b=document.createElement('button');b.className='btn';b.style.padding='6px 12px';b.style.flex='none';b.textContent='Apply';
-        b.addEventListener('click',function(){applyEdition(e.id,e.name);});row.appendChild(b);
+        var b=document.createElement('button');b.className='btn';b.style.padding='6px 12px';b.textContent='Apply';
+        b.addEventListener('click',function(){applyEdition(e.id,e.name);});actions.appendChild(b);
       }
+      row.appendChild(actions);
       el.appendChild(row);
     });
   }
@@ -1732,8 +1735,7 @@ export function dashboardPage(): string {
       loadWebsites();loadBranding();
       if(typeof loadAiEmployees==='function')loadAiEmployees();
     }
-    else if(r.status===402){setMsg('mktmsg','err','Your plan\\u2019s site limit is reached — upgrade to apply an edition.');}
-    else{setMsg('mktmsg','err',(x.error&&x.error.message)||'Could not apply that edition.');}
+    else{setMsg('mktmsg','err',mktError(x,r.status,'Could not apply that edition.'));}
   }
   async function loadMarketplace(){
     var r=await api('/api/platform/marketplace/website-templates'); if(!r.ok)return;
@@ -1748,20 +1750,27 @@ export function dashboardPage(): string {
       var n=document.createElement('div');n.textContent=esc(t.name);n.style.fontWeight='600';left.appendChild(n);
       var s=document.createElement('div');s.className='sub';s.textContent=esc(t.industry)+' \\u00b7 '+esc(t.description);left.appendChild(s);
       row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
+      if(t.tier==='premium'){var pp=document.createElement('span');pp.className='pill';pp.textContent='Premium';actions.appendChild(pp);}
       if(canUse){
-        var b=document.createElement('button');b.className='btn ghost';b.style.padding='6px 12px';b.style.flex='none';b.textContent='Use template';
-        b.addEventListener('click',function(){useTemplate(t.id,t.name);});row.appendChild(b);
+        var b=document.createElement('button');b.className='btn ghost';b.style.padding='6px 12px';b.textContent='Use template';
+        b.addEventListener('click',function(){useTemplate(t.id,t.name);});actions.appendChild(b);
       }
+      row.appendChild(actions);
       el.appendChild(row);
     });
+  }
+  function mktError(x,status,fallback){
+    if(status===402&&x.error&&x.error.code==='PREMIUM_REQUIRED'){return 'That\\u2019s a premium template — upgrade to Business or higher to use it.';}
+    if(status===402){return 'Your plan\\u2019s site limit is reached — upgrade to add more.';}
+    return (x.error&&x.error.message)||fallback;
   }
   async function useTemplate(id,name){
     setMsg('mktmsg','','Creating a draft from \\u201c'+esc(name)+'\\u201d\\u2026');
     var r=await api('/api/platform/marketplace/website-templates/'+encodeURIComponent(id)+'/use',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     var x=await r.json().catch(function(){return {};});
     if(r.ok){setMsg('mktmsg','ok','Draft created in the AI Website Builder — click Generate there to build it.');loadWebsites();}
-    else if(r.status===402){setMsg('mktmsg','err','Your plan\\u2019s site limit is reached — upgrade to add more.');}
-    else{setMsg('mktmsg','err',(x.error&&x.error.message)||'Could not use that template.');}
+    else{setMsg('mktmsg','err',mktError(x,r.status,'Could not use that template.'));}
   }
   async function loadWebsites(){
     var r=await api('/api/platform/websites'); if(!r.ok)return;

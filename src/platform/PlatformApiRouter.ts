@@ -64,6 +64,7 @@ import type { AiConsoleService } from "./ai/console/AiConsoleService";
 import {
   getIndustryEdition,
   getWebsiteTemplate,
+  isPremium,
   listIndustryEditions,
   listWebsiteTemplates,
 } from "./marketplace/MarketplaceCatalog";
@@ -5558,41 +5559,52 @@ export function createPlatformApiRouter(
           template.name;
 
         const billing = deps.billing;
-        const gate = billing
-          ? websites
-              .count()
-              .then((count) =>
-                billing.assertWithinLimit(
-                  "sites",
-                  count,
-                ),
-              )
-          : Promise.resolve();
 
-        gate
-          .then(() =>
-            websites.create({
-              name,
-              brief: template.brief,
-              accentColor:
-                template.accentColor,
-              clientId:
-                optionalString(
-                  body.clientId,
-                ),
-            }),
-          )
-          .then((website) =>
-            res
-              .status(201)
-              .json({
-                website,
-                template: {
-                  id: template.id,
-                  name: template.name,
-                },
-              }),
-          )
+        premiumAllowed(template, billing)
+          .then((allowed) => {
+            if (!allowed) {
+              premiumRequired(res);
+
+              return undefined;
+            }
+
+            const gate = billing
+              ? websites
+                  .count()
+                  .then((count) =>
+                    billing.assertWithinLimit(
+                      "sites",
+                      count,
+                    ),
+                  )
+              : Promise.resolve();
+
+            return gate
+              .then(() =>
+                websites.create({
+                  name,
+                  brief:
+                    template.brief,
+                  accentColor:
+                    template.accentColor,
+                  clientId:
+                    optionalString(
+                      body.clientId,
+                    ),
+                }),
+              )
+              .then((website) =>
+                res
+                  .status(201)
+                  .json({
+                    website,
+                    template: {
+                      id: template.id,
+                      name: template.name,
+                    },
+                  }),
+              );
+          })
           .catch((error: unknown) => {
             if (
               error instanceof
@@ -5654,27 +5666,37 @@ export function createPlatformApiRouter(
             edition.websiteTemplateId,
           );
         const billing = deps.billing;
-        const gate = billing
-          ? websites
-              .count()
-              .then((count) =>
-                billing.assertWithinLimit(
-                  "sites",
-                  count,
-                ),
-              )
-          : Promise.resolve();
 
-        gate
-          .then(() =>
-            websites.create({
-              name: edition.name,
-              brief: template?.brief,
-              accentColor:
-                edition.accentColor,
-            }),
-          )
-          .then(async (website) => {
+        premiumAllowed(edition, billing)
+          .then((allowed) => {
+            if (!allowed) {
+              premiumRequired(res);
+
+              return undefined;
+            }
+
+            const gate = billing
+              ? websites
+                  .count()
+                  .then((count) =>
+                    billing.assertWithinLimit(
+                      "sites",
+                      count,
+                    ),
+                  )
+              : Promise.resolve();
+
+            return gate
+              .then(() =>
+                websites.create({
+                  name: edition.name,
+                  brief:
+                    template?.brief,
+                  accentColor:
+                    edition.accentColor,
+                }),
+              )
+              .then(async (website) => {
             // Accent + employees are enhancements — best-effort so one
             // failure doesn't undo the created site. Report what stuck.
             let accentApplied = false;
@@ -5718,6 +5740,7 @@ export function createPlatformApiRouter(
               accentApplied,
               employeesCreated,
             });
+              });
           })
           .catch((error: unknown) => {
             if (
@@ -6055,6 +6078,36 @@ function handleToolError(
   }
 
   next(error);
+}
+
+/**
+ * Whether a marketplace item may be used on the current plan. Free items are
+ * always allowed; premium items require a plan that unlocks them. When billing
+ * isn't wired (tests), premium is allowed — mirroring how the site-limit gate
+ * is skipped without billing.
+ */
+function premiumAllowed(
+  item: { tier?: "free" | "premium" },
+  billing?: BillingService,
+): Promise<boolean> {
+  if (!isPremium(item) || !billing) {
+    return Promise.resolve(true);
+  }
+
+  return billing.includesPremiumTemplates();
+}
+
+/** Rejects a premium marketplace action that the plan doesn't include. */
+function premiumRequired(
+  res: Response,
+): void {
+  res.status(402).json({
+    error: {
+      code: "PREMIUM_REQUIRED",
+      message:
+        "This is a premium template — upgrade to a Business plan or higher to use it.",
+    },
+  });
 }
 
 /**

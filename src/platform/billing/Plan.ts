@@ -45,6 +45,12 @@ export interface Plan {
   popular: boolean;
   features: string[];
   limits: PlanLimits;
+  /**
+   * Whether this plan unlocks the marketplace's premium template systems.
+   * Premium templates are "paid" in the sense that they require a
+   * higher-tier (Business and up) plan — no separate per-template charge.
+   */
+  premiumTemplates: boolean;
 }
 
 /**
@@ -73,6 +79,7 @@ export const PLANS: Plan[] = [
       projects: 5,
       clients: 25,
     },
+    premiumTemplates: false,
   },
   {
     id: "professional",
@@ -95,6 +102,7 @@ export const PLANS: Plan[] = [
       projects: 25,
       clients: 200,
     },
+    premiumTemplates: false,
   },
   {
     id: "business",
@@ -117,6 +125,7 @@ export const PLANS: Plan[] = [
       projects: 100,
       clients: 1000,
     },
+    premiumTemplates: true,
   },
   {
     id: "partner",
@@ -139,6 +148,7 @@ export const PLANS: Plan[] = [
       projects: null,
       clients: null,
     },
+    premiumTemplates: true,
   },
   {
     id: "enterprise",
@@ -161,6 +171,7 @@ export const PLANS: Plan[] = [
       projects: null,
       clients: null,
     },
+    premiumTemplates: true,
   },
 ];
 

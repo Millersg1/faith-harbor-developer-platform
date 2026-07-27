@@ -25,6 +25,14 @@ Faith Harbor OS is unaffected.
   code), same pattern as the plan catalogue and AI tool registry. API
   `/api/platform/marketplace/website-templates` (+ `/:id/use`), dashboard
   **Marketplace** panel. First Phase 4 surface.
+- **Premium (paid) template systems** — added 4 higher-tier systems (Wedding &
+  Events Venue, Boutique Hotel & Hospitality, Financial Advisory, Luxury Real
+  Estate), each with employees, marked `tier: "premium"`. Premium is gated by
+  **plan tier** (a new `premiumTemplates` flag on plans — unlocked on Business
+  and up), not a per-template charge: using/applying a premium template on a
+  lower plan returns `402 PREMIUM_REQUIRED` with an upgrade prompt; free
+  templates are unaffected. Dashboard shows a "Premium" badge. 17 templates +
+  17 editions total. 6 new tests (14 marketplace total).
 - **Marketplace expanded to 13 template systems** — restaurant, professional
   services, trades/contractor, fitness, boutique retail, nonprofit, real
   estate, medical & dental, salon & spa, SaaS/technology, automotive service,

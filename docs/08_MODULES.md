@@ -68,9 +68,13 @@ Source lives under `src/platform/<module>/`.
   required), sets the brand accent, and creates the employees (best-effort,
   additive — never deletes). Composes `PlatformWebsiteService` + `BrandingService`
   + `AiEmployeeService`.
+- **Premium tier:** items may be `tier: "premium"` — gated by **plan** (a
+  `premiumTemplates` flag, unlocked on Business+), not a per-template charge.
+  Using/applying a premium item on a lower plan → `402 PREMIUM_REQUIRED`. Free
+  items are unaffected. 17 templates + 17 editions (4 premium).
 - **API:** /marketplace/website-templates (+ /:id/use), /marketplace/editions
-  (+ /:id/apply). **UI:** dashboard **Marketplace** panel. **Next:** installable
-  modules.
+  (+ /:id/apply). **UI:** dashboard **Marketplace** panel (Premium badge).
+  **Next:** installable modules.
 
 ### AI Employees (`ai/employees/`)
 - **Purpose:** saved, reusable assistants — a persona plus a whitelisted subset
