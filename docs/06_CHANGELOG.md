@@ -7,6 +7,21 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **White-label polish** (P5-M4): a tenant's brand now carries across three new
+  surfaces. (1) **Branded printable invoice** — `GET
+  /api/platform/invoices/:id/printable` serves a self-contained, brand-themed
+  HTML invoice (logo/accent/name + billed client + line items) with a "Print /
+  Save as PDF" button; honest, dependency-free PDF path via the browser's own
+  print dialog (no server-side PDF engine on the shared host). (2) **Branded
+  emails** — a shared `renderBrandedEmailHtml` layout wraps the tenant's brand
+  around outbound mail; the dashboard email composer now sends multipart
+  HTML+text (plain body always preserved for the outbox and non-HTML clients).
+  Optional `html` threaded additively through the email transport. (3)
+  **Branded client portal** — the portal fetches `GET /portal/api/branding` and
+  applies the tenant's logo, accent color, and name, so clients see their
+  vendor, not "All Elite Cloud". All tenant/client values HTML-escaped;
+  colors/logos validated (hex + https only) before use. 13 new tests (970
+  total).
 - **Success Center / onboarding** (P5-M3): a first-run getting-started
   checklist on the tenant dashboard. Six steps (add brand, add a client, launch
   a website, hire an AI Employee, create a campaign, invite a teammate), each

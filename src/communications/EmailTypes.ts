@@ -24,6 +24,12 @@ export interface EmailMessage {
   to: string;
   subject: string;
   body: string;
+  /**
+   * Optional HTML alternative. When present, transports that support it send a
+   * multipart message (HTML + the plain `body` as fallback); the plain body is
+   * always kept so non-HTML clients and the outbox record stay readable.
+   */
+  html?: string;
 }
 
 /**

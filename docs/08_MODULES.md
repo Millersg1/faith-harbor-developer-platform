@@ -95,6 +95,24 @@ Source lives under `src/platform/<module>/`.
   crash. Tenant-scoped (`GET /api/platform/onboarding`); dismissal is a local
   client preference.
 
+### White-label rendering (`branding/brandingTheme.ts`, `invoices/invoiceDocument.ts`, `email/emailLayout.ts`)
+- **Purpose:** carry a tenant's brand into documents and channels that leave the
+  dashboard — printable invoices, outbound email, the client portal.
+- **How:** `brandingTheme.ts` holds shared pure helpers (`escapeHtml`,
+  `brandName`, `brandAccent`, `brandLockupHtml`, `brandSupportEmail`) with safe
+  fallbacks to the platform brand and strict validation — colors must be
+  `#rrggbb`, logos must be `https://…` before they're placed in CSS/`<img>`.
+  `invoiceDocument.renderInvoiceDocument()` builds a self-contained, print-ready
+  HTML invoice (served at `GET /api/platform/invoices/:id/printable`, owner/
+  admin); "Save as PDF" is the browser's native print — no server-side PDF
+  engine (a deliberate choice for the shared host). `emailLayout
+  .renderBrandedEmailHtml()` wraps a plain body in a table-based branded HTML
+  email; the dashboard email composer sends multipart HTML+text (`html`
+  threaded additively through `EmailMessage`/transports, plain body always
+  preserved). The **portal** fetches `GET /portal/api/branding` (behind the
+  portal session) and applies logo/accent/name client-side. Every tenant/client
+  value is escaped.
+
 ### Marketplace (`marketplace/`)
 - **Purpose:** a code-defined catalogue a tenant browses and installs from — the
   first Phase 4 surface. `MarketplaceCatalog` holds `WEBSITE_TEMPLATES`

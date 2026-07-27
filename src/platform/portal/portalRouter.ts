@@ -4,6 +4,7 @@ import {
 } from "express";
 
 import { requireTenant } from "../../tenancy/TenantContext";
+import type { BrandingService } from "../branding/BrandingService";
 import type { PlatformClientService } from "../clients/PlatformClientService";
 import type { PlatformInvoiceService } from "../invoices/PlatformInvoiceService";
 import type { PlatformProjectService } from "../projects/PlatformProjectService";
@@ -22,6 +23,7 @@ export interface PortalRouterDependencies {
   clientUsers: ClientUserService;
   portalSessions: PortalSessionService;
   clients: PlatformClientService;
+  branding?: BrandingService;
   projects?: PlatformProjectService;
   invoices?: PlatformInvoiceService;
   tickets?: PlatformTicketService;
@@ -231,6 +233,27 @@ export function createPortalRouter(
             next(error);
           },
         );
+    },
+  );
+
+  // The tenant's public brand (name, logo, accent) so the portal can present
+  // as the tenant, not the platform. Behind the guard, so the tenant is the
+  // signed-in client's organization.
+  router.get(
+    "/branding",
+    guard,
+    (_req: PortalRequest, res, next) => {
+      if (!deps.branding) {
+        res.json({ branding: {} });
+        return;
+      }
+
+      deps.branding
+        .get()
+        .then((branding) =>
+          res.json({ branding }),
+        )
+        .catch(next);
     },
   );
 

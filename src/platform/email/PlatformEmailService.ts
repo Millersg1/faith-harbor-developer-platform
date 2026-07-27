@@ -12,6 +12,8 @@ export interface SendEmailRequest {
   subject: string;
   body: string;
   from?: string;
+  /** Optional branded HTML alternative; the plain `body` is always stored. */
+  html?: string;
 }
 
 /**
@@ -83,6 +85,9 @@ export class PlatformEmailService {
           to,
           subject,
           body: request.body,
+          ...(request.html
+            ? { html: request.html }
+            : {}),
         });
 
       status = result.status;

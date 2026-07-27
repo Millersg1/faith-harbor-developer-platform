@@ -79,6 +79,8 @@ import type { PlatformReviewService } from "./reviews/PlatformReviewService";
 import type { PlatformHostingService } from "./hosting/PlatformHostingService";
 import type { PlatformInvoiceLineItem } from "./invoices/PlatformInvoice";
 import type { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
+import { renderInvoiceDocument } from "./invoices/invoiceDocument";
+import { renderBrandedEmailHtml } from "./email/emailLayout";
 import {
   toPublicClientUser,
 } from "./portal/ClientUser";
@@ -2430,6 +2432,78 @@ export function createPlatformApiRouter(
 
                 res.json({ invoice });
               });
+          })
+          .catch((error: unknown) =>
+            notFoundOrNext(
+              res,
+              next,
+              error,
+              "INVOICE_NOT_FOUND",
+            ),
+          );
+      },
+    );
+
+    // Branded, print-ready invoice document (browser "Save as PDF"). Serves
+    // HTML — the tenant's brand + the billed client + line items. Escaped
+    // throughout; branding and client are best-effort.
+    router.get(
+      "/invoices/:id/printable",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const id = String(
+          req.params.id,
+        );
+
+        invoices
+          .get(id)
+          .then(async (invoice) => {
+            const branding =
+              deps.branding
+                ? await deps.branding
+                    .get()
+                    .catch(
+                      () => undefined,
+                    )
+                : undefined;
+
+            let client:
+              | {
+                  name: string;
+                  email?: string;
+                }
+              | undefined;
+            if (
+              invoice.clientId &&
+              deps.clients
+            ) {
+              const record =
+                await deps.clients
+                  .get(
+                    invoice.clientId,
+                  )
+                  .catch(
+                    () => undefined,
+                  );
+              if (record) {
+                client = {
+                  name: record.name,
+                  email: record.email,
+                };
+              }
+            }
+
+            res
+              .type("html")
+              .send(
+                renderInvoiceDocument(
+                  {
+                    invoice,
+                    client,
+                    branding,
+                  },
+                ),
+              );
           })
           .catch((error: unknown) =>
             notFoundOrNext(
@@ -4826,14 +4900,33 @@ export function createPlatformApiRouter(
           return;
         }
 
-        email
-          .send({
-            to: String(body.to),
-            subject: String(
-              body.subject,
-            ),
-            body: String(body.body),
-          })
+        // Wrap the message in the tenant's brand (HTML) when branding is
+        // available; the plain body is always preserved for the outbox and
+        // non-HTML clients. Branding is best-effort — never blocks the send.
+        Promise.resolve(
+          deps.branding
+            ? deps.branding
+                .get()
+                .catch(() => undefined)
+            : undefined,
+        )
+          .then((branding) =>
+            email.send({
+              to: String(body.to),
+              subject: String(
+                body.subject,
+              ),
+              body: String(body.body),
+              html: renderBrandedEmailHtml(
+                branding,
+                {
+                  body: String(
+                    body.body,
+                  ),
+                },
+              ),
+            }),
+          )
           .then((record) =>
             res
               .status(201)

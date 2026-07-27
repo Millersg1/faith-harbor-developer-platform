@@ -49,7 +49,10 @@ export function portalPage(): string {
   </div>
   <div id="appView" style="display:none;">
     <div class="row">
-      <div><h1 id="clientName">Portal</h1><span class="muted">Client portal</span></div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <img id="brandLogo" alt="" style="display:none;max-height:40px;max-width:160px;" />
+        <div><h1 id="clientName">Portal</h1><span class="muted" id="brandName">Client portal</span></div>
+      </div>
       <button class="btn ghost" id="logoutBtn">Sign out</button>
     </div>
     <div class="card"><h2>Projects</h2><div id="projects"><div class="empty">Loading…</div></div></div>
@@ -82,10 +85,21 @@ export function portalPage(): string {
       el.appendChild(row);
     });
   }
+  function isHex(c){return /^#[0-9a-fA-F]{6}$/.test(c||'');}
+  function isHttps(u){return /^https:\\/\\/[^\\s"'<>]+$/.test(u||'');}
+  async function applyBranding(){
+    var r=await api('/branding'); if(!r.ok)return;
+    var d=await r.json(); var b=(d&&d.branding)||{};
+    var color=b.primaryColor||b.accentColor;
+    if(isHex(color)){document.documentElement.style.setProperty('--accent',color);}
+    if(b.displayName){document.getElementById('brandName').textContent=b.displayName;document.title=b.displayName+' · Portal';}
+    if(isHttps(b.logoUrl)){var lg=document.getElementById('brandLogo');lg.src=b.logoUrl;lg.alt=b.displayName||'';lg.style.display='';}
+  }
   async function loadAll(){
     var me=await api('/me'); if(!me.ok){show('login');return;}
     var d=await me.json();
     document.getElementById('clientName').textContent=(d.client&&d.client.name)||'Portal';
+    applyBranding();
     var pr=await api('/projects'); if(pr.ok){var p=await pr.json();render('projects',p.projects||[],function(x){return{title:esc(x.name),pill:esc(x.status)};});}
     var ps=await api('/proposals'); if(ps.ok){var q=await ps.json();render('proposals',q.proposals||[],function(x){return{title:esc(x.title)+(x.amount?' · '+money(x.amount):''),pill:esc(x.status)};});}
     var iv=await api('/invoices'); if(iv.ok){var i=await iv.json();render('invoices',i.invoices||[],function(x){return{title:esc(x.number||'Invoice')+' · '+money(x.amount),pill:esc(x.status)};});}

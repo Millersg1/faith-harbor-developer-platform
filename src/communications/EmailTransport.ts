@@ -95,6 +95,9 @@ export class HttpEmailTransport
               subject:
                 message.subject,
               text: message.body,
+              ...(message.html
+                ? { html: message.html }
+                : {}),
             }),
           },
         );

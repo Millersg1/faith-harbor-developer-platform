@@ -33,6 +33,7 @@ Prioritized. Effort is rough (S/M/L/XL). Status: ✅ done · 🚧 in progress ·
 | P5-M1: Superadmin analytics (MRR) | M | Cross-tenant revenue + plan mix + AI cost in the admin console |
 | P5-M2: System health panel | M | Live DB ping + worker heartbeat + SMTP/AI/Stripe connectivity in the admin console; live-proved |
 | P5-M3: Success Center / onboarding | M | First-run tenant checklist; each step checked off by a real data measurement |
+| P5-M4: White-label polish | M | Branded printable invoices (print-to-PDF), branded emails, branded client portal |
 | Living documentation (`/docs`) | M | Established 2026-07-26 |
 
 ## Next Release 🚧 / ⏳ (recommended order)

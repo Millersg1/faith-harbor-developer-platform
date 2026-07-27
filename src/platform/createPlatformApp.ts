@@ -503,6 +503,7 @@ export function createPlatformApp(
         portalSessions:
           deps.portalSessions,
         clients: deps.clients,
+        branding: deps.branding,
         projects: deps.projects,
         invoices: deps.invoices,
         tickets: deps.tickets,

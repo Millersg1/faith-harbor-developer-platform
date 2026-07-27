@@ -14,6 +14,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Authorization | ~75% | Service-layer role guards; RLS backstop pending |
 | Billing | ~70% | Stripe subscriptions (live-capable); customer portal + tax pending |
 | Website Builder | ~70% | Generate + publish to verified domain; template marketplace pending |
+| White-label | ~65% | Branded printable invoices + branded emails + branded client portal (P5-M4); per-doc PDF theming beyond invoices pending |
 | AI | ~70% | BYO keys, metering, caps, KB retrieval, tool registry, Command Center, Employees (role-scoped assistants); Phase 3 complete |
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
 | Marketplace | ~20% | Website-template catalogue live (P4-M1); industry editions + installable modules pending |
@@ -22,22 +23,24 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Forms | ~80% | Public forms + submissions + lead capture; drag-drop editor pending |
 | Calendar | ~55% | Agenda + CRUD; grid views + external sync pending |
 | Knowledge Base | ~55% | Collections/docs/chunks/keyword retrieval + citations; pgvector + LLM synthesis pending |
-| Testing | ~55% | 957 tests; **runnable locally again** (Vitest `forks` pool, ADR-011) + CI + live proofs |
+| Testing | ~55% | 970 tests; **runnable locally again** (Vitest `forks` pool, ADR-011) + CI + live proofs |
 | Documentation | ~40% | This `/docs` set established 2026-07-26; being back-filled |
 | Security review | Not done | Login rate-limit, RLS, audit logging outstanding |
 
 ## Current milestone
 
-**Phase 5 in progress.** Superadmin analytics (P5-M1), system-health panel
-(P5-M2), and the tenant Success Center / onboarding checklist (P5-M3) are
-shipped and live-proved on staging. Phase 3, the hardening pass, and Phase 4
-marketplace (website templates + industry editions) are complete.
+**Phase 5 complete.** Superadmin analytics (P5-M1), system-health panel
+(P5-M2), the tenant Success Center / onboarding checklist (P5-M3), and
+white-label polish — branded printable invoices, emails, and client portal
+(P5-M4) — are all shipped and live-proved on staging. Phase 3, the hardening
+pass, and Phase 4 marketplace (website templates + industry editions) are
+complete.
 
 ## Next milestone
 
-P5 white-label polish, then Phase 6 (outbound webhooks, public API). The
-deferred hardening — **Postgres RLS backstop**, periodic restore test — remains
-recommended before broadening the tenant surface further.
+Phase 6 (outbound webhooks, public API). The deferred hardening — **Postgres
+RLS backstop**, periodic restore test — remains recommended before broadening
+the tenant surface further.
 
 ## Known technical debt
 
