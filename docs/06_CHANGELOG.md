@@ -7,6 +7,15 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **Success Center / onboarding** (P5-M3): a first-run getting-started
+  checklist on the tenant dashboard. Six steps (add brand, add a client, launch
+  a website, hire an AI Employee, create a campaign, invite a teammate), each
+  checked off by a **real measurement** of the tenant's own data — never
+  optimistically. A step is only shown when the platform can actually measure
+  it, so the progress bar is always truthful. Dismissible (remembered locally).
+  `OnboardingService` is pure (injected signal map → fully unit-tested); the
+  server wires the signals over the ambiently tenant-scoped services. API
+  `GET /api/platform/onboarding`. 8 new tests (957 total).
 - **System health panel** (P5-M2): a superadmin view at `/platform/admin`
   showing real, checked signals — a live database ping, the background
   drip/workflow worker's heartbeat (running if it ticked within 3 intervals),

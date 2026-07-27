@@ -431,6 +431,19 @@ export function dashboardPage(): string {
   </div>
   <div class="wrap">
     <div class="secnav" id="secnav"></div>
+    <div class="panel" id="onboardingPanel" style="margin-bottom:18px;display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
+        <div>
+          <h2 style="margin-bottom:4px;">Get started <span class="pill" id="onbCount"></span></h2>
+          <p class="hint" style="margin-bottom:0;">A few steps to get the most out of your workspace.</p>
+        </div>
+        <button class="btn btn-ghost" id="onbDismiss" style="width:auto;font-size:0.78rem;">Hide</button>
+      </div>
+      <div style="height:8px;background:var(--line,#eee);border-radius:99px;overflow:hidden;margin:14px 0 4px;">
+        <div id="onbBar" style="height:100%;width:0;background:var(--accent);transition:width .3s;"></div>
+      </div>
+      <div class="list" id="onbList"><div class="empty">Loading…</div></div>
+    </div>
     <div class="panel" id="billingPanel" style="margin-bottom:18px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
         <div>
@@ -858,6 +871,49 @@ export function dashboardPage(): string {
       var none=document.createElement('option');none.value='';none.textContent='— No client —';sel.appendChild(none);
       clientsCache.forEach(function(c){var o=document.createElement('option');o.value=c.id;o.textContent=c.name;sel.appendChild(o);});
       sel.value=prev;
+    }
+  }
+  async function loadOnboarding(){
+    var panel=document.getElementById('onboardingPanel');
+    if(!panel)return;
+    if(localStorage.getItem('onbHidden')==='1'){panel.style.display='none';return;}
+    var r=await api('/api/platform/onboarding'); if(!r.ok){panel.style.display='none';return;}
+    var d=await r.json(); var steps=d.steps||[];
+    if(!steps.length){panel.style.display='none';return;}
+    var bar=document.getElementById('onbBar'); if(bar){bar.style.width=(d.percent||0)+'%';}
+    var cnt=document.getElementById('onbCount'); if(cnt){cnt.textContent=(d.completed||0)+' / '+(d.total||0);}
+    var list=document.getElementById('onbList'); clear(list);
+    steps.forEach(function(s){
+      var row=document.createElement('div'); row.className='li';
+      row.style.cssText='display:flex;align-items:flex-start;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line,#eee);';
+      var mark=document.createElement('div');
+      mark.style.cssText='flex:0 0 auto;width:22px;height:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;'+
+        (s.done?'background:var(--accent);color:#fff;':'background:transparent;border:2px solid var(--line,#ddd);color:transparent;');
+      mark.textContent=s.done?'\\u2713':'';
+      var body=document.createElement('div'); body.style.flex='1';
+      var t=document.createElement('div'); t.style.cssText='font-weight:600;font-size:0.9rem;'+(s.done?'text-decoration:line-through;opacity:0.6;':'');
+      t.textContent=s.title;
+      var desc=document.createElement('div'); desc.className='hint'; desc.style.margin='2px 0 0'; desc.textContent=s.description;
+      body.appendChild(t); body.appendChild(desc);
+      if(!s.done && s.href){
+        var go=document.createElement('a'); go.href=s.href; go.textContent='Start \\u2192';
+        go.style.cssText='flex:0 0 auto;font-size:0.8rem;color:var(--accent);text-decoration:none;align-self:center;';
+        row.appendChild(mark); row.appendChild(body); row.appendChild(go);
+      } else {
+        row.appendChild(mark); row.appendChild(body);
+      }
+      list.appendChild(row);
+    });
+    if(d.allDone){
+      var done=document.createElement('div'); done.className='empty'; done.style.paddingTop='12px';
+      done.textContent='\\ud83c\\udf89 You are all set — nicely done.';
+      list.appendChild(done);
+    }
+    panel.style.display='';
+    var dismiss=document.getElementById('onbDismiss');
+    if(dismiss && !dismiss.dataset.wired){
+      dismiss.dataset.wired='1';
+      dismiss.addEventListener('click',function(){localStorage.setItem('onbHidden','1');panel.style.display='none';});
     }
   }
   async function loadClients(){
@@ -1930,6 +1986,7 @@ export function dashboardPage(): string {
     await loadCalendar();
     document.getElementById('aiConsolePanel').style.display='';
     await loadAiEmployees();
+    await loadOnboarding();
     refreshUnread();
     setInterval(refreshUnread, 45000);
     buildSecNav();

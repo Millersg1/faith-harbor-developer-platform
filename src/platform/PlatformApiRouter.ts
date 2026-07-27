@@ -69,6 +69,7 @@ import {
   listWebsiteTemplates,
 } from "./marketplace/MarketplaceCatalog";
 import type { BrandingService } from "./branding/BrandingService";
+import type { OnboardingService } from "./onboarding/OnboardingService";
 import {
   AiEmployeeValidationError,
   type AiEmployeeService,
@@ -128,6 +129,7 @@ export interface PlatformApiDependencies {
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
   billing?: BillingService;
+  onboarding?: OnboardingService;
 }
 
 /**
@@ -141,6 +143,23 @@ export function createPlatformApiRouter(
   deps: PlatformApiDependencies,
 ): Router {
   const router = Router();
+
+  // ---- Onboarding / Success Center ----
+  if (deps.onboarding) {
+    const onboarding = deps.onboarding;
+
+    router.get(
+      "/onboarding",
+      (_req, res, next) => {
+        onboarding
+          .checklist()
+          .then((checklist) =>
+            res.json(checklist),
+          )
+          .catch(next);
+      },
+    );
+  }
 
   // ---- Notifications (per-user) ----
   if (deps.notifications) {

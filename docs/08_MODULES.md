@@ -80,6 +80,21 @@ Source lives under `src/platform/<module>/`.
   "running" when it ticked within 3 intervals. **Superadmin-only**
   (`GET /platform/admin/api/system-health`).
 
+### Onboarding / Success Center (`onboarding/`)
+- **Purpose:** a first-run getting-started checklist on the tenant dashboard —
+  add a brand, add a client, launch a website, hire an AI Employee, create a
+  campaign, invite a teammate.
+- **How:** `OnboardingService` is pure — it takes a signal map (`id →
+  () => Promise<boolean>`) and returns the checklist with per-step `done`,
+  `completed`/`total`, `percent`, and `allDone`. Steps are a closed, ordered,
+  code-defined catalogue; a step is **only shown when its signal is wired**, so
+  the checklist never reports progress it cannot measure. The server wires each
+  signal over the ambiently tenant-scoped services (branding saved? ≥1 client?
+  ≥1 website? ≥1 AI Employee? ≥1 campaign? ≥2 team members?), evaluated inside
+  the request context. A signal that throws counts as "not done", never a
+  crash. Tenant-scoped (`GET /api/platform/onboarding`); dismissal is a local
+  client preference.
+
 ### Marketplace (`marketplace/`)
 - **Purpose:** a code-defined catalogue a tenant browses and installs from — the
   first Phase 4 surface. `MarketplaceCatalog` holds `WEBSITE_TEMPLATES`

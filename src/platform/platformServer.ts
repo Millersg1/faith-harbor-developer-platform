@@ -9,6 +9,7 @@ import { PlatformAdminRepository } from "./admin/PlatformAdminRepository";
 import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
 import { PlatformHealthService } from "./health/PlatformHealthService";
+import { OnboardingService } from "./onboarding/OnboardingService";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { AiUsageRepository } from "./ai/AiUsageRepository";
 import { OrganizationAiSettingsRepository } from "./ai/OrganizationAiSettingsRepository";
@@ -630,6 +631,41 @@ async function start(): Promise<void> {
         "unknown",
     });
 
+  // Success Center checklist. Each signal is a REAL measurement of the
+  // (ambiently tenant-scoped) services, evaluated inside the request context.
+  const onboarding =
+    new OnboardingService({
+      brand: async () => {
+        const b = await branding.get();
+        return Boolean(
+          b.displayName ||
+            b.logoUrl ||
+            b.primaryColor ||
+            b.accentColor,
+        );
+      },
+      client: () =>
+        clients
+          .list()
+          .then((r) => r.length > 0),
+      website: () =>
+        websites
+          .list()
+          .then((r) => r.length > 0),
+      "ai-employee": () =>
+        aiEmployees
+          .list()
+          .then((r) => r.length > 0),
+      campaign: () =>
+        campaigns
+          .list()
+          .then((r) => r.length > 0),
+      team: () =>
+        users
+          .list()
+          .then((r) => r.length >= 2),
+    });
+
   const app = createPlatformApp({
     organizations,
     users,
@@ -675,6 +711,7 @@ async function start(): Promise<void> {
     adminSessions,
     platformAnalytics,
     platformHealth,
+    onboarding,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||
