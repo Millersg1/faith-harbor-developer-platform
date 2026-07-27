@@ -199,13 +199,19 @@ export function signupPage(): string {
   </form></div>`;
   const script = `
   var f=document.getElementById('f'),msg=document.getElementById('msg');
+  // Fetch inputs explicitly — the "name" field's id collides with the built-in
+  // window.name (a string), so the bare global would not be the element.
+  var orgEl=document.getElementById('org');
+  var nameEl=document.getElementById('name');
+  var emailEl=document.getElementById('email');
+  var pwEl=document.getElementById('password');
   f.addEventListener('submit',async function(e){
     e.preventDefault(); msg.className='msg'; msg.textContent='Creating…';
     try{
       var r=await fetch('/auth/signup',{method:'POST',credentials:'include',
         headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({organizationName:org.value.trim(),name:name.value.trim(),
-          email:email.value.trim(),password:password.value})});
+        body:JSON.stringify({organizationName:orgEl.value.trim(),name:nameEl.value.trim(),
+          email:emailEl.value.trim(),password:pwEl.value})});
       var d=await r.json().catch(function(){return {};});
       if(r.ok){window.location='/app';}
       else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not create organization.';}
@@ -270,16 +276,22 @@ export function resetPasswordPage(): string {
   </form></div>`;
   const script = `
   var f=document.getElementById('f'),msg=document.getElementById('msg');
+  // Resolve inputs explicitly: the confirm field's id ("confirm") collides with
+  // the built-in window.confirm, so the bare global does NOT reference the
+  // element — always fetch via getElementById.
+  var orgEl=document.getElementById('org');
+  var pwEl=document.getElementById('password');
+  var confirmEl=document.getElementById('confirm');
   var token=new URLSearchParams(location.search).get('token')||'';
   if(!token){msg.className='msg err';msg.textContent='This reset link is missing its token. Request a new one.';}
   f.addEventListener('submit',async function(e){
     e.preventDefault(); msg.className='msg';
-    if(password.value!==confirm.value){msg.className='msg err';msg.textContent='Passwords do not match.';return;}
+    if(pwEl.value!==confirmEl.value){msg.className='msg err';msg.textContent='Passwords do not match.';return;}
     msg.textContent='Saving…';
     try{
       var r=await fetch('/auth/reset-password',{method:'POST',credentials:'include',
-        headers:{'Content-Type':'application/json','X-Org-Slug':org.value.trim()},
-        body:JSON.stringify({token:token,newPassword:password.value})});
+        headers:{'Content-Type':'application/json','X-Org-Slug':orgEl.value.trim()},
+        body:JSON.stringify({token:token,newPassword:pwEl.value})});
       var d=await r.json().catch(function(){return {};});
       if(r.ok){msg.className='msg ok';msg.textContent='Password updated. Redirecting to sign in…';setTimeout(function(){window.location='/login';},1500);}
       else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not reset your password.';}
