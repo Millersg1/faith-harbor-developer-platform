@@ -1713,6 +1713,7 @@ export function dashboardPage(): string {
     var canUse=(myRole==='owner'||myRole==='admin');
     list.forEach(function(e){
       var row=document.createElement('div');row.className='item';
+      if(e.previewImage){var im=document.createElement('img');im.src=e.previewImage;im.alt='';im.loading='lazy';im.title='AI-generated sample';im.style.cssText='width:140px;height:88px;object-fit:cover;object-position:top;border-radius:8px;flex:none;margin-right:12px;background:rgba(127,127,127,0.12);';im.onerror=function(){im.style.display='none';};row.appendChild(im);}
       var left=document.createElement('div');
       var n=document.createElement('div');n.textContent=esc(e.name);n.style.fontWeight='600';left.appendChild(n);
       var s=document.createElement('div');s.className='sub';s.textContent=esc(e.description)+' \\u00b7 '+((e.employees||[]).length)+' assistant(s)';left.appendChild(s);
@@ -1747,6 +1748,7 @@ export function dashboardPage(): string {
     var canUse=(myRole==='owner'||myRole==='admin');
     list.forEach(function(t){
       var row=document.createElement('div');row.className='item';
+      if(t.previewImage){var im=document.createElement('img');im.src=t.previewImage;im.alt='';im.loading='lazy';im.title='AI-generated sample';im.style.cssText='width:140px;height:88px;object-fit:cover;object-position:top;border-radius:8px;flex:none;margin-right:12px;background:rgba(127,127,127,0.12);';im.onerror=function(){im.style.display='none';};row.appendChild(im);}
       var left=document.createElement('div');
       var n=document.createElement('div');n.textContent=esc(t.name);n.style.fontWeight='600';left.appendChild(n);
       var s=document.createElement('div');s.className='sub';s.textContent=esc(t.industry)+' \\u00b7 '+esc(t.description);left.appendChild(s);

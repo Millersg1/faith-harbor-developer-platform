@@ -131,6 +131,12 @@ export interface PlatformAppDependencies {
    * the platform admin console.
    */
   docsDir?: string;
+
+  /**
+   * Directory of marketplace preview images (AI-generated sample screenshots),
+   * served publicly at /marketplace-previews. Absent → previews aren't served.
+   */
+  marketplacePreviewsDir?: string;
 }
 
 /**
@@ -274,6 +280,23 @@ export function createPlatformApp(
       });
     },
   );
+
+  // Marketplace preview images — public, static sample screenshots referenced
+  // by the marketplace cards. No auth: they're marketing samples, not tenant
+  // data.
+  if (deps.marketplacePreviewsDir) {
+    app.use(
+      "/marketplace-previews",
+      express.static(
+        deps.marketplacePreviewsDir,
+        {
+          maxAge: "1d",
+          index: false,
+          fallthrough: true,
+        },
+      ),
+    );
+  }
 
   // Web UI (self-contained HTML that calls the API below). On a tenant's
   // VERIFIED custom domain that has a published website, "/" serves that

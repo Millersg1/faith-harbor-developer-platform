@@ -251,9 +251,15 @@ export function createWebsiteGenerator(
 const SYSTEM_PROMPT =
   "You are an expert web designer and front-end developer. You produce a " +
   "single, complete, self-contained, responsive HTML5 document with all CSS " +
-  "inline in a <style> tag and no external assets, scripts, or fonts. The " +
-  "design must be modern, polished, and specific to the business described. " +
-  "Return ONLY the HTML document — no explanation, no markdown fences.";
+  "inline in a <style> tag and no external assets, scripts, or fonts. " +
+  "CRITICAL: do NOT reference any external images or background-image URLs — " +
+  "there is no image hosting, so any external image renders blank. Represent " +
+  "all imagery with CSS gradients, solid color blocks, or inline SVG only. " +
+  "Every hero and section must have a visible colored or gradient background " +
+  "(use the accent color) so text is always legible against it — never place " +
+  "light text on a white or empty background. The design must be modern, " +
+  "polished, and specific to the business described. Return ONLY the HTML " +
+  "document — no explanation, no markdown fences.";
 
 function buildUserPrompt(
   brief: WebsiteBrief,

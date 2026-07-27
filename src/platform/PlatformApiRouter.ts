@@ -5517,13 +5517,19 @@ export function createPlatformApiRouter(
   if (deps.websites) {
     const websites = deps.websites;
 
-    // Browse the code-defined catalogue of website templates.
+    // Browse the code-defined catalogue of website templates. Each carries a
+    // previewImage path (an AI-generated sample screenshot served statically).
     router.get(
       "/marketplace/website-templates",
       (_req, res) => {
         res.json({
           templates:
-            listWebsiteTemplates(),
+            listWebsiteTemplates().map(
+              (t) => ({
+                ...t,
+                previewImage: `/marketplace-previews/${t.id}.jpg`,
+              }),
+            ),
         });
       },
     );
@@ -5626,13 +5632,19 @@ export function createPlatformApiRouter(
       },
     );
 
-    // Browse industry editions.
+    // Browse industry editions. previewImage is the edition's website
+    // template's sample screenshot.
     router.get(
       "/marketplace/editions",
       (_req, res) => {
         res.json({
           editions:
-            listIndustryEditions(),
+            listIndustryEditions().map(
+              (e) => ({
+                ...e,
+                previewImage: `/marketplace-previews/${e.websiteTemplateId}.jpg`,
+              }),
+            ),
         });
       },
     );

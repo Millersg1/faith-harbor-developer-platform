@@ -642,6 +642,10 @@ async function start(): Promise<void> {
     docsDir:
       process.env.DOCS_DIR ||
       `${process.cwd()}/docs`,
+    marketplacePreviewsDir:
+      process.env
+        .MARKETPLACE_PREVIEWS_DIR ||
+      `${process.cwd()}/marketplace-previews`,
   });
 
   const port = Number(
