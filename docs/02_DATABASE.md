@@ -74,6 +74,15 @@ new table is introduced in the milestone that adds its module (see
 | knowledge_collections | id, org, name, description, timestamps | |
 | knowledge_documents | id, org, collection_id→knowledge_collections, name, mime_type, status, chunk_count, error, created_at | |
 | knowledge_chunks | id, org, collection_id, document_id, position, content, created_at | (org,collection_id) |
+| ai_conversations | id, org, user_id, ai_employee_id, title, created_at, updated_at | (org,user_id,updated_at desc) — Command Center threads, **private to `user_id`** |
+| ai_conversation_messages | id, org, conversation_id→ai_conversations (CASCADE), role, content, provider, model, metadata JSONB, created_at | (org,conversation_id,created_at) |
+
+> **`ai_conversations` / `ai_conversation_messages`** back the AI Command
+> Center. They are additive (created in `initialize()` via `CREATE TABLE IF NOT
+> EXISTS`) and scoped by both `organization_id` **and** `user_id`, so a
+> conversation is only ever visible to the tenant user who created it. Messages
+> store the assistant's final text only — never chain-of-thought — and metadata
+> never carries secrets or system prompts.
 
 ## Phase 5 platform tables
 

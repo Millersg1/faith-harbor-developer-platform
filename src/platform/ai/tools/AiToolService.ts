@@ -25,6 +25,8 @@ export {
 export interface AiToolServiceOptions {
   audit?: AuditService;
   now?: () => number;
+  /** How long a pending write proposal stays confirmable (ms). Default 60 min. */
+  proposalTtlMs?: number;
 }
 
 /**
@@ -47,6 +49,8 @@ export interface AiToolInvokeOutcome {
  */
 export class AiToolService {
   private readonly now: () => number;
+  /** A pending write proposal expires this long after it was created. */
+  private readonly proposalTtlMs: number;
 
   constructor(
     private readonly registry: AiToolRegistry,
@@ -55,6 +59,9 @@ export class AiToolService {
   ) {
     this.now =
       deps.now ?? (() => Date.now());
+    this.proposalTtlMs =
+      deps.proposalTtlMs ??
+      60 * 60 * 1000;
   }
 
   /** The tools the given role may use, as safe descriptors. */
@@ -163,27 +170,22 @@ export class AiToolService {
     invocationId: string,
     ctx: AiToolContext,
   ): Promise<AiToolInvokeOutcome> {
-    const invocation =
+    // Cheap pre-checks for clear errors before the atomic claim: the proposal
+    // must exist, and the acting role must be allowed to run this exact tool
+    // (re-authorized here in addition to the route's requireRole).
+    const existing =
       await this.invocations.get(
         invocationId,
       );
 
-    if (!invocation) {
+    if (!existing) {
       throw new AiToolNotFoundError(
         "Invocation not found.",
       );
     }
 
-    if (
-      invocation.status !== "pending"
-    ) {
-      throw new AiToolValidationError(
-        "This action is no longer pending.",
-      );
-    }
-
     const tool = this.registry.get(
-      invocation.toolName,
+      existing.toolName,
     );
 
     if (
@@ -198,11 +200,61 @@ export class AiToolService {
       );
     }
 
-    const result = await this.runTool(
-      invocation.toolName,
-      invocation.args,
-      ctx,
-    );
+    // Atomically claim the proposal (pending → executing) so two concurrent
+    // confirmations can't both run the write. A failed claim means it was
+    // already handled by someone else, or it has expired.
+    const invocation =
+      await this.invocations.claimPending(
+        invocationId,
+        this.proposalTtlMs,
+      );
+
+    if (!invocation) {
+      const current =
+        await this.invocations.get(
+          invocationId,
+        );
+      if (
+        current &&
+        current.status === "pending"
+      ) {
+        // Still pending but past its TTL → expire it and refuse.
+        await this.invocations.update({
+          ...current,
+          status: "expired",
+          summary:
+            "Expired before confirmation.",
+          updatedAt: new Date(
+            this.now(),
+          ).toISOString(),
+        });
+        throw new AiToolValidationError(
+          "This action expired before it was confirmed — ask the assistant to propose it again.",
+        );
+      }
+      throw new AiToolValidationError(
+        "This action is no longer pending.",
+      );
+    }
+
+    // Execute with the SERVER-stored, validated name + args (the client cannot
+    // substitute a payload at confirm time). Any throw → failed, not stuck.
+    let result: AiToolResult;
+    try {
+      result = await this.runTool(
+        invocation.toolName,
+        invocation.args,
+        ctx,
+      );
+    } catch (error) {
+      result = {
+        ok: false,
+        summary:
+          error instanceof Error
+            ? error.message
+            : "The action failed to run.",
+      };
+    }
 
     const updated =
       await this.invocations.update({

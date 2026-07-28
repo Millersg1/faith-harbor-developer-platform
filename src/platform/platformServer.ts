@@ -103,6 +103,8 @@ import { AiToolInvocationRepository } from "./ai/tools/AiToolInvocationRepositor
 import { buildDefaultAiTools } from "./ai/tools/defaultAiTools";
 import { AiConsoleService } from "./ai/console/AiConsoleService";
 import { AiEmployeeService } from "./ai/employees/AiEmployeeService";
+import { AiConversationService } from "./ai/conversations/AiConversationService";
+import { AiConversationRepository } from "./ai/conversations/AiConversationRepository";
 import { AiEmployeeRepository } from "./ai/employees/AiEmployeeRepository";
 import {
   createChatClient,
@@ -588,6 +590,11 @@ async function start(): Promise<void> {
       new AiEmployeeRepository(db),
     );
 
+  const aiConversations =
+    new AiConversationService(
+      new AiConversationRepository(db),
+    );
+
   const search = new SearchService({
     clients,
     leads,
@@ -717,6 +724,7 @@ async function start(): Promise<void> {
     aiTools,
     aiConsole,
     aiEmployees,
+    aiConversations,
     websites,
     aiSettings,
     aiUsage,

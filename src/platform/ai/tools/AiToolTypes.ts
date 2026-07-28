@@ -69,7 +69,9 @@ export interface AiToolDefinition
 export type AiToolInvocationStatus =
   | "executed" // a read tool, or a confirmed write tool, that ran
   | "pending" // a write tool awaiting human confirmation
+  | "executing" // atomically claimed for execution (guards against double-run)
   | "rejected" // a pending write tool a human declined
+  | "expired" // a pending write tool that timed out before confirmation
   | "failed"; // a tool that threw when it ran
 
 /**

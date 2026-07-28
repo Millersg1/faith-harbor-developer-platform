@@ -61,6 +61,7 @@ import {
   type AiToolService,
 } from "./ai/tools/AiToolService";
 import type { AiConsoleService } from "./ai/console/AiConsoleService";
+import type { AiConversationService } from "./ai/conversations/AiConversationService";
 import {
   getIndustryEdition,
   getWebsiteTemplate,
@@ -135,6 +136,7 @@ export interface PlatformApiDependencies {
   aiTools?: AiToolService;
   aiConsole?: AiConsoleService;
   aiEmployees?: AiEmployeeService;
+  aiConversations?: AiConversationService;
   branding?: BrandingService;
   websites?: PlatformWebsiteService;
   aiSettings?: OrganizationAiSettingsService;
@@ -655,11 +657,20 @@ export function createPlatformApiRouter(
               body.content,
             ),
           })
-          .then((document) =>
+          .then((document) => {
+            // Record that a document was added — its name (a label) only,
+            // never the indexed text content.
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.knowledge.document.added",
+              subjectType: "knowledge",
+              subjectId: document.id,
+              title: `Indexed document ${document.name}`,
+            });
             res
               .status(201)
-              .json({ document }),
-          )
+              .json({ document });
+          })
           .catch((error: unknown) =>
             knowledgeError(
               res,
@@ -674,13 +685,22 @@ export function createPlatformApiRouter(
       "/knowledge/documents/:id",
       requireRole("owner", "admin"),
       (req, res, next) => {
+        const documentId = String(
+          req.params.id,
+        );
+
         knowledge
-          .deleteDocument(
-            String(req.params.id),
-          )
-          .then(() =>
-            res.json({ ok: true }),
-          )
+          .deleteDocument(documentId)
+          .then(() => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.knowledge.document.removed",
+              subjectType: "knowledge",
+              subjectId: documentId,
+              title: `Removed knowledge document`,
+            });
+            res.json({ ok: true });
+          })
           .catch((error: unknown) =>
             knowledgeError(
               res,
@@ -1524,13 +1544,33 @@ export function createPlatformApiRouter(
           body.args,
         );
 
+        const toolName = String(
+          req.params.name,
+        );
+
         aiTools
           .invoke(
-            String(req.params.name),
+            toolName,
             args,
             toolContext(req),
           )
-          .then((outcome) =>
+          .then((outcome) => {
+            // A write tool that returns "pending" has been *proposed* and is
+            // awaiting human approval — record it without the argument payload
+            // (which can carry user-entered PII) beyond the action name.
+            if (
+              outcome.status === "pending"
+            ) {
+              void deps.activity?.record({
+                ...actor(req),
+                type: "ai.action.proposed",
+                subjectType: "ai",
+                subjectId:
+                  outcome.invocation?.id,
+                title: `AI proposed action ${toolName}`,
+              });
+            }
+
             res
               .status(
                 outcome.status ===
@@ -1538,8 +1578,8 @@ export function createPlatformApiRouter(
                   ? 202
                   : 200,
               )
-              .json(outcome),
-          )
+              .json(outcome);
+          })
           .catch((error: unknown) =>
             handleToolError(
               res,
@@ -1569,14 +1609,31 @@ export function createPlatformApiRouter(
       "/ai/tools/invocations/:id/confirm",
       requireRole("owner", "admin"),
       (req, res, next) => {
+        const invocationId = String(
+          req.params.id,
+        );
+
         aiTools
           .confirm(
-            String(req.params.id),
+            invocationId,
             toolContext(req),
           )
-          .then((outcome) =>
-            res.json(outcome),
-          )
+          .then((outcome) => {
+            const ok =
+              outcome.result?.ok !== false;
+            // Approval and execution outcome — action name only, never args.
+            void deps.activity?.record({
+              ...actor(req),
+              type: ok
+                ? "ai.action.executed"
+                : "ai.action.failed",
+              subjectType: "ai",
+              subjectId:
+                outcome.invocation.id,
+              title: `${ok ? "Ran" : "Failed to run"} approved action ${outcome.invocation.toolName}`,
+            });
+            res.json(outcome);
+          })
           .catch((error: unknown) =>
             handleToolError(
               res,
@@ -1597,9 +1654,16 @@ export function createPlatformApiRouter(
             String(req.params.id),
             toolContext(req),
           )
-          .then((invocation) =>
-            res.json({ invocation }),
-          )
+          .then((invocation) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.action.rejected",
+              subjectType: "ai",
+              subjectId: invocation.id,
+              title: `Rejected AI action ${invocation.toolName}`,
+            });
+            res.json({ invocation });
+          })
           .catch((error: unknown) =>
             handleToolError(
               res,
@@ -1655,6 +1719,10 @@ export function createPlatformApiRouter(
         const employeeId = optionalString(
           body.employeeId,
         );
+        const conversationId =
+          optionalString(
+            body.conversationId,
+          );
 
         // Running "as" a saved employee applies its persona + tool whitelist.
         // Loading is tenant-scoped; the console intersects the whitelist with
@@ -1679,12 +1747,179 @@ export function createPlatformApiRouter(
               persona,
             ),
           )
-          .then((reply) =>
-            res.json(reply),
-          )
+          .then(async (reply) => {
+            // Persist the turn to the user's private conversation (best-effort:
+            // a persistence hiccup must never break the chat response).
+            const convo =
+              deps.aiConversations;
+            const userId = (
+              req as AuthedRequest
+            ).auth?.user?.id;
+            let out: Record<
+              string,
+              unknown
+            > = { ...reply };
+            if (convo && userId) {
+              try {
+                const cid =
+                  await convo.recordMessage(
+                    userId,
+                    {
+                      conversationId,
+                      role: "user",
+                      content: message,
+                      firstMessageForTitle:
+                        message,
+                      aiEmployeeId:
+                        employeeId,
+                    },
+                  );
+                await convo.recordMessage(
+                  userId,
+                  {
+                    conversationId: cid,
+                    role: "assistant",
+                    content:
+                      reply.reply || "",
+                  },
+                );
+                out = {
+                  ...reply,
+                  conversationId: cid,
+                };
+                void deps.activity?.record(
+                  {
+                    ...actor(req),
+                    type: "ai.message.generated",
+                    subjectType: "ai",
+                    subjectId: cid,
+                    title:
+                      "AI Command Center message",
+                  },
+                );
+              } catch {
+                // keep the reply even if persistence failed
+              }
+            }
+            res.json(out);
+          })
           .catch(next);
       },
     );
+
+    // ---- AI conversations (private to the acting user) ----
+    if (deps.aiConversations) {
+      const convos =
+        deps.aiConversations;
+      const uid = (
+        req0: unknown,
+      ): string | undefined =>
+        (req0 as AuthedRequest).auth
+          ?.user?.id;
+
+      router.get(
+        "/ai/conversations",
+        (req, res, next) => {
+          const userId = uid(req);
+          if (!userId) {
+            res.json({
+              conversations: [],
+            });
+            return;
+          }
+          convos
+            .list(userId)
+            .then((conversations) =>
+              res.json({
+                conversations,
+              }),
+            )
+            .catch(next);
+        },
+      );
+
+      router.get(
+        "/ai/conversations/:id/messages",
+        (req, res, next) => {
+          const userId = uid(req);
+          if (!userId) {
+            res.json({ messages: [] });
+            return;
+          }
+          convos
+            .messages(
+              String(req.params.id),
+              userId,
+            )
+            .then((messages) =>
+              res.json({ messages }),
+            )
+            .catch(next);
+        },
+      );
+
+      router.patch(
+        "/ai/conversations/:id",
+        (req, res, next) => {
+          const userId = uid(req);
+          if (!userId) {
+            badRequest(
+              res,
+              "NO_USER",
+              "Not signed in.",
+            );
+            return;
+          }
+          const title = optionalString(
+            asObject(req.body).title,
+          );
+          convos
+            .rename(
+              String(req.params.id),
+              userId,
+              title ?? "",
+            )
+            .then((ok) =>
+              ok
+                ? res.json({ ok: true })
+                : res
+                    .status(404)
+                    .json({
+                      error: {
+                        code: "NOT_FOUND",
+                        message:
+                          "Conversation not found.",
+                      },
+                    }),
+            )
+            .catch(next);
+        },
+      );
+
+      router.delete(
+        "/ai/conversations/:id",
+        (req, res, next) => {
+          const userId = uid(req);
+          if (!userId) {
+            badRequest(
+              res,
+              "NO_USER",
+              "Not signed in.",
+            );
+            return;
+          }
+          convos
+            .remove(
+              String(req.params.id),
+              userId,
+            )
+            .then(() =>
+              res.json({ ok: true }),
+            )
+            .catch(next);
+        },
+      );
+    }
   }
 
   // ---- AI employees (saved assistants) ----
@@ -1710,6 +1945,20 @@ export function createPlatformApiRouter(
         const body = asObject(
           req.body,
         );
+        const tools = toolNameList(
+          body.toolNames,
+        );
+        // Server-side allowlist validation: reject names not in the real tool
+        // registry, so an employee can never be pinned to a nonexistent action.
+        if (
+          rejectUnknownTools(
+            res,
+            tools,
+            deps.aiTools,
+          )
+        ) {
+          return;
+        }
 
         aiEmployees
           .create({
@@ -1722,15 +1971,20 @@ export function createPlatformApiRouter(
             persona: optionalString(
               body.persona,
             ),
-            toolNames: toolNameList(
-              body.toolNames,
-            ),
+            toolNames: tools,
           })
-          .then((employee) =>
+          .then((employee) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.employee.created",
+              subjectType: "ai",
+              subjectId: employee.id,
+              title: `Created AI employee ${employee.name}`,
+            });
             res
               .status(201)
-              .json({ employee }),
-          )
+              .json({ employee });
+          })
           .catch((error: unknown) => {
             if (
               error instanceof
@@ -1757,6 +2011,22 @@ export function createPlatformApiRouter(
         const body = asObject(
           req.body,
         );
+        const nextTools =
+          body.toolNames === undefined
+            ? undefined
+            : toolNameList(
+                body.toolNames,
+              );
+        if (
+          nextTools &&
+          rejectUnknownTools(
+            res,
+            nextTools,
+            deps.aiTools,
+          )
+        ) {
+          return;
+        }
 
         aiEmployees
           .update(
@@ -1775,13 +2045,7 @@ export function createPlatformApiRouter(
                   : String(
                       body.persona,
                     ),
-              toolNames:
-                body.toolNames ===
-                undefined
-                  ? undefined
-                  : toolNameList(
-                      body.toolNames,
-                    ),
+              toolNames: nextTools,
               status:
                 body.status ===
                 "archived"
@@ -1792,9 +2056,16 @@ export function createPlatformApiRouter(
                     : undefined,
             },
           )
-          .then((employee) =>
-            res.json({ employee }),
-          )
+          .then((employee) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.employee.updated",
+              subjectType: "ai",
+              subjectId: employee.id,
+              title: `Updated AI employee ${employee.name}`,
+            });
+            res.json({ employee });
+          })
           .catch((error: unknown) => {
             if (
               error instanceof
@@ -1823,13 +2094,21 @@ export function createPlatformApiRouter(
       "/ai/employees/:id",
       requireRole("owner", "admin"),
       (req, res, next) => {
+        const employeeId = String(
+          req.params.id,
+        );
         aiEmployees
-          .remove(
-            String(req.params.id),
-          )
-          .then(() =>
-            res.json({ ok: true }),
-          )
+          .remove(employeeId)
+          .then(() => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.employee.deleted",
+              subjectType: "ai",
+              subjectId: employeeId,
+              title: "Deleted an AI employee",
+            });
+            res.json({ ok: true });
+          })
           .catch((error: unknown) =>
             notFoundOrNext(
               res,
@@ -6320,9 +6599,16 @@ export function createPlatformApiRouter(
               body.model,
             ),
           })
-          .then((settings) =>
-            res.json({ settings }),
-          )
+          .then((settings) => {
+            // Audit the configuration — provider only, NEVER the key itself.
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.key.configured",
+              subjectType: "ai",
+              title: `Configured a ${settings.provider} AI key`,
+            });
+            res.json({ settings });
+          })
           .catch(
             (error: unknown) => {
               const message =
@@ -6354,12 +6640,19 @@ export function createPlatformApiRouter(
     router.delete(
       "/ai-settings",
       requireRole("owner"),
-      (_req, res, next) => {
+      (req, res, next) => {
         aiSettings
           .clear()
-          .then(() =>
-            res.json({ ok: true }),
-          )
+          .then(() => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "ai.key.removed",
+              subjectType: "ai",
+              title:
+                "Removed the AI key (using platform AI)",
+            });
+            res.json({ ok: true });
+          })
           .catch(next);
       },
     );
@@ -6554,6 +6847,38 @@ function toolNameList(
       typeof v === "string" &&
       v.trim().length > 0,
   );
+}
+
+/**
+ * Rejects (400) any tool name not in the real registry. Returns true when it
+ * has responded so the caller stops. An empty allowlist ("all my actions") is
+ * always allowed. Uses the owner view as the full catalogue superset.
+ */
+function rejectUnknownTools(
+  res: Response,
+  names: string[],
+  tools?: AiToolService,
+): boolean {
+  if (!names.length || !tools) {
+    return false;
+  }
+  const valid = new Set(
+    tools
+      .describe("owner")
+      .map((t) => t.name),
+  );
+  const unknown = names.filter(
+    (n) => !valid.has(n),
+  );
+  if (unknown.length) {
+    badRequest(
+      res,
+      "INVALID_TOOL",
+      `Unknown action(s): ${unknown.join(", ")}`,
+    );
+    return true;
+  }
+  return false;
 }
 
 /** Maps AI-tool errors to HTTP status codes; otherwise defers. */

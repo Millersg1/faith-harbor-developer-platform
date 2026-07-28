@@ -15,7 +15,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Billing | ~70% | Stripe subscriptions (live-capable); customer portal + tax pending |
 | Website Builder | ~78% | Reorganized Website workspace (6 accessible sub-sections); generate (durably idempotent) + publish to verified domain; AI-employee packages vs standalone templates clearly separated; provenance persisted |
 | White-label | ~65% | Branded printable invoices + branded emails + branded client portal (P5-M4); per-doc PDF theming beyond invoices pending |
-| AI | ~70% | BYO keys, metering, caps, KB retrieval, tool registry, Command Center, Employees (role-scoped assistants); Phase 3 complete |
+| AI | ~76% | BYO keys (write-only), metering, caps, KB retrieval; redesigned AI workspace (5 accessible sub-sections); Command Center with persisted, creator-private conversations; Employees with a registry-driven tool picker; hardened write approvals (single-use, expiry, role re-auth, payload/tenant binding). Debt: key encryption at rest, durable chat idempotency, richer KB ingestion |
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
 | Marketplace | ~20% | Website-template catalogue live (P4-M1); industry editions + installable modules pending |
 | Analytics | ~40% | Superadmin MRR/plan-mix/AI-cost (P5-M1) + system-health panel (P5-M2, live DB/worker/SMTP/AI/Stripe); per-tenant dashboards pending |

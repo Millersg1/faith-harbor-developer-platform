@@ -264,6 +264,30 @@ async function buildApp() {
     new AiEmployeeService(
       new AiEmployeeRepository(),
     );
+  // Wire a real tool registry so employee tool-name allowlists are validated
+  // server-side against actual registered actions.
+  const reg = new AiToolRegistry();
+  const mkTool = (
+    name: string,
+  ): AiToolDefinition => ({
+    name,
+    title: name,
+    description: name,
+    mode: "read",
+    params: [],
+    run: async () => ({
+      ok: true,
+      summary: "",
+    }),
+  });
+  reg.register(mkTool("clients.list"));
+  reg.register(
+    mkTool("crm.leads.list"),
+  );
+  const aiTools = new AiToolService(
+    reg,
+    new AiToolInvocationRepository(),
+  );
 
   const app = createPlatformApp({
     organizations,
@@ -291,6 +315,7 @@ async function buildApp() {
     domains:
       new OrganizationDomainService(),
     aiEmployees,
+    aiTools,
     admins: new PlatformAdminService(),
     adminSessions:
       new PlatformAdminSessionService(),
@@ -341,6 +366,39 @@ describe("AI employees API", () => {
     expect(
       list.body.employees[0].name,
     ).toBe("Support Agent");
+  });
+
+  it("rejects an employee pinned to a nonexistent action", async () => {
+    const { app, cookie } =
+      await buildApp();
+
+    const res = await request(app)
+      .post(
+        "/api/platform/ai/employees",
+      )
+      .set("Cookie", cookie)
+      .send({
+        name: "Rogue Agent",
+        toolNames: [
+          "clients.list",
+          "system.delete_everything",
+        ],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe(
+      "INVALID_TOOL",
+    );
+
+    // Nothing was created.
+    const list = await request(app)
+      .get(
+        "/api/platform/ai/employees",
+      )
+      .set("Cookie", cookie);
+    expect(
+      list.body.employees,
+    ).toHaveLength(0);
   });
 
   it("rejects a nameless employee with 400", async () => {

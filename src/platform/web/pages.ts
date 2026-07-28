@@ -71,13 +71,20 @@ const STYLES = `
   .card .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 22px; }
   label { display: block; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.03em;
     text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
-  input, select {
-    width: 100%; padding: 12px 14px; font-size: 0.95rem;
+  input, select, textarea {
+    width: 100%; padding: 12px 14px; font-size: 0.95rem; font-family: inherit;
     color: var(--text); background: rgba(0,0,0,0.25);
     border: 1px solid var(--border); border-radius: 11px; outline: none;
   }
   select { appearance: none; }
-  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45,212,191,0.18); }
+  textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
+  input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.85; }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(45,212,191,0.18); }
+  input:disabled, select:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+  /* Keep autofilled fields on the dark surface (Chrome overrides otherwise). */
+  input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill {
+    -webkit-text-fill-color: var(--text); caret-color: var(--text);
+    box-shadow: 0 0 0 1000px var(--surface-2) inset; transition: background-color 9999s ease-out; }
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     width: 100%; margin-top: 20px; padding: 12px 16px; font-size: 0.95rem; font-weight: 700;
@@ -169,15 +176,51 @@ const STYLES = `
   /* ---- Website workspace ---- */
   /* Every Website panel spans the full grid width, so the AI builder no longer
      stretches to match the tall catalog beside it (the old empty column). */
-  [data-websub] { grid-column: 1 / -1; }
-  .websub-hide { display: none !important; }
-  .websubnav { grid-column: 1 / -1; display: flex; gap: 8px; overflow-x: auto; padding: 8px;
+  [data-websub], [data-aisub] { grid-column: 1 / -1; }
+  .websub-hide, .aisub-hide { display: none !important; }
+  .websubnav, .aisubnav { grid-column: 1 / -1; display: flex; gap: 8px; overflow-x: auto; padding: 8px;
     background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; margin-top: 18px; }
-  .websubnav button { white-space: nowrap; font-size: 0.82rem; font-weight: 600; color: var(--muted); cursor: pointer;
+  .websubnav button, .aisubnav button { white-space: nowrap; font-size: 0.82rem; font-weight: 600; color: var(--muted); cursor: pointer;
     background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; }
-  .websubnav button:hover { color: var(--text); border-color: var(--accent); }
-  .websubnav button.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
-  .websubnav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .websubnav button:hover, .aisubnav button:hover { color: var(--text); border-color: var(--accent); }
+  .websubnav button.active, .aisubnav button.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+  .websubnav button:focus-visible, .aisubnav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---- AI Command Center conversation ---- */
+  .chat-wrap { display: grid; grid-template-columns: 240px 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 760px) { .chat-wrap { grid-template-columns: 1fr; } .chat-threads { max-height: 180px; } }
+  .chat-threads { display: flex; flex-direction: column; gap: 6px; max-height: 440px; overflow-y: auto; }
+  .chat-threads .thread { text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 11px; cursor: pointer; color: var(--text); font-size: 0.85rem; width: 100%; }
+  .chat-threads .thread:hover { border-color: var(--accent); }
+  .chat-threads .thread.active { border-color: var(--accent); background: var(--surface-3); }
+  .chat-threads .thread .sub { color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+  .chat-main { display: flex; flex-direction: column; min-width: 0; }
+  .chat-log { display: flex; flex-direction: column; gap: 10px; min-height: 220px; max-height: 460px; overflow-y: auto; padding: 4px; }
+  .bubble { max-width: 88%; padding: 9px 13px; border-radius: 13px; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+  .bubble.user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+  .bubble.assistant { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble .meta { display: block; font-size: 0.68rem; opacity: 0.7; margin-top: 5px; }
+  .bubble .copy { background: none; border: 0; color: inherit; opacity: 0.6; cursor: pointer; font-size: 0.7rem; padding: 0; margin-top: 4px; width: auto; }
+  .bubble .copy:hover { opacity: 1; text-decoration: underline; }
+  .chat-step { align-self: flex-start; font-size: 0.76rem; color: var(--muted); padding: 2px 4px; }
+  .chat-cite { align-self: flex-start; font-size: 0.74rem; color: var(--muted-strong); background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 10px; max-width: 88%; }
+  .approve-card { align-self: flex-start; max-width: 92%; border: 1px solid var(--warn); border-radius: 11px; padding: 11px 13px; background: rgba(251,191,36,0.06); }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 10px; font-size: 0.82rem; margin: 6px 0; }
+  .kv .k { color: var(--muted); }
+  .kv .v { color: var(--text); word-break: break-word; font-variant-numeric: tabular-nums; }
+  /* AI Employee tool picker */
+  .toolpick { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; background: rgba(0,0,0,0.18); }
+  .toolpick .grp { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 10px 0 5px; }
+  .toolpick .grp:first-child { margin-top: 0; }
+  .toolpick label { display: flex; align-items: flex-start; gap: 9px; margin: 5px 0; text-transform: none; font-size: 0.85rem;
+    font-weight: 500; color: var(--text); letter-spacing: 0; cursor: pointer; }
+  .toolpick label input { width: auto; flex: none; margin-top: 2px; }
+  .wtag { display: inline-block; font-size: 0.62rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+  .wtag.w { color: #fcd34d; border: 1px solid rgba(251,191,36,0.45); background: rgba(251,191,36,0.08); }
+  .wtag.r { color: #9df0b8; border: 1px solid rgba(74,222,128,0.4); background: rgba(74,222,128,0.08); }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   /* Responsive template/package card grid: phone 1, tablet 2, desktop 3. */
   .cardgrid { display: grid; gap: 14px; grid-template-columns: 1fr; }
   @media (min-width: 620px) { .cardgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -879,52 +922,76 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="wfmsg"></div>
       </div>
-      <div class="panel" id="aiConsolePanel" style="display:none;">
-        <h2>AI Command Center</h2>
-        <p class="hint">Ask about your business or ask the assistant to do something. It reads live data to answer, and anything that changes data is queued for you to confirm.</p>
-        <div class="f" style="max-width:320px;"><label for="aiEmployeeSelect">Assistant</label><select id="aiEmployeeSelect"><option value="">General assistant</option></select></div>
-        <div id="aiChatLog" style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto;padding:4px 0;"></div>
-        <div class="inline" style="margin-top:8px;">
-          <div class="f" style="flex:1;"><label for="aiChatInput">Message</label><input id="aiChatInput" placeholder="e.g. How many leads do we have?" autocomplete="off" /></div>
-          <button class="btn" id="aiChatSend" style="width:auto;">Send</button>
-        </div>
-        <div class="msg" id="aicmsg"></div>
+      <div class="aisubnav" id="aisubnav" role="tablist" aria-label="AI workspace">
+        <button role="tab" data-aisub="command" aria-controls="aisub-command">Command Center</button>
+        <button role="tab" data-aisub="employees" aria-controls="aisub-employees">AI Employees</button>
+        <button role="tab" data-aisub="actions" aria-controls="aisub-actions">Actions &amp; Approvals</button>
+        <button role="tab" data-aisub="knowledge" aria-controls="aisub-knowledge">Knowledge Base</button>
+        <button role="tab" data-aisub="usage" aria-controls="aisub-usage">Usage &amp; Settings</button>
       </div>
-      <div class="panel" id="aiToolsPanel" style="display:none;">
-        <h2>AI Actions <span class="pill">owner/admin</span></h2>
-        <p class="hint">The actions an AI assistant can take on your behalf. Read actions run immediately; actions that change data are proposed here and only run when you confirm them.</p>
-        <div class="sub" style="margin:6px 0 4px;font-weight:600;">Awaiting your confirmation</div>
+      <div class="panel" data-aisub="command" id="aisub-command" role="tabpanel" aria-label="Command Center" tabindex="0" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+          <div><h2>Command Center</h2><p class="hint" style="margin-bottom:0;">Chat with an AI Employee. It reads live data to answer; anything that changes data is queued for your approval.</p></div>
+          <button class="btn btn-ghost" id="aiNewConvo" style="font-size:0.82rem;">+ New conversation</button>
+        </div>
+        <div class="f" style="max-width:320px;margin-top:10px;"><label for="aiEmployeeSelect">AI Employee</label><select id="aiEmployeeSelect"><option value="">General assistant</option></select></div>
+        <div class="chat-wrap" style="margin-top:12px;">
+          <div>
+            <div class="hint" style="margin-bottom:6px;">Conversations</div>
+            <div class="chat-threads" id="aiThreads"><div class="empty">No conversations yet.</div></div>
+          </div>
+          <div class="chat-main">
+            <div class="chat-log" id="aiChatLog" aria-live="polite"><div class="empty">Ask a question to start a conversation.</div></div>
+            <div class="inline" style="margin-top:10px;align-items:flex-end;">
+              <div class="f" style="flex:1;"><label for="aiChatInput">Message</label><textarea id="aiChatInput" rows="2" placeholder="e.g. How many leads do we have?"></textarea></div>
+              <button class="btn" id="aiChatSend" style="width:auto;">Send</button>
+            </div>
+            <div class="visually-hidden" id="aiStatus" role="status" aria-live="polite"></div>
+            <div class="msg" id="aicmsg"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" data-aisub="actions" id="aisub-actions" role="tabpanel" aria-label="Actions and Approvals" tabindex="0" style="display:none;">
+        <h2>Actions &amp; Approvals <span class="pill">owner/admin</span></h2>
+        <p class="hint">Read actions run immediately when allowed; actions that change data are proposed and only run when a human approves them.</p>
+        <div class="sub" style="margin:12px 0 4px;font-weight:700;">Pending approvals</div>
         <div class="list" id="aiPending"><div class="empty">Loading…</div></div>
-        <div class="sub" style="margin:14px 0 4px;font-weight:600;">Available actions</div>
+        <div class="sub" style="margin:18px 0 4px;font-weight:700;">Available actions</div>
+        <div class="filters">
+          <input id="aiToolSearch" type="search" placeholder="Search actions…" aria-label="Search actions" />
+          <select id="aiToolMode" aria-label="Filter by type"><option value="">All types</option><option value="read">Read (runs now)</option><option value="write">Needs approval</option></select>
+        </div>
         <div class="list" id="aiToolsList"><div class="empty">Loading…</div></div>
+        <div class="sub" style="margin:18px 0 4px;font-weight:700;">Execution history</div>
+        <div class="list" id="aiHistory"><div class="empty">Loading…</div></div>
         <div class="msg" id="aitmsg"></div>
       </div>
-      <div class="panel" id="aiEmployeesPanel" style="display:none;">
-        <h2>AI Employees <span class="pill">owner/admin</span></h2>
-        <p class="hint">Saved assistants with their own persona and a limited set of actions. Pick one in the Command Center to work with it. An assistant can only ever do less than your own role allows — never more.</p>
-        <div class="list" id="aiEmployees"><div class="empty">Loading…</div></div>
-        <div class="f"><label for="aeName">Name</label><input id="aeName" placeholder="Sales Assistant" /></div>
-        <div class="f"><label for="aeTitle">Title</label><input id="aeTitle" placeholder="Sales" /></div>
-        <div class="f"><label for="aePersona">Persona / instructions</label><textarea id="aePersona" rows="3" placeholder="You help qualify and follow up with new leads. Be concise and friendly." style="width:100%;"></textarea></div>
-        <div class="f"><label for="aeTools">Limit to actions (optional, comma-separated tool names)</label><input id="aeTools" placeholder="crm.leads.list, crm.leads.create" /></div>
-        <button class="btn" id="addEmployee" style="width:auto;">Create assistant</button>
+      <div class="panel" data-aisub="employees" id="aisub-employees" role="tabpanel" aria-label="AI Employees" tabindex="0" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+          <div><h2>AI Employees <span class="pill">owner/admin</span></h2><p class="hint" style="margin-bottom:0;">Saved AI Employees with their own role, instructions, and a limited set of allowed actions. An AI Employee can only ever do less than your own role allows — never more.</p></div>
+          <button class="btn" id="aeCreateBtn" style="width:auto;">+ New AI Employee</button>
+        </div>
+        <div class="list" id="aiEmployees" style="margin-top:12px;"><div class="empty">Loading…</div></div>
         <div class="msg" id="aemsg"></div>
       </div>
-      <div class="panel" id="knowledgePanel" style="display:none;">
-        <h2>AI Knowledge Base <span class="pill">owner/admin</span></h2>
-        <p class="hint">Add documents, then ask questions grounded in them — answers cite their sources.</p>
+      <div class="panel" data-aisub="knowledge" id="aisub-knowledge" role="tabpanel" aria-label="Knowledge Base" tabindex="0" style="display:none;">
+        <h2>Knowledge Base <span class="pill">owner/admin</span></h2>
+        <p class="hint">Add text documents to a collection, then ask questions grounded in them — answers cite the documents they used. (Text entry is the supported ingestion method today.)</p>
+        <div class="sub" style="margin:10px 0 4px;font-weight:700;">Collections</div>
         <div class="inline">
           <div class="f"><label for="kbcname">New collection</label><input id="kbcname" placeholder="Policies" /></div>
           <button class="btn" id="addCollection" style="width:auto;">Create</button>
         </div>
-        <div class="f"><label for="kbcollection">Collection</label><select id="kbcollection"></select></div>
-        <div class="f"><label for="kbdocname">Document name</label><input id="kbdocname" placeholder="Refund policy" /></div>
-        <div class="f"><label for="kbdoccontent">Document text</label><textarea id="kbdoccontent" rows="4" placeholder="Paste text content to index…" style="width:100%;"></textarea></div>
+        <div class="f" style="margin-top:8px;"><label for="kbcollection">Active collection</label><select id="kbcollection"></select></div>
+        <div class="sub" style="margin:14px 0 4px;font-weight:700;">Documents</div>
+        <div class="list" id="kbdocs"><div class="empty">No documents.</div></div>
+        <div class="f" style="margin-top:10px;"><label for="kbdocname">Document name</label><input id="kbdocname" placeholder="Refund policy" /></div>
+        <div class="f"><label for="kbdoccontent">Document text</label><textarea id="kbdoccontent" rows="4" placeholder="Paste text content to index…"></textarea></div>
         <button class="btn" id="addDocument" style="width:auto;">Add document</button>
-        <div class="list" id="kbdocs" style="margin-top:12px;"><div class="empty">No documents.</div></div>
-        <div class="f" style="margin-top:12px;"><label for="kbquestion">Ask a question</label><input id="kbquestion" placeholder="What is our refund window?" /></div>
+        <div class="sub" style="margin:16px 0 4px;font-weight:700;">Grounded Q&amp;A</div>
+        <div class="f"><label for="kbquestion">Ask a question</label><input id="kbquestion" placeholder="What is our refund window?" /></div>
         <button class="btn" id="askKnowledge" style="width:auto;">Ask</button>
-        <div class="list" id="kbanswer"></div>
+        <div id="kbanswer" style="margin-top:10px;"></div>
         <div class="msg" id="kbmsg"></div>
       </div>
       <div class="panel" id="emailPanel" style="display:none;">
@@ -966,20 +1033,23 @@ export function dashboardPage(): string {
         <button class="btn" id="changePw" style="width:auto;margin-top:12px;">Change password</button>
         <div class="msg" id="cpmsg"></div>
       </div>
-      <div class="panel" id="aiPanel" style="display:none;">
-        <h2>AI settings <span class="pill">owner</span></h2>
-        <p class="hint">Use your own AI key so generation runs on your account. Without one, the platform's included AI is used.</p>
+      <div class="panel" data-aisub="usage" id="aisub-usage" role="tabpanel" aria-label="Usage and Settings" tabindex="0" style="display:none;">
+        <h2>Usage &amp; Settings <span class="pill">owner</span></h2>
+        <div class="sub" style="margin:8px 0 4px;font-weight:700;">Current AI source</div>
         <div class="hint" id="aiCurrent">Loading…</div>
+        <div class="sub" style="margin:14px 0 4px;font-weight:700;">This month's usage &amp; allowance</div>
         <div class="hint" id="aiUsage"></div>
+        <div class="sub" style="margin:14px 0 4px;font-weight:700;">Your own AI key <span class="pill">owner</span></div>
+        <p class="hint">Add your own provider key so generation runs on your account. Your key is stored securely and is <strong>never</strong> shown again — only its status and a short fingerprint.</p>
         <label for="aiProvider">Provider</label>
         <select id="aiProvider"><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select>
-        <label for="aiKey">API key</label>
-        <input id="aiKey" placeholder="sk-…" autocomplete="off" />
+        <label for="aiKey">API key (write-only)</label>
+        <input id="aiKey" type="password" placeholder="sk-…" autocomplete="off" />
         <label for="aiModel">Model (optional)</label>
         <input id="aiModel" placeholder="gpt-4o-mini" />
         <div class="inline">
           <button class="btn" id="saveAi" style="width:auto;">Save key</button>
-          <button class="btn ghost" id="removeAi" style="width:auto;">Use platform AI</button>
+          <button class="btn ghost" id="removeAi" style="width:auto;">Remove key (use platform AI)</button>
         </div>
         <div class="msg" id="aimsg"></div>
       </div>
@@ -1713,6 +1783,17 @@ export function dashboardPage(): string {
     var h=Math.floor(m/60); if(h<24)return h+'h ago';
     return Math.floor(h/24)+'d ago';
   }
+  // Human "time remaining" for a future deadline (e.g. a proposal's expiry).
+  // Returns an honest "expired" once the deadline has passed.
+  function timeUntil(iso){
+    var d=Date.parse(iso); if(!d)return '';
+    var s=Math.floor((d-Date.now())/1000);
+    if(s<=0)return 'expired';
+    if(s<60)return 'in under a minute';
+    var m=Math.floor(s/60); if(m<60)return 'in '+m+'m';
+    var h=Math.floor(m/60); if(h<24)return 'in '+h+'h';
+    return 'in '+Math.floor(h/24)+'d';
+  }
   function setBell(count){
     var badge=document.getElementById('bellCount');
     if(!badge)return;
@@ -1976,60 +2057,134 @@ export function dashboardPage(): string {
     var r=await api('/api/platform/workflows/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});
     if(r.ok)loadWorkflows();
   }
-  var aiHistory=[];
+  var aiHistory=[], aiConvoId='', aiSending=false;
   function aiBubble(role,text){
     var log=document.getElementById('aiChatLog');
-    var b=document.createElement('div');
-    b.style.cssText='max-width:85%;padding:8px 12px;border-radius:10px;white-space:pre-wrap;font-size:0.9rem;'+(role==='user'?'align-self:flex-end;background:#2563eb;color:#fff;':'align-self:flex-start;background:rgba(127,127,127,0.14);');
-    b.textContent=text;log.appendChild(b);log.scrollTop=log.scrollHeight;return b;
+    var b=document.createElement('div');b.className='bubble '+(role==='user'?'user':'assistant');
+    var body=document.createElement('div');body.textContent=text;b.appendChild(body);
+    if(role==='assistant'){
+      var copy=document.createElement('button');copy.className='copy';copy.type='button';copy.textContent='Copy';
+      copy.addEventListener('click',function(){try{navigator.clipboard.writeText(body.textContent||'');copy.textContent='Copied';setTimeout(function(){copy.textContent='Copy';},1200);}catch(_){}});
+      b.appendChild(copy);
+    }
+    log.appendChild(b);log.scrollTop=log.scrollHeight;return body;
+  }
+  function aiSetStatus(t){var s=document.getElementById('aiStatus');if(s)s.textContent=t;}
+  async function loadConversations(){
+    var r=await api('/api/platform/ai/conversations'); if(!r.ok)return;
+    var d=await r.json(); renderThreads(d.conversations||[]);
+  }
+  function renderThreads(list){
+    var el=document.getElementById('aiThreads'); if(!el)return; clear(el);
+    if(!list.length){el.appendChild(emptyMsg('No conversations yet.'));return;}
+    list.forEach(function(c){
+      var b=document.createElement('button');b.className='thread'+(c.id===aiConvoId?' active':'');b.type='button';
+      var t=document.createElement('div');t.textContent=esc(c.title);b.appendChild(t);
+      var s=document.createElement('div');s.className='sub';s.textContent=timeAgo(c.updatedAt);b.appendChild(s);
+      b.addEventListener('click',function(){openConversation(c.id);});
+      el.appendChild(b);
+    });
+  }
+  function newConversation(){
+    aiConvoId='';aiHistory=[];
+    var log=document.getElementById('aiChatLog');clear(log);log.appendChild(emptyMsg('Ask a question to start a conversation.'));
+    var t=document.querySelectorAll('#aiThreads .thread');for(var i=0;i<t.length;i++)t[i].classList.remove('active');
+    var inp=document.getElementById('aiChatInput');if(inp)inp.focus();
+  }
+  async function openConversation(id){
+    aiConvoId=id;aiHistory=[];
+    var log=document.getElementById('aiChatLog');clear(log);
+    var t=document.querySelectorAll('#aiThreads .thread');for(var i=0;i<t.length;i++)t[i].classList.remove('active');
+    var r=await api('/api/platform/ai/conversations/'+encodeURIComponent(id)+'/messages');
+    if(!r.ok){log.appendChild(emptyMsg('Could not load this conversation.'));return;}
+    var d=await r.json();var msgs=d.messages||[];
+    if(!msgs.length){log.appendChild(emptyMsg('No messages yet.'));return;}
+    msgs.forEach(function(m){
+      if(m.role==='user'||m.role==='assistant'){aiBubble(m.role,m.content);aiHistory.push({role:m.role,content:m.content});}
+    });
+    if(aiHistory.length>24)aiHistory=aiHistory.slice(-24);
+    loadConversations();
   }
   async function sendAiChat(){
+    if(aiSending)return;
     var input=document.getElementById('aiChatInput');var msg=(input.value||'').trim();if(!msg)return;
-    input.value='';setMsg('aicmsg','','');
+    var btn=document.getElementById('aiChatSend');
+    aiSending=true;if(btn)btn.disabled=true;
+    var log=document.getElementById('aiChatLog');var firstEmpty=log.querySelector('.empty');if(firstEmpty)firstEmpty.remove();
+    setMsg('aicmsg','','');aiSetStatus('Sending your message…');
     aiBubble('user',msg);
     var thinking=aiBubble('assistant','\\u2026');
     var empSel=document.getElementById('aiEmployeeSelect');
     var employeeId=empSel?empSel.value:'';
-    var r=await api('/api/platform/ai/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:aiHistory,employeeId:employeeId})});
-    if(!r.ok){thinking.textContent='Sorry — something went wrong.';return;}
+    var savedText=input.value;input.value='';
+    var r=await api('/api/platform/ai/console/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,history:aiHistory,employeeId:employeeId,conversationId:aiConvoId||undefined})});
+    aiSending=false;if(btn)btn.disabled=false;
+    if(!r.ok){
+      thinking.textContent='Sorry — the AI Employee is unavailable right now.';
+      input.value=savedText; // preserve the message so it can be retried
+      aiSetStatus('Message failed. Your text was kept so you can retry.');
+      return;
+    }
     var d=await r.json();
     thinking.textContent=d.reply||'';
+    aiSetStatus('Response received.');
+    if(d.conversationId){aiConvoId=d.conversationId;loadConversations();}
     (d.steps||[]).forEach(function(s){
-      var line=document.createElement('div');line.className='sub';line.style.cssText='align-self:flex-start;font-size:0.78rem;opacity:0.8;';
-      line.textContent=(s.mode==='write'?'\\u270e ':'\\u2699 ')+s.tool+': '+s.summary;
-      document.getElementById('aiChatLog').appendChild(line);
+      var line=document.createElement('div');line.className='chat-step';
+      line.textContent=(s.mode==='write'?'\\u270e ':'\\u2699 ')+esc(s.tool)+': '+esc(s.summary);
+      log.appendChild(line);
     });
+    (d.citations||[]).forEach(function(c){/* reserved for future console citations */});
     if((d.pending||[]).length){
       d.pending.forEach(function(inv){renderAiPending(inv);});
-      loadAiTools();
+      aiSubLoaded.actions=false;
     }
     aiHistory.push({role:'user',content:msg});
     aiHistory.push({role:'assistant',content:d.reply||''});
     if(aiHistory.length>24)aiHistory=aiHistory.slice(-24);
-    document.getElementById('aiChatLog').scrollTop=document.getElementById('aiChatLog').scrollHeight;
+    log.scrollTop=log.scrollHeight;
   }
   function renderAiPending(inv){
     var log=document.getElementById('aiChatLog');
-    var card=document.createElement('div');card.style.cssText='align-self:flex-start;max-width:85%;border:1px solid rgba(127,127,127,0.3);border-radius:10px;padding:10px 12px;';
-    var t=document.createElement('div');t.style.fontWeight='600';t.textContent='Confirm: '+esc(inv.toolName);card.appendChild(t);
-    var s=document.createElement('div');s.className='sub';s.textContent=summarizeArgs(inv.args);card.appendChild(s);
+    var card=document.createElement('div');card.className='approve-card';
+    var t=document.createElement('div');t.style.fontWeight='700';t.textContent='Approval needed: '+esc(inv.toolName);card.appendChild(t);
+    card.appendChild(kvBlock(inv.args));
     var canConfirm=(myRole==='owner'||myRole==='admin');
     if(canConfirm){
       var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;margin-top:8px;';
-      var ok=document.createElement('button');ok.className='btn';ok.style.padding='6px 12px';ok.textContent='Confirm';
+      var ok=document.createElement('button');ok.className='btn';ok.style.cssText='width:auto;padding:6px 12px;';ok.textContent='Approve & run';
       ok.addEventListener('click',function(){card.remove();decideAi(inv.id,'confirm');});actions.appendChild(ok);
-      var no=document.createElement('button');no.className='btn ghost';no.style.padding='6px 12px';no.textContent='Decline';
+      var no=document.createElement('button');no.className='btn ghost';no.style.padding='6px 12px';no.textContent='Reject';
       no.addEventListener('click',function(){card.remove();decideAi(inv.id,'reject');});actions.appendChild(no);
       card.appendChild(actions);
     }else{
-      var note=document.createElement('div');note.className='sub';note.style.marginTop='6px';note.textContent='An owner or admin can confirm this in AI Actions.';card.appendChild(note);
+      var note=document.createElement('div');note.className='sub';note.style.marginTop='6px';note.textContent='An owner or admin can approve this in Actions & Approvals.';card.appendChild(note);
     }
     log.appendChild(card);log.scrollTop=log.scrollHeight;
   }
+  // Renders an object's fields as a readable key/value block (escaped).
+  function kvBlock(args){
+    var kv=document.createElement('div');kv.className='kv';
+    if(args)for(var k in args){if(Object.prototype.hasOwnProperty.call(args,k)){
+      var kd=document.createElement('div');kd.className='k';kd.textContent=k;kv.appendChild(kd);
+      var vd=document.createElement('div');vd.className='v';vd.textContent=String(args[k]);kv.appendChild(vd);
+    }}
+    return kv;
+  }
+  // The real tool registry (role-filtered), loaded once and reused by the
+  // employee editor's tool picker. Never invents tool names.
+  var aiToolCatalog=null;
+  async function loadToolCatalog(force){
+    if(aiToolCatalog&&!force)return aiToolCatalog;
+    var r=await api('/api/platform/ai/tools');
+    if(!r.ok){aiToolCatalog=[];return aiToolCatalog;}
+    var d=await r.json();aiToolCatalog=d.tools||[];return aiToolCatalog;
+  }
+  function toolGroupOf(name){var i=String(name).indexOf('.');return i>0?String(name).slice(0,i):'general';}
   async function loadAiEmployees(){
     var r=await api('/api/platform/ai/employees');if(!r.ok)return;
     var d=await r.json();var list=d.employees||[];
-    // Populate the Command Center selector.
+    // Populate the Command Center selector (active employees only).
     var sel=document.getElementById('aiEmployeeSelect');
     if(sel){
       var cur=sel.value;
@@ -2041,58 +2196,205 @@ export function dashboardPage(): string {
     }
     // Render the management list (owner/admin panel).
     var el=document.getElementById('aiEmployees');if(!el)return;clear(el);
-    if(!list.length){el.appendChild(emptyMsg('No assistants yet. Create one below.'));return;}
+    if(!list.length){el.appendChild(emptyMsg('No AI Employees yet. Use “+ New AI Employee” to create one.'));return;}
+    var manage=canManageWorkspace();
     list.forEach(function(e){
-      var row=document.createElement('div');row.className='item';
-      var left=document.createElement('div');
-      var t=document.createElement('div');t.textContent=esc(e.name);t.style.fontWeight='600';left.appendChild(t);
-      var s=document.createElement('div');s.className='sub';s.textContent=esc(e.title)+((e.toolNames&&e.toolNames.length)?(' \\u00b7 '+e.toolNames.length+' action(s)'):' \\u00b7 all your actions');left.appendChild(s);
+      var row=document.createElement('div');row.className='item';row.style.alignItems='flex-start';
+      var left=document.createElement('div');left.style.minWidth='0';left.style.flex='1';
+      var head=document.createElement('div');head.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+      var t=document.createElement('div');t.textContent=esc(e.name);t.style.fontWeight='700';head.appendChild(t);
+      if(e.status==='archived'){var pb=document.createElement('span');pb.className='badge muted';pb.textContent='Paused';head.appendChild(pb);}
+      else{var ab=document.createElement('span');ab.className='badge ok';ab.textContent='Active';head.appendChild(ab);}
+      left.appendChild(head);
+      var s=document.createElement('div');s.className='sub';s.textContent=e.title?esc(e.title):'AI Employee';left.appendChild(s);
+      var caps=document.createElement('div');caps.className='sub';caps.style.marginTop='2px';
+      caps.textContent=(e.toolNames&&e.toolNames.length)?('Allowed actions: '+e.toolNames.length+' selected'):'Allowed actions: any action your role permits';
+      left.appendChild(caps);
+      if(e.persona){var pv=document.createElement('div');pv.className='sub';pv.style.marginTop='2px';pv.style.opacity='0.85';var txt=String(e.persona);pv.textContent='“'+esc(txt.length>110?txt.slice(0,110)+'…':txt)+'”';left.appendChild(pv);}
       row.appendChild(left);
-      var del=document.createElement('button');del.className='btn ghost';del.style.padding='6px 12px';del.style.flex='none';del.textContent='Delete';
-      del.addEventListener('click',function(){deleteEmployee(e.id);});row.appendChild(del);
+      if(manage){
+        var actions=document.createElement('div');actions.style.cssText='display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end;';
+        var edit=document.createElement('button');edit.className='btn ghost';edit.style.cssText='width:auto;padding:6px 12px;';edit.textContent='Edit';
+        edit.addEventListener('click',function(){openEmployeeEditor(e);});actions.appendChild(edit);
+        var pause=document.createElement('button');pause.className='btn ghost';pause.style.cssText='width:auto;padding:6px 12px;';pause.textContent=e.status==='archived'?'Resume':'Pause';
+        pause.addEventListener('click',function(){toggleEmployee(e);});actions.appendChild(pause);
+        var del=document.createElement('button');del.className='btn ghost';del.style.cssText='width:auto;padding:6px 12px;';del.textContent='Delete';
+        del.addEventListener('click',function(){confirmDeleteEmployee(e);});actions.appendChild(del);
+        row.appendChild(actions);
+      }
       el.appendChild(row);
     });
   }
-  async function deleteEmployee(id){
-    var r=await api('/api/platform/ai/employees/'+encodeURIComponent(id),{method:'DELETE'});
-    if(r.ok)loadAiEmployees();
+  async function toggleEmployee(e){
+    var next=e.status==='archived'?'active':'archived';
+    var r=await api('/api/platform/ai/employees/'+encodeURIComponent(e.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:next})});
+    if(r.ok){setMsg('aemsg','ok',next==='archived'?'AI Employee paused.':'AI Employee resumed.');loadAiEmployees();}
+    else{setMsg('aemsg','err','Could not update that AI Employee.');}
   }
-  async function loadAiTools(){
-    var tr=await api('/api/platform/ai/tools');
-    if(tr.ok){
-      var td=await tr.json();var tel=document.getElementById('aiToolsList');clear(tel);
-      var tools=td.tools||[];
-      if(!tools.length){tel.appendChild(emptyMsg('No AI actions available yet.'));}
-      tools.forEach(function(t){
-        var row=document.createElement('div');row.className='item';
-        var left=document.createElement('div');
-        var n=document.createElement('div');n.textContent=esc(t.title);n.style.fontWeight='600';left.appendChild(n);
-        var s=document.createElement('div');s.className='sub';s.textContent=esc(t.description);left.appendChild(s);
-        row.appendChild(left);
-        var pill=document.createElement('span');pill.className='pill';pill.textContent=t.mode==='write'?'needs confirm':'read';pill.style.flex='none';row.appendChild(pill);
-        tel.appendChild(row);
+  function confirmDeleteEmployee(e){
+    openConfirm({title:'Delete AI Employee',intro:'Delete “'+esc(e.name)+'”? This cannot be undone. Existing conversations are kept, but this AI Employee will no longer be selectable.',confirmLabel:'Delete',danger:true,onConfirm:function(){
+      return api('/api/platform/ai/employees/'+encodeURIComponent(e.id),{method:'DELETE'}).then(function(r){
+        if(r.ok){setMsg('aemsg','ok','AI Employee deleted.');loadAiEmployees();}
+        else{setMsg('aemsg','err','Could not delete that AI Employee.');throw new Error('failed');}
+      });
+    }});
+  }
+  // Full-screen editor dialog for creating/editing an AI Employee. The tool
+  // picker is generated from the real registry — searchable, grouped, with a
+  // read/write distinction — so no nonexistent action can ever be selected.
+  async function openEmployeeEditor(employee){
+    var isEdit=!!employee;
+    var catalog=await loadToolCatalog();
+    var picked={};(employee&&employee.toolNames||[]).forEach(function(n){picked[n]=true;});
+    _dlgPrev=document.activeElement;
+    var host=document.getElementById('dlgHost');if(!host)return;clear(host);
+    var back=document.createElement('div');back.className='dlg-back';
+    back.addEventListener('click',function(ev){if(ev.target===back)closeDlg();});
+    var dlg=document.createElement('div');dlg.className='dlg';dlg.style.maxWidth='560px';dlg.setAttribute('role','dialog');dlg.setAttribute('aria-modal','true');dlg.setAttribute('aria-label',isEdit?'Edit AI Employee':'New AI Employee');
+    var h=document.createElement('div');h.className='dlg-h';h.textContent=isEdit?'Edit AI Employee':'New AI Employee';dlg.appendChild(h);
+    var b=document.createElement('div');b.className='dlg-b';
+    function field(labelText,el){var lb=document.createElement('label');lb.textContent=labelText;lb.style.marginTop='12px';b.appendChild(lb);b.appendChild(el);}
+    var nameI=document.createElement('input');nameI.value=employee?esc(employee.name):'';nameI.placeholder='e.g. Sales Assistant';
+    field('Name',nameI);
+    var titleI=document.createElement('input');titleI.value=employee?esc(employee.title):'';titleI.placeholder='e.g. Sales Assistant';
+    field('Job title',titleI);
+    var personaI=document.createElement('textarea');personaI.rows=4;personaI.value=employee?esc(employee.persona):'';personaI.placeholder='Instructions and persona prepended to every conversation…';
+    field('Instructions',personaI);
+    // Tool picker
+    var tl=document.createElement('label');tl.textContent='Allowed actions';tl.style.marginTop='14px';b.appendChild(tl);
+    var help=document.createElement('p');help.className='hint';help.style.margin='2px 0 8px';help.textContent='Select the actions this AI Employee may use. Leave all unchecked to allow any action your own role permits. It can never exceed your role, even if asked.';b.appendChild(help);
+    var search=document.createElement('input');search.type='search';search.placeholder='Search actions…';search.setAttribute('aria-label','Search actions');b.appendChild(search);
+    var picker=document.createElement('div');picker.className='toolpick';picker.style.marginTop='8px';b.appendChild(picker);
+    function renderPicker(){
+      clear(picker);
+      var q=(search.value||'').toLowerCase();
+      var groups={};
+      catalog.forEach(function(t){
+        if(q&&((esc(t.title)+' '+esc(t.description)+' '+esc(t.name)).toLowerCase().indexOf(q)<0))return;
+        var g=toolGroupOf(t.name);(groups[g]=groups[g]||[]).push(t);
+      });
+      var keys=Object.keys(groups).sort();
+      if(!keys.length){picker.appendChild(emptyMsg('No actions match your search.'));return;}
+      keys.forEach(function(g){
+        var gh=document.createElement('div');gh.className='grp';gh.textContent=g;picker.appendChild(gh);
+        groups[g].forEach(function(t){
+          var lab=document.createElement('label');lab.style.cssText='display:flex;gap:9px;align-items:flex-start;padding:5px 2px;cursor:pointer;';
+          var cb=document.createElement('input');cb.type='checkbox';cb.checked=!!picked[t.name];cb.style.cssText='width:auto;flex:none;margin-top:3px;';
+          cb.addEventListener('change',function(){if(cb.checked)picked[t.name]=true;else delete picked[t.name];});
+          lab.appendChild(cb);
+          var meta=document.createElement('div');meta.style.minWidth='0';
+          var top=document.createElement('div');top.style.cssText='display:flex;gap:7px;align-items:center;flex-wrap:wrap;';
+          var nm=document.createElement('span');nm.textContent=esc(t.title);nm.style.fontWeight='600';top.appendChild(nm);
+          var wtag=document.createElement('span');wtag.className='wtag '+(t.mode==='write'?'w':'r');wtag.textContent=t.mode==='write'?'writes — needs approval':'read only';top.appendChild(wtag);
+          meta.appendChild(top);
+          var ds=document.createElement('div');ds.className='sub';ds.textContent=esc(t.description);meta.appendChild(ds);
+          lab.appendChild(meta);picker.appendChild(lab);
+        });
       });
     }
+    search.addEventListener('input',renderPicker);renderPicker();
+    var msg=document.createElement('div');msg.className='msg';b.appendChild(msg);
+    dlg.appendChild(b);
+    var f=document.createElement('div');f.className='dlg-f';
+    var cancel=document.createElement('button');cancel.className='btn ghost';cancel.textContent='Cancel';cancel.addEventListener('click',closeDlg);
+    var save=document.createElement('button');save.className='btn';save.style.width='auto';save.textContent=isEdit?'Save changes':'Create AI Employee';
+    save.addEventListener('click',function(){
+      var name=(nameI.value||'').trim();
+      if(!name){msg.className='msg err';msg.textContent='Give the AI Employee a name.';nameI.focus();return;}
+      save.disabled=true;save.textContent='Saving\\u2026';msg.className='msg';msg.textContent='';
+      var toolNames=Object.keys(picked);
+      var payload={name:name,title:(titleI.value||'').trim(),persona:personaI.value,toolNames:toolNames};
+      var url='/api/platform/ai/employees'+(isEdit?('/'+encodeURIComponent(employee.id)):'');
+      api(url,{method:isEdit?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){
+        return r.json().catch(function(){return {};}).then(function(x){
+          if(r.ok){setMsg('aemsg','ok',isEdit?'AI Employee updated.':'AI Employee created.');loadAiEmployees();closeDlg();}
+          else{save.disabled=false;save.textContent=isEdit?'Save changes':'Create AI Employee';msg.className='msg err';msg.textContent=(x.error&&x.error.message)||'Could not save.';}
+        });
+      });
+    });
+    f.appendChild(cancel);f.appendChild(save);dlg.appendChild(f);
+    back.appendChild(dlg);host.appendChild(back);
+    document.addEventListener('keydown',_dlgKey,true);
+    nameI.focus();
+  }
+  // Proposals expire on the server one hour after they are created; we surface
+  // that same window here so an approver never confirms a stale proposal.
+  var AI_PROPOSAL_TTL_MS=60*60*1000;
+  var aiToolsAll=[];
+  async function loadAiTools(){
+    var tools=await loadToolCatalog(true);aiToolsAll=tools;renderAvailableActions();
     var ir=await api('/api/platform/ai/tools/invocations');
     var pel=document.getElementById('aiPending');clear(pel);
-    if(!ir.ok){pel.appendChild(emptyMsg('Could not load pending actions.'));return;}
-    var id=await ir.json();
-    var pending=(id.invocations||[]).filter(function(x){return x.status==='pending';});
-    if(!pending.length){pel.appendChild(emptyMsg('Nothing awaiting confirmation.'));return;}
-    pending.forEach(function(inv){
-      var row=document.createElement('div');row.className='item';
-      var left=document.createElement('div');
-      var n=document.createElement('div');n.textContent=esc(inv.toolName);n.style.fontWeight='600';left.appendChild(n);
-      var s=document.createElement('div');s.className='sub';s.textContent=summarizeArgs(inv.args)+' \\u00b7 '+timeAgo(inv.createdAt);left.appendChild(s);
+    var hel=document.getElementById('aiHistory');clear(hel);
+    if(!ir.ok){pel.appendChild(emptyMsg('Could not load actions.'));hel.appendChild(emptyMsg('Could not load history.'));return;}
+    var id=await ir.json();var invs=id.invocations||[];
+    // Pending approvals — write proposals awaiting a human decision.
+    var pending=invs.filter(function(x){return x.status==='pending';});
+    if(!pending.length){pel.appendChild(emptyMsg('Nothing awaiting approval.'));}
+    else pending.forEach(function(inv){pel.appendChild(pendingCard(inv));});
+    // Execution history — everything already run, rejected, expired, or failed.
+    var history=invs.filter(function(x){return x.status!=='pending';}).slice(0,40);
+    if(!history.length){hel.appendChild(emptyMsg('No actions have run yet.'));}
+    else history.forEach(function(inv){
+      var row=document.createElement('div');row.className='item';row.style.alignItems='flex-start';
+      var left=document.createElement('div');left.style.minWidth='0';
+      var n=document.createElement('div');n.textContent=esc(toolTitle(inv.toolName));n.style.fontWeight='600';left.appendChild(n);
+      var s=document.createElement('div');s.className='sub';s.textContent=(inv.summary?esc(inv.summary)+' \\u00b7 ':'')+timeAgo(inv.updatedAt||inv.createdAt);left.appendChild(s);
       row.appendChild(left);
-      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;';
-      var ok=document.createElement('button');ok.className='btn';ok.style.padding='6px 12px';ok.textContent='Confirm';
-      ok.addEventListener('click',function(){decideAi(inv.id,'confirm');});actions.appendChild(ok);
-      var no=document.createElement('button');no.className='btn ghost';no.style.padding='6px 12px';no.textContent='Decline';
-      no.addEventListener('click',function(){decideAi(inv.id,'reject');});actions.appendChild(no);
-      row.appendChild(actions);
-      pel.appendChild(row);
+      var p=document.createElement('span');p.className='pill';p.style.flex='none';p.textContent=esc(inv.status);
+      if(inv.status==='failed'||inv.status==='rejected'||inv.status==='expired')p.style.color='#e5484d';
+      row.appendChild(p);hel.appendChild(row);
     });
+  }
+  function toolTitle(name){for(var i=0;i<aiToolsAll.length;i++){if(aiToolsAll[i].name===name)return aiToolsAll[i].title;}return name;}
+  function toolMode(name){for(var i=0;i<aiToolsAll.length;i++){if(aiToolsAll[i].name===name)return aiToolsAll[i].mode;}return 'write';}
+  function renderAvailableActions(){
+    var tel=document.getElementById('aiToolsList');if(!tel)return;clear(tel);
+    var q=((document.getElementById('aiToolSearch')||{}).value||'').toLowerCase();
+    var mode=(document.getElementById('aiToolMode')||{}).value||'';
+    var list=aiToolsAll.filter(function(t){
+      if(mode&&t.mode!==mode)return false;
+      if(q&&((esc(t.title)+' '+esc(t.description)+' '+esc(t.name)).toLowerCase().indexOf(q)<0))return false;
+      return true;
+    });
+    if(!list.length){tel.appendChild(emptyMsg('No actions match your filters.'));return;}
+    list.forEach(function(t){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');left.style.minWidth='0';
+      var n=document.createElement('div');n.textContent=esc(t.title);n.style.fontWeight='600';left.appendChild(n);
+      var s=document.createElement('div');s.className='sub';s.textContent=esc(t.description);left.appendChild(s);
+      row.appendChild(left);
+      var pill=document.createElement('span');pill.className='wtag '+(t.mode==='write'?'w':'r');pill.style.flex='none';pill.textContent=t.mode==='write'?'needs approval':'read only';row.appendChild(pill);
+      tel.appendChild(row);
+    });
+  }
+  // A pending write proposal, showing exactly what will change before approval.
+  function pendingCard(inv){
+    var card=document.createElement('div');card.className='approve-card';
+    var head=document.createElement('div');head.style.cssText='display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;';
+    var t=document.createElement('div');t.style.fontWeight='700';t.textContent=esc(toolTitle(inv.toolName));head.appendChild(t);
+    var when=document.createElement('div');when.className='sub';when.textContent='Proposed '+timeAgo(inv.createdAt);head.appendChild(when);
+    card.appendChild(head);
+    var name=document.createElement('div');name.className='sub';name.textContent='Action: '+esc(inv.toolName);card.appendChild(name);
+    // Proposed changes — the exact submitted values, immutable and shown in full.
+    var lbl=document.createElement('div');lbl.className='sub';lbl.style.cssText='margin-top:6px;font-weight:700;';lbl.textContent='Proposed changes';card.appendChild(lbl);
+    var kv=kvBlock(inv.args);if(!kv.childNodes.length){var none=document.createElement('div');none.className='sub';none.textContent='No parameters.';card.appendChild(none);}else card.appendChild(kv);
+    var meta=document.createElement('div');meta.className='sub';meta.style.marginTop='6px';
+    var exp=inv.createdAt?new Date(Date.parse(inv.createdAt)+AI_PROPOSAL_TTL_MS):null;
+    meta.textContent='Requested by '+esc(inv.requestedBy||'the assistant')+(exp?(' \\u00b7 expires '+timeUntil(exp.toISOString())):'');
+    card.appendChild(meta);
+    var canConfirm=(myRole==='owner'||myRole==='admin');
+    if(canConfirm){
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;margin-top:10px;';
+      var ok=document.createElement('button');ok.className='btn';ok.style.cssText='width:auto;padding:6px 12px;';ok.textContent='Approve & run';
+      ok.addEventListener('click',function(){decideAi(inv.id,'confirm');});actions.appendChild(ok);
+      var no=document.createElement('button');no.className='btn ghost';no.style.cssText='width:auto;padding:6px 12px;';no.textContent='Reject';
+      no.addEventListener('click',function(){decideAi(inv.id,'reject');});actions.appendChild(no);
+      card.appendChild(actions);
+    }else{
+      var note=document.createElement('div');note.className='sub';note.style.marginTop='8px';note.textContent='An owner or admin can approve this.';card.appendChild(note);
+    }
+    return card;
   }
   function summarizeArgs(args){
     if(!args)return '';
@@ -2554,7 +2856,7 @@ export function dashboardPage(): string {
   };
   function panelLabel(p){var h=p.querySelector('h2');return h?((h.firstChild&&h.firstChild.textContent||h.textContent||'').trim()):'';}
   // A panel tagged with data-websub belongs to the Website workspace.
-  function sectionOf(p){if(p.getAttribute&&p.getAttribute('data-websub'))return 'web';return SEC_BY_ID[p.id]||SEC_BY_LABEL[panelLabel(p)]||'settings';}
+  function sectionOf(p){if(p.getAttribute&&p.getAttribute('data-websub'))return 'web';if(p.getAttribute&&p.getAttribute('data-aisub'))return 'ai';return SEC_BY_ID[p.id]||SEC_BY_LABEL[panelLabel(p)]||'settings';}
   function allPanels(){return document.querySelectorAll('.wrap .panel');}
   // A panel is role-hidden when the init logic set an inline display:none.
   function roleHidden(p){return p.style.display==='none';}
@@ -2571,6 +2873,10 @@ export function dashboardPage(): string {
     var wsn=document.getElementById('websubnav');
     if(wsn)wsn.classList.toggle('sec-hide',key!=='web');
     if(key==='web')showWebSub(activeWebSub);
+    // The AI workspace sub-navigation shows only inside the ai section.
+    var asn=document.getElementById('aisubnav');
+    if(asn)asn.classList.toggle('sec-hide',key!=='ai');
+    if(key==='ai')showAiSub(activeAiSub);
     var nav=document.getElementById('secnav');
     if(nav){var tabs=nav.querySelectorAll('a');for(var j=0;j<tabs.length;j++){tabs[j].classList.toggle('active',tabs[j].getAttribute('data-sec')===key);}}
     try{window.scrollTo(0,0);}catch(_){/* noop */}
@@ -2579,17 +2885,18 @@ export function dashboardPage(): string {
     var nav=document.getElementById('secnav'); if(!nav)return; clear(nav);
     // Which sections have at least one visible (role-allowed) panel? The Website
     // workspace is always available (members can view it), so force it present.
-    var present={web:true}; var panels=allPanels();
+    var present={web:true,ai:true}; var panels=allPanels();
     for(var i=0;i<panels.length;i++){var p=panels[i];if(!roleHidden(p))present[sectionOf(p)]=true;}
     SECTIONS.forEach(function(s){
       if(!present[s[0]])return;
       var a=document.createElement('a');a.setAttribute('data-sec',s[0]);a.textContent=s[1];
       a.addEventListener('click',function(){
-        location.hash = s[0]==='web' ? ('#web/'+activeWebSub) : ('#'+s[0]);
+        location.hash = s[0]==='web' ? ('#web/'+activeWebSub) : (s[0]==='ai' ? ('#ai/'+activeAiSub) : ('#'+s[0]));
       });
       nav.appendChild(a);
     });
     buildWebSubNav();
+    buildAiSubNav();
     routeFromHash();
   }
   // ---- Website workspace sub-navigation ----
@@ -2645,9 +2952,62 @@ export function dashboardPage(): string {
     else if(key==='hosting'){loadHosting();loadDomains();}
     else if(key==='branding'){loadBrands();}
   }
+  // ---- AI workspace sub-navigation ----
+  var AI_SUBS=[
+    ['command','Command Center','all'],
+    ['employees','AI Employees','manage'],
+    ['actions','Actions & Approvals','manage'],
+    ['knowledge','Knowledge Base','manage'],
+    ['usage','Usage & Settings','owner']
+  ];
+  var activeAiSub='command', aiSubLoaded={};
+  function aiSubOk(min){return min==='all'||(min==='manage'&&canManageWorkspace())||(min==='owner'&&myRole==='owner');}
+  function allowedAiSubs(){return AI_SUBS.filter(function(s){return aiSubOk(s[2]);}).map(function(s){return s[0];});}
+  function buildAiSubNav(){
+    var nav=document.getElementById('aisubnav'); if(!nav)return; clear(nav);
+    AI_SUBS.forEach(function(s){
+      if(!aiSubOk(s[2]))return;
+      var b=document.createElement('button');b.setAttribute('role','tab');b.setAttribute('data-aisub',s[0]);
+      b.setAttribute('aria-controls','aisub-'+s[0]);b.setAttribute('aria-selected','false');b.textContent=s[1];b.tabIndex=-1;
+      b.addEventListener('click',function(){location.hash='#ai/'+s[0];});
+      b.addEventListener('keydown',function(e){aiSubKey(e,s[0]);});
+      nav.appendChild(b);
+    });
+  }
+  function aiSubKey(e,key){
+    var order=allowedAiSubs(); var i=order.indexOf(key); if(i<0)return;
+    var nx=null;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown')nx=order[(i+1)%order.length];
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp')nx=order[(i-1+order.length)%order.length];
+    else if(e.key==='Home')nx=order[0];
+    else if(e.key==='End')nx=order[order.length-1];
+    if(nx){e.preventDefault();location.hash='#ai/'+nx;var b=document.querySelector('#aisubnav [data-aisub="'+nx+'"]');if(b)b.focus();}
+  }
+  function showAiSub(key){
+    var allowed=allowedAiSubs();
+    if(allowed.indexOf(key)<0)key=allowed[0]||'command';
+    activeAiSub=key;
+    var subs=document.querySelectorAll('[data-aisub]');
+    for(var i=0;i<subs.length;i++){var p=subs[i];
+      if(p.parentElement&&p.parentElement.id==='aisubnav')continue;
+      p.classList.toggle('aisub-hide',p.getAttribute('data-aisub')!==key);
+    }
+    var nav=document.getElementById('aisubnav');
+    if(nav){var tabs=nav.querySelectorAll('[role=tab]');for(var j=0;j<tabs.length;j++){var on=tabs[j].getAttribute('data-aisub')===key;tabs[j].classList.toggle('active',on);tabs[j].setAttribute('aria-selected',on?'true':'false');tabs[j].tabIndex=on?0:-1;}}
+    loadAiSub(key);
+  }
+  function loadAiSub(key){
+    if(key==='command'){ if(!aiSubLoaded.command){aiSubLoaded.command=true;loadAiEmployees();loadConversations();} return; }
+    if(aiSubLoaded[key])return; aiSubLoaded[key]=true;
+    if(key==='employees')loadAiEmployees();
+    else if(key==='actions')loadAiTools();
+    else if(key==='knowledge')loadCollections();
+    else if(key==='usage')loadAiSettings();
+  }
   function routeFromHash(){
     var h=(location.hash||'').replace(/^#/,'');
     if(h.indexOf('web/')===0){ if(activeSection!=='web')showSection('web'); showWebSub(h.slice(4)); return; }
+    if(h.indexOf('ai/')===0){ if(activeSection!=='ai')showSection('ai'); showAiSub(h.slice(3)); return; }
     var sec=h||'home';
     var valid=false; for(var i=0;i<SECTIONS.length;i++){if(SECTIONS[i][0]===sec)valid=true;}
     showSection(valid?sec:'home');
@@ -2675,10 +3035,10 @@ export function dashboardPage(): string {
       document.getElementById('emailPanel').style.display='';
       document.getElementById('dripPanel').style.display='';
       document.getElementById('formsPanel').style.display='';
-      document.getElementById('knowledgePanel').style.display='';
+      document.getElementById('aisub-knowledge').style.display='';
       document.getElementById('workflowsPanel').style.display='';
-      document.getElementById('aiToolsPanel').style.display='';
-      document.getElementById('aiEmployeesPanel').style.display='';
+      document.getElementById('aisub-actions').style.display='';
+      document.getElementById('aisub-employees').style.display='';
       document.getElementById('auditPanel').style.display='';
       loadTeam();
       loadPortalUsers();
@@ -2686,23 +3046,19 @@ export function dashboardPage(): string {
       loadDrip();
       loadDripEnrollments();
       loadForms();
-      loadCollections();
       loadWorkflows();
-      loadAiTools();
       loadAudit();
     }
     if(u.role==='owner'){
-      document.getElementById('aiPanel').style.display='';
+      document.getElementById('aisub-usage').style.display='';
     }
-    // Website sub-sections (websites, marketplace, templates, hosting, domains,
-    // brands) load lazily when their tab is first opened — see loadWebSub().
+    // Website + AI sub-sections load lazily when their tab is first opened
+    // (see loadWebSub / loadAiSub) — so the AI section isn't fetched up front.
     await loadDashboard(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms();
-    if(u.role==='owner'){await loadAiSettings();}
     await loadActivity();
     await loadFiles();
     await loadCalendar();
-    document.getElementById('aiConsolePanel').style.display='';
-    await loadAiEmployees();
+    document.getElementById('aisub-command').style.display='';
     await loadOnboarding();
     refreshUnread();
     setInterval(refreshUnread, 45000);
@@ -2800,18 +3156,12 @@ export function dashboardPage(): string {
     var ob=document.getElementById('openPalette'); if(ob)ob.addEventListener('click',open);
   })();
   document.getElementById('aiChatSend').addEventListener('click',sendAiChat);
-  document.getElementById('aiChatInput').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendAiChat();}});
-  document.getElementById('addEmployee').addEventListener('click',async function(){
-    var name=document.getElementById('aeName').value.trim();
-    if(!name){setMsg('aemsg','err','Give the assistant a name.');return;}
-    var toolsRaw=document.getElementById('aeTools').value.trim();
-    var toolNames=toolsRaw?toolsRaw.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
-    setMsg('aemsg','','Creating\\u2026');
-    var r=await api('/api/platform/ai/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,title:document.getElementById('aeTitle').value.trim(),persona:document.getElementById('aePersona').value,toolNames:toolNames})});
-    var x=await r.json().catch(function(){return {};});
-    if(r.ok){setMsg('aemsg','ok','Assistant created.');document.getElementById('aeName').value='';document.getElementById('aeTitle').value='';document.getElementById('aePersona').value='';document.getElementById('aeTools').value='';loadAiEmployees();}
-    else{setMsg('aemsg','err',(x.error&&x.error.message)||'Could not create assistant.');}
-  });
+  // Enter sends; Shift+Enter inserts a newline (standard chat composer behavior).
+  document.getElementById('aiChatInput').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAiChat();}});
+  document.getElementById('aiNewConvo').addEventListener('click',newConversation);
+  document.getElementById('aeCreateBtn').addEventListener('click',function(){openEmployeeEditor(null);});
+  document.getElementById('aiToolSearch').addEventListener('input',renderAvailableActions);
+  document.getElementById('aiToolMode').addEventListener('change',renderAvailableActions);
   document.getElementById('addWorkflow').addEventListener('click',async function(){
     var tpl=WF_TEMPLATES[document.getElementById('wftemplate').value];
     if(!tpl){setMsg('wfmsg','err','Pick a template.');return;}
@@ -2999,9 +3349,13 @@ export function dashboardPage(): string {
     if(r.ok){document.getElementById('aiKey').value='';setMsg('aimsg','ok','Saved. Generation now runs on your key.');loadAiSettings();}
     else{setMsg('aimsg','err',(x.error&&x.error.message)||'Could not save.');}
   });
-  document.getElementById('removeAi').addEventListener('click',async function(){
-    var r=await api('/api/platform/ai-settings',{method:'DELETE'});
-    if(r.ok){setMsg('aimsg','ok','Removed. Using the platform\\u2019s included AI.');loadAiSettings();}
+  document.getElementById('removeAi').addEventListener('click',function(){
+    openConfirm({title:'Remove your AI key',intro:'Remove your stored provider key? Generation will fall back to the platform\\u2019s included AI. Your key cannot be recovered — you would need to enter it again.',confirmLabel:'Remove key',danger:true,onConfirm:function(){
+      return api('/api/platform/ai-settings',{method:'DELETE'}).then(function(r){
+        if(r.ok){setMsg('aimsg','ok','Removed. Using the platform\\u2019s included AI.');loadAiSettings();}
+        else{setMsg('aimsg','err','Could not remove the key.');throw new Error('failed');}
+      });
+    }});
   });
   document.getElementById('addWebsite').addEventListener('click',async function(){
     var btn=this;if(btn.disabled)return;

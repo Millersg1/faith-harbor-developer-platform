@@ -104,9 +104,45 @@ integration point.
 AI generation runs on the tenant's own key when provided; usage is metered and
 capped per plan. Knowledge Base answers are **grounded** strictly in retrieved
 chunks and return empty when nothing matches — the service never fabricates
-content. (Phase 3 AI Command Center will add: no mutation without a previewed,
-explicitly-confirmed action; per-tool permission + tenant checks; full audit of
-every AI request/proposed action/execution; never generate or run raw SQL.)
+content, and retrieval is tenant-scoped so one tenant can never surface
+another's documents.
+
+### AI action approvals (write tools)
+
+An AI Employee can only ever do **less** than the acting user's role allows —
+the Command Center intersects the employee's tool allowlist with the role-
+permitted set, and employee tool names are validated server-side against the
+real registry (`INVALID_TOOL`). Read tools run immediately; any tool that
+changes data is recorded as a **pending proposal** and never runs until a human
+approves it. Confirmation is hardened against the classic approval-bypass
+attacks:
+
+- **Single-use + anti-TOCTOU:** confirmation atomically claims the row
+  `pending → executing` (`UPDATE … WHERE status='pending' RETURNING`), so two
+  concurrent confirmations can't both execute.
+- **Expiry:** a proposal expires after `proposalTtlMs` (default 1h); a stale
+  proposal is marked `expired` and refused rather than run.
+- **Role re-authorization:** the acting role is re-checked at confirm time (in
+  addition to the route's `requireRole`), so a member can't confirm an
+  owner/admin write even if the proposal already exists.
+- **Payload binding:** the tool executes the **server-stored** name and args
+  captured at proposal time; the client cannot substitute a payload on confirm.
+- **Tenant binding:** proposals are tenant-scoped, so a cross-tenant id is
+  invisible and unconfirmable.
+- **Audit + activity:** every proposal/execution/rejection is recorded
+  (`ai.action.proposed/executed/failed/rejected`, `ai.knowledge.document.
+  added/removed`) — never with secrets, document text, hidden prompts, or
+  chain-of-thought.
+
+### AI provider keys are write-only
+
+A tenant's own provider key is **write-only from the browser's perspective**: it
+is stored server-side and **never returned** to the client, never embedded in
+HTML/JS/logs/errors/activity metadata. The settings form shows only status and a
+short fingerprint. Submitting a **blank** key does **not** erase a stored key;
+removal is a distinct, explicitly-confirmed action. *Outstanding:* keys are not
+yet encrypted at rest (pending a KMS decision — see
+`## Outstanding` and `07_DECISIONS.md`).
 
 ## Host-header safety
 

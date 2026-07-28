@@ -7,6 +7,41 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **AI workspace redesign.** The tenant **AI** section is now an accessible
+  internal workspace with five sub-sections behind a `role="tablist"` sub-nav
+  (**Command Center** — the default, AI Employees, Actions & Approvals,
+  Knowledge Base, Usage & Settings), mirroring the Website workspace. Only the
+  active sub-section renders; each is deep-linkable via `#ai/<sub>` with browser
+  back/forward, arrow-key tab nav, and visible focus. Full-width panels
+  (`grid-column: 1 / -1`) remove the empty-column layout bug.
+  - **Command Center is now a real conversation workspace.** AI Employee
+    selector, a thread sidebar, message history with timestamps, `.bubble`
+    styling, copy buttons, a textarea composer with a duplicate-submit guard, an
+    ARIA `role="status"` announcer, and preserved input text after a recoverable
+    failure. Conversations and messages are **persisted** (new
+    `ai_conversations` / `ai_conversation_messages` tables) and are
+    **private to their creator** and tenant-scoped.
+  - **AI Employees** get their own section with rich cards (status, allowed-
+    action count, persona preview) and create/edit/pause/delete in a focused,
+    focus-trapped dialog. The comma-separated tool field is replaced by a
+    **registry-driven tool picker** — searchable, grouped, with a read vs.
+    writes-needs-approval distinction — and tool names are validated
+    server-side against the real registry (`INVALID_TOOL`).
+  - **Actions & Approvals** shows pending approvals (action name, exact proposed
+    changes as key/value, requester, and honest expiry), a searchable/filterable
+    available-actions catalog, and execution history.
+  - **Approval hardening.** Write proposals are single-use and expire (default
+    1h); confirmation atomically claims `pending → executing` (anti-TOCTOU),
+    re-authorizes the acting role, is bound to the server-stored payload (no
+    confirm-time substitution), and refuses stale, used, or cross-tenant
+    proposals. New activity events: `ai.action.proposed/executed/failed/
+    rejected`, `ai.knowledge.document.added/removed` — never with secrets,
+    document text, or hidden prompts.
+  - **Usage & Settings** keeps the provider key **write-only**: it is never
+    returned to the browser, a blank field never erases a stored key, and
+    removal requires a confirmation dialog.
+  - Dark form controls throughout the AI surface (textareas, selects,
+    checkboxes, the tool picker, dialogs) — no white-on-dark regressions.
 - **Website workspace redesign.** The tenant **Website** section is no longer
   one very long page; it's an accessible internal workspace with six
   sub-sections behind a `role="tablist"` sub-nav (**My Websites** — the default,

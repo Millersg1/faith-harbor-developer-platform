@@ -69,7 +69,11 @@ validation failures **400**; plan/quota limits **402**.
 | GET | /api/platform/ai/tools/invocations | user | recent invocations + pending |
 | POST | /api/platform/ai/tools/invocations/:id/confirm | owner/admin | run a pending write |
 | POST | /api/platform/ai/tools/invocations/:id/reject | owner/admin | decline a pending write |
-| POST | /api/platform/ai/console/chat | user | {message,history[],employeeId?} → {available,reply,steps[],pending[]} |
+| POST | /api/platform/ai/console/chat | user | {message,history[],employeeId?,conversationId?} → {available,reply,steps[],pending[],conversationId} |
+| GET | /api/platform/ai/conversations | user | caller's own Command Center threads |
+| GET | /api/platform/ai/conversations/:id/messages | user | messages (creator-only; empty if not owner) |
+| PATCH | /api/platform/ai/conversations/:id | user | rename (creator-only) |
+| DELETE | /api/platform/ai/conversations/:id | user | delete (creator-only; cascades messages) |
 | GET | /api/platform/marketplace/website-templates | user | code-defined template catalogue |
 | POST | /api/platform/marketplace/website-templates/:id/use | owner/admin | create a seeded website draft (402 if site limit hit) |
 | GET | /platform/admin/api/analytics | admin | cross-tenant MRR, plan mix, AI cost |

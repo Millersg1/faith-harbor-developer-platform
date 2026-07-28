@@ -134,6 +134,73 @@ export class AiToolInvocationRepository extends TenantScopedRepository {
     return record;
   }
 
+  /**
+   * Atomically claims a PENDING invocation for execution — flips it to
+   * "executing" only if it is currently pending and (when maxAgeMs is given)
+   * not expired. Returns the claimed record, or undefined if it was already
+   * handled/expired. This is the single-execution guard: two concurrent
+   * confirms cannot both claim the same proposal, so a write never runs twice.
+   */
+  async claimPending(
+    id: string,
+    maxAgeMs?: number,
+  ): Promise<
+    AiToolInvocationRecord | undefined
+  > {
+    const organizationId =
+      this.tenantId();
+    const now =
+      new Date().toISOString();
+
+    if (this.db) {
+      const cutoff = maxAgeMs
+        ? new Date(
+            Date.now() - maxAgeMs,
+          ).toISOString()
+        : null;
+      const result =
+        await this.db.query(
+          `UPDATE ai_tool_invocations
+              SET status = 'executing', updated_at = $3
+            WHERE id = $1 AND organization_id = $2 AND status = 'pending'
+              AND ($4::text IS NULL OR created_at >= $4)
+          RETURNING *`,
+          [
+            id,
+            organizationId,
+            now,
+            cutoff,
+          ],
+        );
+      const row = result
+        .rows[0] as unknown as
+        | InvocationRow
+        | undefined;
+      return row ? map(row) : undefined;
+    }
+
+    const record = this.rows.get(id);
+    if (
+      !record ||
+      record.organizationId !==
+        organizationId ||
+      record.status !== "pending" ||
+      (maxAgeMs &&
+        Date.parse(record.createdAt) <
+          Date.now() - maxAgeMs)
+    ) {
+      return undefined;
+    }
+    const claimed: AiToolInvocationRecord =
+      {
+        ...record,
+        status: "executing",
+        updatedAt: now,
+      };
+    this.rows.set(id, claimed);
+    return claimed;
+  }
+
   async list(
     limit = 50,
   ): Promise<AiToolInvocationRecord[]> {

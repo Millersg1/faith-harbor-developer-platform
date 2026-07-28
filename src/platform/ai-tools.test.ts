@@ -24,7 +24,11 @@ import { PlatformSessionService } from "./sessions/PlatformSessionService";
 import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PlatformUserRepository } from "./users/PlatformUserRepository";
 import { PlatformUserService } from "./users/PlatformUserService";
-import { AiToolRegistry } from "./ai/tools/AiToolRegistry";
+import {
+  AiToolRegistry,
+  AiToolNotFoundError,
+  AiToolValidationError,
+} from "./ai/tools/AiToolRegistry";
 import {
   AiToolForbiddenError,
   AiToolService,
@@ -284,6 +288,156 @@ describe("AiToolService", () => {
   });
 });
 
+describe("AiToolService approval security", () => {
+  function serviceWith(
+    calls: string[],
+    opts: {
+      now?: () => number;
+      proposalTtlMs?: number;
+    },
+  ) {
+    const registry = new AiToolRegistry();
+    registry.register(readTool(calls));
+    registry.register(writeTool(calls));
+
+    return new AiToolService(
+      registry,
+      new AiToolInvocationRepository(),
+      opts,
+    );
+  }
+
+  it("expires a stale proposal instead of running it", async () => {
+    const calls: string[] = [];
+    // Stamp the proposal two hours in the past, with a one-minute TTL.
+    const twoHoursAgo =
+      Date.now() - 2 * 60 * 60 * 1000;
+    const svc = serviceWith(calls, {
+      now: () => twoHoursAgo,
+      proposalTtlMs: 60 * 1000,
+    });
+
+    await runWithTenant(
+      { organizationId: "orgA" },
+      async () => {
+        const proposed =
+          await svc.invoke(
+            "demo.write",
+            { value: "old" },
+            { role: "owner" },
+          );
+
+        await expect(
+          svc.confirm(
+            proposed.invocation.id,
+            { role: "owner" },
+          ),
+        ).rejects.toBeInstanceOf(
+          AiToolValidationError,
+        );
+        // The stale write never executed.
+        expect(calls).toEqual([]);
+
+        const stored =
+          await svc.listInvocations();
+        expect(stored[0].status).toBe(
+          "expired",
+        );
+      },
+    );
+  });
+
+  it("re-checks the acting role at confirmation time", async () => {
+    const calls: string[] = [];
+    const svc = serviceWith(calls, {});
+
+    await runWithTenant(
+      { organizationId: "orgA" },
+      async () => {
+        const proposed =
+          await svc.invoke(
+            "demo.write",
+            { value: "x" },
+            { role: "owner" },
+          );
+
+        // A member cannot confirm an owner/admin-only write, even though the
+        // proposal already exists — the role is re-authorized on confirm.
+        await expect(
+          svc.confirm(
+            proposed.invocation.id,
+            { role: "member" },
+          ),
+        ).rejects.toBeInstanceOf(
+          AiToolForbiddenError,
+        );
+        expect(calls).toEqual([]);
+      },
+    );
+  });
+
+  it("will not confirm another tenant's proposal", async () => {
+    const calls: string[] = [];
+    const svc = serviceWith(calls, {});
+
+    const id = await runWithTenant(
+      { organizationId: "orgA" },
+      async () => {
+        const proposed =
+          await svc.invoke(
+            "demo.write",
+            { value: "secret" },
+            { role: "owner" },
+          );
+
+        return proposed.invocation.id;
+      },
+    );
+
+    // The same id is invisible — and unconfirmable — from another tenant.
+    await runWithTenant(
+      { organizationId: "orgB" },
+      async () => {
+        await expect(
+          svc.confirm(id, {
+            role: "owner",
+          }),
+        ).rejects.toBeInstanceOf(
+          AiToolNotFoundError,
+        );
+        expect(calls).toEqual([]);
+      },
+    );
+  });
+
+  it("executes the server-stored args, not any later substitution", async () => {
+    const calls: string[] = [];
+    const svc = serviceWith(calls, {});
+
+    await runWithTenant(
+      { organizationId: "orgA" },
+      async () => {
+        const proposed =
+          await svc.invoke(
+            "demo.write",
+            { value: "original" },
+            { role: "owner" },
+          );
+
+        // confirm() takes no args — the payload is bound at proposal time.
+        await svc.confirm(
+          proposed.invocation.id,
+          { role: "owner" },
+        );
+
+        expect(calls).toEqual([
+          "write:original",
+        ]);
+      },
+    );
+  });
+});
+
 async function buildApp(calls: string[]) {
   const organizations =
     new OrganizationService();
@@ -416,6 +570,33 @@ describe("AI tools API", () => {
       .set("Cookie", cookie)
       .send({});
     expect(confirmed.status).toBe(200);
+    expect(calls).toEqual(["write:hi"]);
+  });
+
+  it("ignores client-supplied args at confirm time (payload binding)", async () => {
+    const calls: string[] = [];
+    const { app, cookie } =
+      await buildApp(calls);
+
+    const proposed = await request(app)
+      .post(
+        "/api/platform/ai/tools/demo.write/invoke",
+      )
+      .set("Cookie", cookie)
+      .send({ args: { value: "hi" } });
+    const id =
+      proposed.body.invocation.id;
+
+    // Attempt to substitute a different payload on confirm.
+    const confirmed = await request(app)
+      .post(
+        `/api/platform/ai/tools/invocations/${id}/confirm`,
+      )
+      .set("Cookie", cookie)
+      .send({ args: { value: "evil" } });
+
+    expect(confirmed.status).toBe(200);
+    // The originally-proposed value ran — not the substituted one.
     expect(calls).toEqual(["write:hi"]);
   });
 

@@ -598,6 +598,44 @@ export class PostgresDatabase
         ON ai_employees (organization_id, created_at);
     `);
 
+    // Command Center conversations — private to the creating user within their
+    // organization. Messages cascade on conversation (and tenant) deletion.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_conversations (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        user_id          TEXT NOT NULL,
+        ai_employee_id   TEXT,
+        title            TEXT NOT NULL DEFAULT 'New conversation',
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS ai_conversations_user_idx
+        ON ai_conversations (organization_id, user_id, updated_at);
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ai_conversation_messages (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        conversation_id  TEXT NOT NULL
+                           REFERENCES ai_conversations (id) ON DELETE CASCADE,
+        role             TEXT NOT NULL,
+        content          TEXT NOT NULL,
+        provider         TEXT,
+        model            TEXT,
+        metadata         JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS ai_conversation_messages_idx
+        ON ai_conversation_messages (organization_id, conversation_id, created_at);
+    `);
+
     // Audit log — append-only security trail, tenant-scoped.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS audit_events (

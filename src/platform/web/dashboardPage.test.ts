@@ -83,6 +83,112 @@ describe("dashboardPage — Website workspace", () => {
   });
 });
 
+describe("dashboardPage — AI workspace", () => {
+  it("has an accessible AI sub-navigation with the five sections", () => {
+    expect(html).toContain(
+      'class="aisubnav"',
+    );
+    expect(html).toContain(
+      'id="aisubnav"',
+    );
+    for (const label of [
+      "Command Center",
+      "AI Employees",
+      "Actions &amp; Approvals",
+      "Knowledge Base",
+      "Usage &amp; Settings",
+    ]) {
+      expect(html).toContain(label);
+    }
+  });
+
+  it("tags every AI panel with data-aisub", () => {
+    for (const sub of [
+      "command",
+      "employees",
+      "actions",
+      "knowledge",
+      "usage",
+    ]) {
+      expect(html).toContain(
+        `data-aisub="${sub}"`,
+      );
+    }
+  });
+
+  it("renders the Command Center as a conversation workspace", () => {
+    expect(html).toContain(
+      'id="aiThreads"',
+    );
+    expect(html).toContain(
+      'id="aiChatLog"',
+    );
+    expect(html).toContain(
+      'id="aiEmployeeSelect"',
+    );
+    // A textarea composer with a status region for screen readers.
+    expect(html).toMatch(
+      /<textarea id="aiChatInput"/,
+    );
+    expect(html).toContain(
+      'id="aiStatus"',
+    );
+    expect(html).toContain(
+      'role="status"',
+    );
+  });
+
+  it("styles chat and AI form controls for the dark theme (no white textareas)", () => {
+    // textarea is grouped with input/select in the dark control rule.
+    expect(html).toMatch(
+      /input,\s*select,\s*textarea/,
+    );
+    expect(html).toMatch(
+      /textarea\s*\{[^}]*resize:/,
+    );
+    // The tool picker and approval card have their own dark surfaces.
+    expect(html).toMatch(/\.toolpick\s*\{/);
+    expect(html).toMatch(
+      /\.approve-card\s*\{/,
+    );
+  });
+
+  it("keeps the API key write-only and never echoes a stored key", () => {
+    // The key input is a password field and its label says write-only.
+    expect(html).toMatch(
+      /id="aiKey"[^>]*type="password"/,
+    );
+    expect(html).toMatch(
+      /write-only/i,
+    );
+    // The static page must not embed any real-looking secret.
+    expect(html).not.toMatch(
+      /sk-[A-Za-z0-9]{20,}/,
+    );
+  });
+
+  it("is honest about knowledge ingestion (text only, no fake uploads)", () => {
+    expect(html).toMatch(
+      /Text entry is the supported ingestion method/i,
+    );
+    // The Knowledge Base panel itself must not advertise unsupported uploads.
+    const start = html.indexOf(
+      'id="aisub-knowledge"',
+    );
+    const end = html.indexOf(
+      "<div class=\"panel\"",
+      start + 1,
+    );
+    const kbPanel = html.slice(
+      start,
+      end,
+    );
+    expect(kbPanel).not.toContain(
+      'type="file"',
+    );
+  });
+});
+
 describe("dashboardPage — accent badge contrast & responsive metrics", () => {
   it("fills accent badges with the accent and puts accent-ink on top (not accent text on a tint)", () => {
     // The `.pill` badge (e.g. the 2/6 onboarding count) must use the accent as
