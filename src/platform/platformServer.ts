@@ -756,12 +756,21 @@ async function start(): Promise<void> {
   const port = Number(
     process.env.PLATFORM_PORT ?? 3300,
   );
+  // Bind to loopback by default so the app is reachable ONLY through the
+  // Apache reverse proxy. This is what makes `trust proxy = 1` safe: if the
+  // port were public (0.0.0.0), a client could connect directly and spoof
+  // X-Forwarded-For to forge req.ip and bypass IP-based rate limiting/audit.
+  // Overridable via PLATFORM_BIND_HOST only for environments without a proxy.
+  const host =
+    process.env.PLATFORM_BIND_HOST?.trim() ||
+    "127.0.0.1";
 
   const server = app.listen(
     port,
+    host,
     () => {
       console.log(
-        `All Elite Cloud platform listening on port ${port}`,
+        `All Elite Cloud platform listening on ${host}:${port}`,
       );
     },
   );

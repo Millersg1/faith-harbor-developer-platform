@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   Router,
   type RequestHandler,
@@ -79,10 +80,16 @@ export interface AuthRouterDependencies {
 
   /**
    * Optional limiter overrides for tests. When omitted, sensible in-memory
-   * limiters are created (login, and password-reset endpoints).
+   * limiters are created for every sensitive endpoint (login, signup,
+   * forgot-password request, reset-password submit, change-password).
    */
   loginLimiter?: RateLimiter;
+  loginIpLimiter?: RateLimiter;
   resetLimiter?: RateLimiter;
+  signupLimiter?: RateLimiter;
+  resetSubmitLimiter?: RateLimiter;
+  resetSubmitTokenLimiter?: RateLimiter;
+  changePwLimiter?: RateLimiter;
 }
 
 /**
@@ -100,17 +107,60 @@ export function createAuthRouter(
 
   const FIFTEEN_MIN =
     15 * 60 * 1000;
-  // 10 login attempts / 15 min per IP+email; 5 reset requests likewise.
+  // Two-tier where it matters:
+  //  - login: a per-IP+email bucket (cleared on that account's successful
+  //    login so a legitimate user is never locked out) PLUS a wider per-IP
+  //    bucket (never cleared) that bounds credential spray across many
+  //    accounts even when some succeed.
+  //  - reset-submit: a per-IP bucket (bounds token brute-force across many
+  //    tokens) PLUS a per-IP+token-fingerprint bucket (bounds hammering one
+  //    token). The fingerprint is a SHA-256 of the token — the raw token is
+  //    never used as a key, stored, or logged.
+  //  - signup: per-IP only. Adding the email to the key would give each probed
+  //    address its own bucket, letting an attacker enumerate accounts (via the
+  //    "already in use" 409) unbounded; per-IP bounds enumeration and abuse.
+  // In-memory fixed windows; correct for the single-process deployment (see
+  // the note in RateLimiter.ts and the go-live constraint in 04_SECURITY.md).
   const loginLimiter =
     deps.loginLimiter ??
     new RateLimiter({
       max: 10,
       windowMs: FIFTEEN_MIN,
     });
+  const loginIpLimiter =
+    deps.loginIpLimiter ??
+    new RateLimiter({
+      max: 30,
+      windowMs: FIFTEEN_MIN,
+    });
   const resetLimiter =
     deps.resetLimiter ??
     new RateLimiter({
       max: 5,
+      windowMs: FIFTEEN_MIN,
+    });
+  const signupLimiter =
+    deps.signupLimiter ??
+    new RateLimiter({
+      max: 10,
+      windowMs: FIFTEEN_MIN,
+    });
+  const resetSubmitLimiter =
+    deps.resetSubmitLimiter ??
+    new RateLimiter({
+      max: 10,
+      windowMs: FIFTEEN_MIN,
+    });
+  const resetSubmitTokenLimiter =
+    deps.resetSubmitTokenLimiter ??
+    new RateLimiter({
+      max: 5,
+      windowMs: FIFTEEN_MIN,
+    });
+  const changePwLimiter =
+    deps.changePwLimiter ??
+    new RateLimiter({
+      max: 10,
       windowMs: FIFTEEN_MIN,
     });
 
@@ -124,12 +174,52 @@ export function createAuthRouter(
       .trim()
       .toLowerCase();
 
+  // A non-reversible fingerprint of the reset token so a per-token bucket can
+  // exist without the raw token ever becoming a key, being stored, or logged.
+  const tokenFingerprint = (
+    req: Parameters<RequestHandler>[0],
+  ): string => {
+    const token = String(
+      (req.body as { token?: unknown })
+        ?.token ?? "",
+    );
+    if (!token) return "none";
+
+    return createHash("sha256")
+      .update(token)
+      .digest("hex")
+      .slice(0, 16);
+  };
+
+  // Records a throttle event for audit visibility — scope + IP only, never
+  // any credential, token, or password. Best-effort (audit may be unwired).
+  const auditBlocked = (
+    req: Parameters<RequestHandler>[0],
+    scope: string,
+  ): void => {
+    void deps.audit?.record({
+      action: "auth.rate_limited",
+      actorType: "system",
+      outcome: "failure",
+      ip: req.ip,
+      metadata: { scope },
+    });
+  };
+
   const loginRateLimit = rateLimit({
     limiter: loginLimiter,
     scope: "login",
     keyPart: emailKey,
     message:
       "Too many sign-in attempts. Please wait a few minutes and try again.",
+    onBlocked: auditBlocked,
+  });
+  const loginIpRateLimit = rateLimit({
+    limiter: loginIpLimiter,
+    scope: "login-ip",
+    message:
+      "Too many sign-in attempts. Please wait a few minutes and try again.",
+    onBlocked: auditBlocked,
   });
   const resetRateLimit = rateLimit({
     limiter: resetLimiter,
@@ -137,7 +227,62 @@ export function createAuthRouter(
     keyPart: emailKey,
     message:
       "Too many requests. Please wait a few minutes and try again.",
+    onBlocked: auditBlocked,
   });
+  const signupRateLimit = rateLimit({
+    limiter: signupLimiter,
+    scope: "signup",
+    message:
+      "Too many sign-up attempts. Please wait a few minutes and try again.",
+    onBlocked: auditBlocked,
+  });
+  const resetSubmitIpRateLimit =
+    rateLimit({
+      limiter: resetSubmitLimiter,
+      scope: "reset-submit",
+      message:
+        "Too many attempts. Please wait a few minutes and try again.",
+      onBlocked: auditBlocked,
+    });
+  const resetSubmitTokenRateLimit =
+    rateLimit({
+      limiter: resetSubmitTokenLimiter,
+      scope: "reset-submit-token",
+      keyPart: tokenFingerprint,
+      message:
+        "Too many attempts. Please wait a few minutes and try again.",
+      onBlocked: auditBlocked,
+    });
+  const changePwRateLimit = rateLimit({
+    limiter: changePwLimiter,
+    scope: "change-password",
+    // Keyed per authenticated user (requireUser runs first), bounding
+    // current-password guessing within a hijacked session.
+    keyPart: (req) =>
+      (req as AuthedRequest).auth?.user
+        .id ?? "",
+    message:
+      "Too many attempts. Please wait a few minutes and try again.",
+    onBlocked: auditBlocked,
+  });
+
+  // Reconstructs the login limiter key so a successful login can clear that
+  // account's failure bucket (never the wider per-IP bucket). Mirrors the key
+  // the rateLimit middleware builds: `${scope}:${ip}:${extra}`.
+  const clearLoginFailures = (
+    req: Parameters<RequestHandler>[0],
+    email: string,
+  ): void => {
+    const ip =
+      req.ip ||
+      req.socket?.remoteAddress ||
+      "unknown";
+    loginLimiter.reset(
+      `login:${ip}:${email
+        .trim()
+        .toLowerCase()}`,
+    );
+  };
 
   // Self-serve onboarding: create an organization + its first owner and
   // (when a session service is wired) log them straight in. Public — it
@@ -147,6 +292,7 @@ export function createAuthRouter(
 
     router.post(
       "/signup",
+      signupRateLimit,
       (req, res, next) => {
         const body = (req.body ??
           {}) as {
@@ -269,6 +415,7 @@ export function createAuthRouter(
   router.post(
     "/login",
     loginRateLimit,
+    loginIpRateLimit,
     deps.tenantMiddleware,
     (req, res, next) => {
       const body = (req.body ??
@@ -307,6 +454,14 @@ export function createAuthRouter(
                 res,
                 session,
                 secure,
+              );
+
+              // Clear only THIS account's failure bucket, so a legitimate
+              // sign-in never leaves the user locked out. The wider per-IP
+              // bucket is deliberately left intact to keep bounding spray.
+              clearLoginFailures(
+                req,
+                String(body.email),
               );
 
               void deps.audit?.record({
@@ -446,6 +601,8 @@ export function createAuthRouter(
 
     router.post(
       "/reset-password",
+      resetSubmitIpRateLimit,
+      resetSubmitTokenRateLimit,
       deps.tenantMiddleware,
       (req, res, next) => {
         const body = (req.body ??
@@ -543,6 +700,7 @@ export function createAuthRouter(
   router.post(
     "/change-password",
     deps.requireUser,
+    changePwRateLimit,
     (req, res, next) => {
       const auth = (
         req as AuthedRequest

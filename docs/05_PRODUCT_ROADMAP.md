@@ -23,7 +23,7 @@ Prioritized. Effort is rough (S/M/L/XL). Status: ✅ done · 🚧 in progress ·
 | P2: Forms Builder | L | Public capture → leads |
 | P2: Shared Calendar | M | Agenda view |
 | P2: AI Knowledge Base | L | Keyword retrieval + citations |
-| **Hardening pass** | M | Rate limiting, audit logging, daily backups |
+| **Hardening pass** | M | Auth rate limiting (login/signup/forgot/reset-submit/change-password — IP + account keyed, proxy-aware, 429+Retry-After, audited), audit logging, daily backups |
 | P3-M1: Workflow engine + Automations UI | XL | Trigger→timed steps→closed-set actions; live-proved |
 | P3-M2: AI tool registry + AI Actions UI | XL | Read tools run; write tools require confirmation; live-proved |
 | P3-M3: AI Command Center | XL | Chat plans + runs read tools; writes gated by confirmation; live-proved |

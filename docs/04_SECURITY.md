@@ -160,16 +160,45 @@ we act on) is trusted.
 ## Rate limiting
 
 An in-memory fixed-window `RateLimiter` (`src/platform/security/RateLimiter.ts`)
-guards authentication endpoints, keyed by client IP + target email so both
-spray (many accounts, one IP) and focused (one account) brute-force are
-bounded: **login** 10 attempts / 15 min, **forgot-password** 5 / 15 min.
-Exceeding returns **429** with `Retry-After`. `app.set("trust proxy", 1)` — we
-trust exactly one hop (the cPanel proxy), not the whole `X-Forwarded-For`
-chain, so a client can't spoof `X-Forwarded-For` to forge `req.ip` and mint a
-fresh bucket per request. *Why:*
-credential-stuffing and reset-spam are the most common attacks on an auth
-surface. In-memory is correct for the single-process deployment; a
-multi-instance deployment swaps the store behind the same interface.
+guards every sensitive authentication endpoint. Exceeding a limit returns **429**
+with a `Retry-After` header and a uniform `{error:{code:"RATE_LIMITED"}}` body.
+
+**Exact limits and keys** (all windows 15 min):
+
+| Endpoint | Limit(s) | Key |
+|---|---|---|
+| `POST /auth/login` | 10 / IP+email **and** 30 / IP | account bucket (cleared on that account's success) + wider IP bucket (never cleared, so spray stays bounded even when some logins succeed) |
+| `POST /auth/signup` | 10 / IP | per-IP only — adding the email would give each probed address its own bucket, enabling unbounded account enumeration via the "already in use" 409 |
+| `POST /auth/forgot-password` | 5 / IP+email | identical response whether or not the email exists (no enumeration) |
+| `POST /auth/reset-password` | 10 / IP **and** 5 / IP+token-fingerprint | per-IP bounds token brute-force across many tokens; the token bucket bounds hammering one token. The token key is a **SHA-256 fingerprint** — the raw reset token is never a key, stored, or logged |
+| `POST /auth/change-password` | 10 / user | authenticated; bounds current-password guessing in a hijacked session |
+
+**Proxy-aware IP.** `app.set("trust proxy", 1)` — trust exactly one hop (the
+cPanel proxy), not the whole `X-Forwarded-For` chain, so a client can't spoof
+`X-Forwarded-For` to forge `req.ip`. **This is only safe because the app binds
+to `127.0.0.1` (loopback)** and is reachable solely through Apache — see
+`platformServer.ts` (`PLATFORM_BIND_HOST`, default `127.0.0.1`). If the port
+were public (`0.0.0.0`), a client could connect directly, bypass Apache, and
+forge the forwarded IP. *Go-live check: confirm the port is not publicly
+reachable.*
+
+**Auditing.** Every 429 is recorded as `auth.rate_limited` (scope + IP only —
+never a password, token, or account). Audit is best-effort; ensure the audit
+service is wired in the production composition.
+
+**Durability — go-live constraint.** The store is an in-memory `Map`:
+per-process and reset on restart. This is correct for the **single-process**
+deployment today (the keepalive watchdog runs exactly one instance). Horizontal
+scaling (multiple workers) would let an attacker get the limit *per worker*, so
+the deployment **must remain single-process** until the store is swapped for a
+shared one (Redis/Postgres) behind the same interface.
+
+**Operational override / recovery.** To clear a limit that has locked out a
+legitimate user (e.g. the owner): a successful login already clears that
+account's bucket automatically; otherwise wait out the 15-min window, or restart
+the platform process (`keepalive.sh` mechanism), which clears all in-memory
+buckets. There is no way to exceed a limit by spoofing IPs while the app is
+loopback-bound behind the proxy.
 
 ## Audit logging
 

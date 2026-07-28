@@ -121,12 +121,22 @@ export function rateLimit(options: {
     req: Parameters<RequestHandler>[0],
   ) => string;
   message?: string;
+  /**
+   * Optional hook fired when a request is blocked (429). Lets the caller
+   * record a security-audit event for the throttle. Never receives (or is
+   * expected to log) any secret — only the request and the scope.
+   */
+  onBlocked?: (
+    req: Parameters<RequestHandler>[0],
+    scope: string,
+  ) => void;
 }): RequestHandler {
   const {
     limiter,
     scope,
     keyPart,
     message = "Too many attempts. Please wait a moment and try again.",
+    onBlocked,
   } = options;
 
   return (req, res, next) => {
@@ -142,6 +152,14 @@ export function rateLimit(options: {
     const result = limiter.hit(key);
 
     if (!result.allowed) {
+      if (onBlocked) {
+        try {
+          onBlocked(req, scope);
+        } catch {
+          // Auditing must never break the throttle response.
+        }
+      }
+
       res.setHeader(
         "Retry-After",
         String(

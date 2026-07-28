@@ -26,7 +26,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Knowledge Base | ~55% | Collections/docs/chunks/keyword retrieval + citations; pgvector + LLM synthesis pending |
 | Testing | ~55% | 970 tests; **runnable locally again** (Vitest `forks` pool, ADR-011) + CI + live proofs |
 | Documentation | ~40% | This `/docs` set established 2026-07-26; being back-filled |
-| Security review | Not done | Login rate-limit, RLS, audit logging outstanding |
+| Security review | In progress | Auth rate limiting (all sensitive endpoints, proxy-aware, audited) ✅ + audit logging ✅ done; RLS backstop + restore-test still outstanding |
 
 ## Current milestone
 
@@ -73,10 +73,17 @@ the tenant surface further.
 
 ## Security items outstanding (must precede "production-ready")
 
-- Login/auth rate limiting (brute-force protection).
+- ~~Login/auth rate limiting (brute-force protection).~~ ✅ done — covers login,
+  signup, forgot-password, reset-submit, change-password; IP + account keyed,
+  proxy-aware (`trust proxy = 1` + loopback bind), 429 + `Retry-After`, audited.
+  **Go-live constraint:** the limiter is in-memory/per-process — the deployment
+  must stay single-process (keepalive enforces one instance) until it's swapped
+  for a shared store; see `04_SECURITY.md`.
+- ~~Comprehensive audit logging of security-relevant actions.~~ ✅ done for auth
+  (incl. rate-limit blocks); expand coverage over time.
 - Postgres Row-Level Security as a defense-in-depth backstop.
-- Comprehensive audit logging of security-relevant actions.
-- Automated database backups + documented restore.
+- Automated database backups ✅ (daily `pg_dump`) + **documented restore test**
+  (restore has not yet been exercised).
 
 ## Critical bugs
 
