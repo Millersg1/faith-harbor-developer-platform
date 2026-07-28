@@ -6,7 +6,19 @@ Faith Harbor OS is unaffected.
 
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
-### Added
+### Changed
+- **Dashboard polish pass.** Narrow visual follow-up to the Home overhaul
+  (no behavior/endpoint/permission changes): (1) the seven metric cards now use
+  a **responsive grid** — 2 columns on phone, 3 on tablet, 4 on desktop (a
+  balanced 4 + 3), with `minmax(0, 1fr)` so long labels never force horizontal
+  overflow; (2) accent-filled badges (the `2 / 6` onboarding chip, etc.) now
+  put **`accentInk` on the accent fill** instead of accent-colored text on a
+  fixed teal tint — readable for any brand color; the `accentInk` luminance
+  threshold was corrected to the contrast-optimal `0.207` (maximizes worst-case
+  ratio). (3) Fixed a 10px phone-width **horizontal overflow** from the topbar
+  (it now wraps; the duplicate identity label is hidden under 560px since the
+  greeting already shows it). Inactive nav contrast was audited and left as-is
+  (muted-on-surface ≈ 8:1, unaffected by tenant color). +4 contrast/grid tests.
 - **Tenant dashboard (Home) overhaul.** The Home route is now an operational
   **Command Center** ("Dashboard" tab) instead of a wall of panels:
   - **Personalized welcome** — a time-of-day greeting by the user's *name*

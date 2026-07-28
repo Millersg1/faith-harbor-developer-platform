@@ -20,6 +20,32 @@ describe("dashboardPage — theme tokens", () => {
   });
 });
 
+describe("dashboardPage — accent badge contrast & responsive metrics", () => {
+  it("fills accent badges with the accent and puts accent-ink on top (not accent text on a tint)", () => {
+    // The `.pill` badge (e.g. the 2/6 onboarding count) must use the accent as
+    // background with accent-ink text, so it stays readable for any brand color.
+    expect(html).toMatch(
+      /\.pill\s*\{[^}]*background:\s*var\(--accent\)[^}]*color:\s*var\(--accent-ink\)/,
+    );
+    // The active nav tab also uses accent-ink on the accent fill.
+    expect(html).toMatch(
+      /\.secnav a\.active\s*\{[^}]*var\(--accent-ink\)/,
+    );
+  });
+
+  it("uses a responsive metric grid (no fixed 5+2 / no overflow) with breakpoints", () => {
+    expect(html).toContain(".metrics {");
+    // Column count adapts by width (phone/tablet/desktop).
+    expect(html).toMatch(
+      /@media \(min-width: 940px\)[^}]*\.metrics/,
+    );
+    // minmax(0, 1fr) guards against horizontal overflow from long labels.
+    expect(html).toContain(
+      "minmax(0, 1fr)",
+    );
+  });
+});
+
 describe("dashboardPage — accessibility & structure", () => {
   it("renders the onboarding progress with progressbar semantics", () => {
     expect(html).toContain('role="progressbar"');

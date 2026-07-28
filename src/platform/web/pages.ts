@@ -105,7 +105,10 @@ const STYLES = `
 
   /* App shell */
   .topbar { border-bottom: 1px solid var(--border); background: rgba(11,18,32,0.7); backdrop-filter: blur(8px); position: sticky; top: 0; }
-  .topbar .wrap { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; padding-bottom: 14px; }
+  .topbar .wrap { display: flex; align-items: center; justify-content: space-between; gap: 10px; row-gap: 10px; flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; }
+  /* On phones the greeting already shows the identity, so drop the duplicate
+     topbar label to keep the header on one line without horizontal overflow. */
+  @media (max-width: 560px) { #who { display: none; } }
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-top: 18px; }
   .panel h2 { font-size: 1.05rem; margin-bottom: 4px; }
   .panel .hint { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
@@ -117,8 +120,11 @@ const STYLES = `
   .inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-top: 14px; }
   .inline .f { flex: 1; min-width: 160px; }
   .inline label { margin-top: 0; }
+  /* Accent-filled chip: the tenant accent as the background with luminance-
+     chosen ink on top, so it stays AA-readable for any brand color (a tinted
+     background with accent-colored text failed for dark/mid brand colors). */
   .pill { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;
-    padding: 3px 9px; border-radius: 999px; background: rgba(45,212,191,0.16); color: var(--accent); }
+    padding: 3px 9px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
   .secnav { position: sticky; top: 0; z-index: 20; display: flex; gap: 8px; overflow-x: auto;
@@ -133,7 +139,13 @@ const STYLES = `
   /* Dashboard Home */
   .dash-hero h1 { font-size: 1.55rem; letter-spacing: -0.02em; }
   .dash-hero p { color: var(--muted-strong); font-size: 0.92rem; margin-top: 4px; }
-  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 12px; }
+  /* Responsive metric grid: phone 2, tablet 3, desktop 4 columns (so 7 cards
+     read as a balanced 4 + 3). minmax(0,1fr) keeps long labels from forcing
+     horizontal overflow. */
+  .metrics { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  @media (min-width: 640px) { .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 940px) { .metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (max-width: 380px) { .metrics { grid-template-columns: 1fr; } }
   .metric { display: block; padding: 15px 16px; background: var(--surface); border: 1px solid var(--border);
     border-radius: 12px; color: var(--text); text-decoration: none; transition: border-color .15s ease, transform .15s ease; }
   .metric:hover { border-color: var(--accent); transform: translateY(-1px); }

@@ -126,7 +126,10 @@ export function accentInk(hex: string): string {
   if (l < 0) {
     return "#06231f";
   }
-  return l > 0.42 ? "#06231f" : "#ffffff";
+  // Switch at the luminance where dark-ink and white-ink contrast are equal
+  // (~0.207), which maximizes the worst-case contrast ratio on any brand color.
+  // Above it a dark ink reads best; below it, white.
+  return l > 0.207 ? "#06231f" : "#ffffff";
 }
 
 /**

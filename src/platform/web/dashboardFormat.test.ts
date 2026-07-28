@@ -95,6 +95,40 @@ describe("tenant accent validation", () => {
     expect(relativeLuminance("#ffffff")).toBeCloseTo(1, 5);
     expect(relativeLuminance("bad")).toBe(-1);
   });
+
+  it("keeps accent-on-ink contrast readable across dark/light/saturated/invalid brands", () => {
+    const contrast = (a: string, b: string): number => {
+      const la = relativeLuminance(a);
+      const lb = relativeLuminance(b);
+      const hi = Math.max(la, lb);
+      const lo = Math.min(la, lb);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    // Every brand color (incl. edge cases) clears AA-large (>= 3:1) with its ink.
+    for (const c of [
+      "#1f6feb", // the flagged staging blue
+      "#2dd4bf", // default teal
+      "#6d28d9", // saturated purple
+      "#0b1220", // near-black
+      "#f5f5f5", // near-white
+      "#111827", // very dark
+    ]) {
+      expect(
+        contrast(c, accentInk(c)),
+      ).toBeGreaterThanOrEqual(3);
+    }
+    // The flagged blue and the default teal clear full AA (>= 4.5:1) for small text.
+    expect(
+      contrast("#1f6feb", accentInk("#1f6feb")),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast("#2dd4bf", accentInk("#2dd4bf")),
+    ).toBeGreaterThanOrEqual(4.5);
+    // Invalid input → safe dark ink, no crash.
+    expect(accentInk("not-a-color")).toBe(
+      "#06231f",
+    );
+  });
 });
 
 describe("actorLabel", () => {
