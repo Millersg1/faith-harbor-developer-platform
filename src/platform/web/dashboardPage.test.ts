@@ -20,6 +20,69 @@ describe("dashboardPage — theme tokens", () => {
   });
 });
 
+describe("dashboardPage — Website workspace", () => {
+  it("has an accessible sub-navigation (tablist) with the six sections", () => {
+    expect(html).toContain(
+      'class="websubnav"',
+    );
+    expect(html).toContain(
+      'role="tablist"',
+    );
+    for (const label of [
+      "My Websites",
+      "Create Website",
+      "AI Employee Marketplace",
+      "Website Templates",
+      "Hosting &amp; Domains",
+      "Branding",
+    ]) {
+      expect(html).toContain(label);
+    }
+  });
+
+  it("tags every Website panel with data-websub and provides the dialog host", () => {
+    expect(html).toContain(
+      'data-websub="mywebsites"',
+    );
+    expect(html).toContain(
+      'data-websub="create"',
+    );
+    expect(html).toContain(
+      'data-websub="marketplace"',
+    );
+    expect(html).toContain(
+      'data-websub="templates"',
+    );
+    expect(html).toContain(
+      'id="dlgHost"',
+    );
+  });
+
+  it("keeps AI-employee packages and standalone templates distinct in copy", () => {
+    // AI Employee Marketplace explicitly mentions a role-focused AI employee.
+    expect(html).toContain(
+      "role-focused",
+    );
+    expect(html).toMatch(
+      /AI employee/i,
+    );
+    // Website Templates explicitly state no AI employee is included.
+    expect(html).toMatch(
+      /No AI employee is included/i,
+    );
+  });
+
+  it("uses honest AutoSSL wording (policy, not a live SSL status claim)", () => {
+    expect(html).toMatch(
+      /SSL is provisioned automatically after a domain verifies|AutoSSL/i,
+    );
+    // No unconditional "SSL active/issued" claim in the static copy.
+    expect(html).not.toMatch(
+      /SSL (Active|Issued|Certificate Issued)/,
+    );
+  });
+});
+
 describe("dashboardPage — accent badge contrast & responsive metrics", () => {
   it("fills accent badges with the accent and puts accent-ink on top (not accent text on a tint)", () => {
     // The `.pill` badge (e.g. the 2/6 onboarding count) must use the accent as

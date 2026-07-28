@@ -59,6 +59,7 @@ import { PlatformHostingService } from "./hosting/PlatformHostingService";
 import { PlatformTicketRepository } from "./support/PlatformTicketRepository";
 import { PlatformTicketService } from "./support/PlatformTicketService";
 import { PlatformWebsiteRepository } from "./websites/PlatformWebsiteRepository";
+import { WebsiteGenerationLockRepository } from "./websites/WebsiteGenerationLockRepository";
 import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import {
   DisconnectedWebsiteGenerator,
@@ -399,6 +400,10 @@ async function start(): Promise<void> {
       aiSettings,
       aiUsage,
       billing,
+      undefined,
+      new WebsiteGenerationLockRepository(
+        db,
+      ),
     );
 
   const admins =

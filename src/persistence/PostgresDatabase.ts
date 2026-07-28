@@ -290,8 +290,33 @@ export class PostgresDatabase
         html             TEXT,
         status           TEXT NOT NULL DEFAULT 'draft',
         domain           TEXT,
+        source_template_id TEXT,
+        source_edition_id  TEXT,
         created_at       TEXT NOT NULL,
         updated_at       TEXT NOT NULL
+      );
+    `);
+
+    // Additive migration for databases created before website provenance
+    // existed: add the source columns if missing (existing rows keep NULL).
+    await this.pool.query(
+      "ALTER TABLE websites ADD COLUMN IF NOT EXISTS source_template_id TEXT;",
+    );
+    await this.pool.query(
+      "ALTER TABLE websites ADD COLUMN IF NOT EXISTS source_edition_id TEXT;",
+    );
+
+    // Durable per-website generation lock: one row while a generation is in
+    // flight, so concurrent/duplicate generate requests can't both run and
+    // double-meter AI usage. Cross-process safe (unlike an in-memory flag).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS website_generation_locks (
+        website_id       TEXT PRIMARY KEY
+                           REFERENCES websites (id) ON DELETE CASCADE,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        idempotency_key  TEXT,
+        started_at       TEXT NOT NULL
       );
     `);
 

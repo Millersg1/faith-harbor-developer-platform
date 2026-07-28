@@ -165,6 +165,49 @@ const STYLES = `
   .badge.muted { background: rgba(174,188,205,0.16); color: var(--muted-strong); }
   .subtle-btn { background: none; border: 0; color: var(--accent); font-size: 0.82rem; font-weight: 600; cursor: pointer; padding: 0; }
   .subtle-btn:hover { text-decoration: underline; }
+
+  /* ---- Website workspace ---- */
+  /* Every Website panel spans the full grid width, so the AI builder no longer
+     stretches to match the tall catalog beside it (the old empty column). */
+  [data-websub] { grid-column: 1 / -1; }
+  .websub-hide { display: none !important; }
+  .websubnav { grid-column: 1 / -1; display: flex; gap: 8px; overflow-x: auto; padding: 8px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; margin-top: 18px; }
+  .websubnav button { white-space: nowrap; font-size: 0.82rem; font-weight: 600; color: var(--muted); cursor: pointer;
+    background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 7px 14px; }
+  .websubnav button:hover { color: var(--text); border-color: var(--accent); }
+  .websubnav button.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+  .websubnav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Responsive template/package card grid: phone 1, tablet 2, desktop 3. */
+  .cardgrid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 620px) { .cardgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 960px) { .cardgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tcard { display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; }
+  .tcard .thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; object-position: top; background: var(--surface-3); display: block; }
+  .tcard .thumb.ph { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.8rem; }
+  .tcard .body { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .tcard .ttl { font-weight: 700; font-size: 0.95rem; }
+  .tcard .desc { color: var(--muted); font-size: 0.83rem; line-height: 1.45; }
+  .tcard .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 4px; }
+  /* Kind labels distinguish the two collections with an icon + words, not color alone. */
+  .kind { display: inline-flex; align-items: center; gap: 5px; font-size: 0.66rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: 0.04em; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); }
+  .kind.pkg { background: rgba(99,102,241,0.16); color: #c3c7ff; }
+  .kind.tpl { background: rgba(45,212,191,0.14); color: #7fe7d6; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 14px; }
+  .filters input, .filters select { width: auto; min-width: 140px; padding: 8px 11px; font-size: 0.85rem; }
+  .filters input { flex: 1; min-width: 180px; }
+  /* Confirmation dialog */
+  .dlg-back { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 5vh 16px; }
+  .dlg { width: 100%; max-width: 460px; background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5); max-height: 90vh; overflow: auto; }
+  .dlg .dlg-h { padding: 18px 20px 6px; font-size: 1.05rem; font-weight: 700; }
+  .dlg .dlg-b { padding: 4px 20px 8px; color: var(--muted-strong); font-size: 0.9rem; }
+  .dlg .dlg-b ul { margin: 8px 0 0; padding-left: 18px; }
+  .dlg .dlg-b li { margin: 4px 0; }
+  .dlg .dlg-f { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px 18px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
   .dns { margin-top: 10px; padding: 12px 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; }
   .dns .hint { margin-bottom: 10px; }
   .dns .rec { display: flex; flex-direction: column; gap: 8px; }
@@ -593,32 +636,59 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="imsg"></div>
       </div>
-      <div class="panel">
-        <h2>AI Website Builder <span class="pill">AI</span></h2>
-        <p class="hint">Describe a business and generate a complete site. Build for yourself or for your clients on their own domains.</p>
+      <div class="websubnav" id="websubnav" role="tablist" aria-label="Website workspace">
+        <button role="tab" data-websub="mywebsites" aria-controls="wsub-mywebsites">My Websites</button>
+        <button role="tab" data-websub="create" aria-controls="wsub-create">Create Website</button>
+        <button role="tab" data-websub="marketplace" aria-controls="wsub-marketplace">AI Employee Marketplace</button>
+        <button role="tab" data-websub="templates" aria-controls="wsub-templates">Website Templates</button>
+        <button role="tab" data-websub="hosting" aria-controls="wsub-hosting">Hosting &amp; Domains</button>
+        <button role="tab" data-websub="branding" aria-controls="wsub-branding">Branding</button>
+      </div>
+      <div class="panel" data-websub="mywebsites" id="wsub-mywebsites" role="tabpanel" aria-label="My Websites" tabindex="0">
+        <h2>My Websites</h2>
+        <p class="hint">Your organization's sites — generate, preview, publish to a verified domain, or remove.</p>
         <div class="list" id="websites"><div class="empty">Loading…</div></div>
+        <div class="msg" id="wlmsg"></div>
+      </div>
+      <div class="panel" data-websub="create" id="wsub-create" role="tabpanel" aria-label="Create Website" tabindex="0">
+        <h2>Create a website</h2>
+        <p class="hint">Describe a business and the AI builder drafts a complete site. Build for yourself or for a client on their own domain.</p>
         <div class="inline">
-          <div class="f"><label for="wname">Site name</label><input id="wname" placeholder="Acme Bakery" /></div>
+          <div class="f"><label for="wname">Website / business name</label><input id="wname" placeholder="Acme Bakery" /></div>
           <div class="f"><label for="wclient">Client (optional)</label><select id="wclient" class="client-select"></select></div>
         </div>
-        <div class="f"><label for="wbrief">Describe the business</label><input id="wbrief" placeholder="A family bakery in Miami known for Cuban pastries and custom cakes." /></div>
-        <button class="btn" id="addWebsite" style="width:auto;margin-top:12px;">Create site</button>
+        <div class="f" style="margin-top:12px;"><label for="wbrief">Describe the business &amp; goals</label><input id="wbrief" placeholder="A family bakery in Miami known for Cuban pastries and custom cakes." /></div>
+        <button class="btn" id="addWebsite" style="width:auto;margin-top:14px;">Create website</button>
+        <p class="hint" id="wgenNote" style="margin-top:10px;"></p>
         <div class="msg" id="wmsg"></div>
       </div>
-      <div class="panel">
-        <h2>Marketplace <span class="pill">templates</span></h2>
-        <p class="hint">Start from a ready-made, industry-specific website template. Using one creates a draft you can then generate and publish.</p>
-        <p class="hint" style="font-style:italic;">Any preview images are AI-generated <strong>samples</strong> — each site is generated fresh for your business, so your result will be unique and may differ from the sample shown.</p>
-        <div class="sub" style="margin:6px 0 4px;font-weight:600;">Industry editions</div>
-        <p class="hint" style="margin-top:0;">One click sets up a whole line of business — a website draft, your brand accent, and ready-to-use AI assistants.</p>
-        <div class="list" id="editions"><div class="empty">Loading…</div></div>
-        <div class="sub" style="margin:14px 0 4px;font-weight:600;">Website templates</div>
-        <div class="list" id="marketplace"><div class="empty">Loading…</div></div>
+      <div class="panel" data-websub="marketplace" id="wsub-marketplace" role="tabpanel" aria-label="AI Employee Marketplace" tabindex="0">
+        <h2>AI Employee Marketplace</h2>
+        <p class="hint">Add a role-focused <strong>AI employee</strong> with its available website design, tools, and workflows. Installing is additive — it never overwrites an existing site, employee, or your branding.</p>
+        <div class="filters">
+          <input id="edSearch" type="search" placeholder="Search packages…" aria-label="Search AI employee packages" />
+          <select id="edPlan" aria-label="Filter by eligibility"><option value="">All packages</option><option value="included">Included with my plan</option><option value="premium">Premium</option></select>
+        </div>
+        <div id="editions"><div class="empty">Loading…</div></div>
+        <div style="text-align:center;margin-top:14px;"><button class="btn ghost" id="edMore" style="display:none;">Load more</button></div>
         <div class="msg" id="mktmsg"></div>
       </div>
-      <div class="panel">
-        <h2>Hosting accounts <span class="pill">All Elite Hosting</span></h2>
-        <p class="hint">Hosted sites in your organization. New accounts start pending until provisioned.</p>
+      <div class="panel" data-websub="templates" id="wsub-templates" role="tabpanel" aria-label="Website Templates" tabindex="0">
+        <h2>Website Templates</h2>
+        <p class="hint">Choose a <strong>standalone website design</strong> for a new site. No AI employee is included — using one creates a draft you then generate and publish.</p>
+        <p class="hint" style="font-style:italic;">Preview images are AI-generated <strong>samples</strong>; each site is generated fresh for your business, so your result will be unique.</p>
+        <div class="filters">
+          <input id="tplSearch" type="search" placeholder="Search templates…" aria-label="Search website templates" />
+          <select id="tplIndustry" aria-label="Filter by industry"><option value="">All industries</option></select>
+          <select id="tplPlan" aria-label="Filter by eligibility"><option value="">All templates</option><option value="included">Included with my plan</option><option value="premium">Premium</option></select>
+        </div>
+        <div id="marketplace"><div class="empty">Loading…</div></div>
+        <div style="text-align:center;margin-top:14px;"><button class="btn ghost" id="tplMore" style="display:none;">Load more</button></div>
+        <div class="msg" id="tplmsg"></div>
+      </div>
+      <div class="panel" data-websub="hosting" id="wsub-hosting" role="tabpanel" aria-label="Hosting and Domains" tabindex="0">
+        <h2>Hosting accounts</h2>
+        <p class="hint">Hosted sites in your organization. New accounts start <strong>pending</strong> until provisioned. Credentials are never shown here.</p>
         <div class="list" id="hosting"><div class="empty">Loading…</div></div>
         <div class="inline">
           <div class="f"><label for="hdomain">Domain</label><input id="hdomain" placeholder="yoursite.com" /></div>
@@ -722,7 +792,7 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="pgmsg"></div>
       </div>
-      <div class="panel" id="brandsPanel" style="display:none;">
+      <div class="panel" id="brandsPanel" data-websub="branding" style="display:none;">
         <h2>Brands <span class="pill">owner/admin</span></h2>
         <p class="hint">Run several brands under one workspace, each with its own domain and email voice.</p>
         <div class="list" id="brands"><div class="empty">Loading…</div></div>
@@ -913,28 +983,33 @@ export function dashboardPage(): string {
         </div>
         <div class="msg" id="aimsg"></div>
       </div>
-      <div class="panel" id="brandPanel" style="display:none;">
-        <h2>Branding <span class="pill">owner/admin</span></h2>
-        <p class="hint">White-label your workspace. Changes are live instantly.</p>
+      <div class="panel" id="brandPanel" data-websub="branding" role="tabpanel" aria-label="Branding" tabindex="0" style="display:none;">
+        <h2>Organization branding <span class="pill">owner/admin</span></h2>
+        <p class="hint">Workspace-wide white-label identity. This sets the display name and accent applied across <strong>your whole workspace</strong>; each generated website also keeps its own accent chosen when it was created.</p>
         <label for="bname">Display name</label>
         <input id="bname" placeholder="Your organization" />
-        <label for="bcolor">Primary color</label>
-        <input id="bcolor" placeholder="#2dd4bf" />
-        <button class="btn" id="saveBrand">Save branding</button>
+        <label for="bcolor">Primary color (hex, e.g. #2dd4bf)</label>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input id="bcolor" placeholder="#2dd4bf" style="flex:1;" />
+          <span id="bswatch" aria-hidden="true" style="width:34px;height:34px;border-radius:9px;border:1px solid var(--border);flex:none;background:var(--accent);"></span>
+        </div>
+        <p class="hint" id="bcontrast" style="margin-top:6px;"></p>
+        <button class="btn" id="saveBrand" style="margin-top:12px;">Save branding</button>
         <div class="msg" id="bmsg"></div>
       </div>
-      <div class="panel" id="domainPanel" style="display:none;">
-        <h2>Custom domain <span class="pill">owner/admin</span></h2>
-        <p class="hint">White-label: run your workspace on your own domain.</p>
+      <div class="panel" id="domainPanel" data-websub="hosting" style="display:none;">
+        <h2>Connected domains</h2>
+        <p class="hint">White-label: run your workspace and publish sites on your own domain. Add a domain, then verify ownership with a DNS TXT record.</p>
         <div class="list" id="domains"><div class="empty">Loading…</div></div>
         <div class="inline">
           <div class="f"><label for="dname">Domain</label><input id="dname" placeholder="cloud.yourbrand.com" /></div>
           <button class="btn" id="addDomain" style="width:auto;">Add</button>
         </div>
         <div class="msg" id="dmsg"></div>
-        <p class="hint" style="margin-top:12px">Point your domain (A/CNAME record) at the platform; once it resolves, your workspace loads there and SSL is issued automatically.</p>
+        <p class="hint" style="margin-top:12px">Point your domain (A/CNAME record) at the platform. DNS changes can take time to propagate; the status shows <strong>Verification required</strong> until the record resolves, then <strong>Connected</strong>. SSL certificates are automatically provisioned and renewed through <strong>AutoSSL</strong> after the domain is connected and DNS is correctly configured. (Live certificate status isn&rsquo;t reported in this workspace yet.)</p>
       </div>
     </div>
+    <div id="dlgHost"></div>
   </div>`;
   const script = `
   ${DASHBOARD_HELPERS_JS}
@@ -1199,8 +1274,109 @@ export function dashboardPage(): string {
     if(!r.ok)return; var d=await r.json(); var b=d.branding||{};
     applyAccent(b.primaryColor);
     if(b.displayName){document.getElementById('orgName').textContent=b.displayName;}
-    document.getElementById('bname').value=b.displayName||'';
-    document.getElementById('bcolor').value=b.primaryColor||'';
+    var bn=document.getElementById('bname'); if(bn)bn.value=b.displayName||'';
+    var bc=document.getElementById('bcolor'); if(bc){bc.value=b.primaryColor||'';previewBrand();}
+  }
+  function previewBrand(){
+    var bc=document.getElementById('bcolor'),sw=document.getElementById('bswatch'),ct=document.getElementById('bcontrast');
+    if(!bc||!sw)return;
+    var v=(bc.value||'').trim();
+    var safe=safeAccent(v,DEFAULT_ACCENT);
+    sw.style.background=safe;
+    if(ct){
+      if(v && safe!==v){ct.textContent='That isn\\u2019t a valid #rrggbb color \\u2014 the default accent will be used so text stays readable.';}
+      else if(v){ct.textContent='Preview: buttons use '+(accentInk(safe)==='#ffffff'?'white':'dark')+' text on this color for readable contrast.';}
+      else{ct.textContent='';}
+    }
+  }
+  async function loadDomains(){
+    var r=await api('/api/platform/domains');
+    var el=document.getElementById('domains'); if(!el)return;
+    if(!r.ok){clear(el);el.appendChild(emptyMsg('Could not load domains.'));return;}
+    var d=await r.json();
+    clear(el);
+    var list=d.domains||[];
+    if(!list.length){el.appendChild(emptyMsg('No custom domains yet. Add one above to publish on your own domain.'));return;}
+    var manage=canManageWorkspace();
+    list.forEach(function(dm){
+      var wrap=document.createElement('div');wrap.className='item';wrap.style.flexDirection='column';wrap.style.alignItems='stretch';
+      var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;';
+      var left=document.createElement('div');
+      var nm=document.createElement('div');nm.textContent=esc(dm.domain);nm.style.fontWeight='600';left.appendChild(nm);
+      // Honest status: connection state from the verified flag; SSL/AutoSSL is a
+      // policy note, not a live certificate status (not queried by this app yet).
+      var sub=document.createElement('div');sub.className='sub';sub.style.fontSize='0.74rem';
+      sub.textContent=dm.verified?'AutoSSL provisioning expected (live certificate status not reported here)':'DNS changes can take time to propagate';
+      left.appendChild(sub);row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;align-items:center;gap:8px;';
+      var st=document.createElement('span');
+      if(dm.verified){st.className='badge ok';st.textContent='Connected';}else{st.className='badge warn';st.textContent='Verification required';}
+      actions.appendChild(st);
+      if(manage&&!dm.verified){var vb=document.createElement('button');vb.className='btn';vb.style.cssText='width:auto;padding:6px 12px;';vb.textContent='Verify';vb.addEventListener('click',function(){verifyDomain(dm.id,vb);});actions.appendChild(vb);}
+      if(manage){var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Remove';rm.addEventListener('click',function(){confirmRemoveDomain(dm);});actions.appendChild(rm);}
+      row.appendChild(actions);wrap.appendChild(row);
+      if(!dm.verified){
+        var dns=document.createElement('div');dns.className='dns';
+        var h=document.createElement('div');h.className='hint';h.textContent='To verify ownership, add this DNS TXT record at your registrar, then click Verify:';dns.appendChild(h);
+        var t=document.createElement('div');t.className='rec';
+        var hn=document.createElement('div');var hl=document.createElement('span');hl.className='k';hl.textContent='Host';var hv=document.createElement('code');hv.textContent='_aecloud-verify.'+dm.domain;hn.appendChild(hl);hn.appendChild(hv);
+        var vn=document.createElement('div');var vl=document.createElement('span');vl.className='k';vl.textContent='Value';var vv=document.createElement('code');vv.textContent='aecloud-verify='+esc(dm.verificationToken);vn.appendChild(vl);vn.appendChild(vv);
+        t.appendChild(hn);t.appendChild(vn);dns.appendChild(t);
+        wrap.appendChild(dns);
+      }
+      el.appendChild(wrap);
+    });
+  }
+  async function verifyDomain(id,btn){
+    if(btn){btn.disabled=true;btn.textContent='Checking\\u2026';}
+    var r=await api('/api/platform/domains/'+encodeURIComponent(id)+'/verify',{method:'POST'});
+    if(r.ok){setMsg('dmsg','ok','Domain verified \\u2014 it now routes to your workspace. AutoSSL provisioning is expected to follow.');loadDomains();return;}
+    var e=await r.json().catch(function(){return{};});
+    setMsg('dmsg','err',(e.error&&e.error.message)||'Not verified yet \\u2014 the DNS TXT record may still be propagating.');
+    if(btn){btn.disabled=false;btn.textContent='Verify';}
+  }
+  function confirmRemoveDomain(dm){
+    openConfirm({title:'Remove '+dm.domain+'?',intro:'This disconnects the domain from your workspace'+(dm.verified?' and any sites published to it will go offline':'')+'.',confirmLabel:'Remove domain',danger:true,onConfirm:function(){return removeDomain(dm.id);}});
+  }
+  async function removeDomain(id){
+    var r=await api('/api/platform/domains/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok){setMsg('dmsg','ok','Domain removed.');loadDomains();return;}
+    setMsg('dmsg','err','Could not remove that domain.');throw new Error('rm');
+  }
+  function hostBadge(s){var b=document.createElement('span');
+    if(s==='active'){b.className='badge ok';b.textContent='Active';}
+    else if(s==='pending'){b.className='badge warn';b.textContent='Pending provisioning';}
+    else if(s==='suspended'){b.className='badge warn';b.textContent='Suspended';}
+    else if(s==='cancelled'){b.className='badge muted';b.textContent='Cancelled';}
+    else{b.className='badge muted';b.textContent=esc(s||'Unknown');}
+    return b;}
+  async function loadHosting(){
+    var r=await api('/api/platform/hosting');
+    var el=document.getElementById('hosting'); if(!el)return;
+    if(!r.ok){clear(el);el.appendChild(emptyMsg('Could not load hosting accounts.'));return;}
+    var d=await r.json(); clear(el);
+    var list=d.hosting||[]; var manage=canManageWorkspace();
+    if(!list.length){el.appendChild(emptyMsg('No hosting accounts yet.'));return;}
+    list.forEach(function(h){
+      var row=document.createElement('div');row.className='item';
+      var left=document.createElement('div');
+      var nm=document.createElement('div');nm.textContent=esc(h.domain);nm.style.fontWeight='600';left.appendChild(nm);
+      var meta=[];if(h.plan)meta.push(esc(h.plan));if(h.notes)meta.push(esc(h.notes));
+      if(meta.length){var s=document.createElement('div');s.className='sub';s.textContent=meta.join(' \\u00b7 ');left.appendChild(s);}
+      row.appendChild(left);
+      var actions=document.createElement('div');actions.style.cssText='display:flex;align-items:center;gap:8px;';
+      actions.appendChild(hostBadge(h.status));
+      if(manage){var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Delete';rm.addEventListener('click',function(){confirmDeleteHosting(h);});actions.appendChild(rm);}
+      row.appendChild(actions);el.appendChild(row);
+    });
+  }
+  function confirmDeleteHosting(h){
+    openConfirm({title:'Delete hosting for '+h.domain+'?',intro:'This removes the hosting account record from your workspace.',confirmLabel:'Delete',danger:true,onConfirm:function(){return deleteHosting(h.id);}});
+  }
+  async function deleteHosting(id){
+    var r=await api('/api/platform/hosting/'+encodeURIComponent(id),{method:'DELETE'});
+    if(r.ok){setMsg('hmsg','ok','Hosting account deleted.');loadHosting();return;}
+    setMsg('hmsg','err','Could not delete that hosting account.');throw new Error('rm');
   }
   async function loadDomains(){
     var r=await api('/api/platform/domains'); if(!r.ok)return;
@@ -1233,23 +1409,6 @@ export function dashboardPage(): string {
       }
       el.appendChild(wrap);
     });
-  }
-  async function verifyDomain(id,btn){
-    if(btn){btn.disabled=true;btn.textContent='Checking…';}
-    var r=await api('/api/platform/domains/'+encodeURIComponent(id)+'/verify',{method:'POST'});
-    if(r.ok){setMsg('dmsg','ok','Domain verified — it now routes to your workspace.');loadDomains();return;}
-    var e=await r.json().catch(function(){return{};});
-    setMsg('dmsg','err',(e.error&&e.error.message)||'Could not verify yet.');
-    if(btn){btn.disabled=false;btn.textContent='Verify';}
-  }
-  async function removeDomain(id){
-    var r=await api('/api/platform/domains/'+encodeURIComponent(id),{method:'DELETE'});
-    if(r.ok)loadDomains();
-  }
-  async function loadHosting(){
-    var r=await api('/api/platform/hosting'); if(!r.ok)return;
-    var d=await r.json();
-    renderList('hosting',d.hosting||[],function(h){return item(esc(h.domain),esc(h.plan||''),esc(h.status));});
   }
   async function loadTickets(){
     var r=await api('/api/platform/tickets'); if(!r.ok)return;
@@ -2015,148 +2174,340 @@ export function dashboardPage(): string {
     });
   }
   var aiReady=true;
-  async function loadEditions(){
-    var r=await api('/api/platform/marketplace/editions'); if(!r.ok)return;
-    var d=await r.json();
-    var el=document.getElementById('editions'); if(!el)return; clear(el);
-    var list=d.editions||[];
-    if(!list.length){el.appendChild(emptyMsg('No editions available.'));return;}
-    var canUse=(myRole==='owner'||myRole==='admin');
-    list.forEach(function(e){
-      var row=document.createElement('div');row.className='item';
-      if(e.previewImage){var im=document.createElement('img');im.src=e.previewImage;im.alt='';im.loading='lazy';im.title='AI-generated sample';im.style.cssText='width:140px;height:88px;object-fit:cover;object-position:top;border-radius:8px;flex:none;margin-right:12px;background:rgba(127,127,127,0.12);';im.onerror=function(){im.style.display='none';};row.appendChild(im);}
-      var left=document.createElement('div');
-      var n=document.createElement('div');n.textContent=esc(e.name);n.style.fontWeight='600';left.appendChild(n);
-      var s=document.createElement('div');s.className='sub';s.textContent=esc(e.description)+' \\u00b7 '+((e.employees||[]).length)+' assistant(s)';left.appendChild(s);
-      row.appendChild(left);
-      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
-      if(e.tier==='premium'){var pp=document.createElement('span');pp.className='pill';pp.textContent='Premium';actions.appendChild(pp);}
-      if(canUse){
-        var b=document.createElement('button');b.className='btn';b.style.padding='6px 12px';b.textContent='Apply';
-        b.addEventListener('click',function(){applyEdition(e.id,e.name);});actions.appendChild(b);
-      }
-      row.appendChild(actions);
-      el.appendChild(row);
-    });
+  // ---- Confirmation dialog (focus-trapped, ESC to close) ----
+  var _dlgPrev=null;
+  function closeDlg(){var h=document.getElementById('dlgHost');if(h)clear(h);document.removeEventListener('keydown',_dlgKey,true);if(_dlgPrev&&_dlgPrev.focus){try{_dlgPrev.focus();}catch(_){}}}
+  function _dlgFocusables(){return document.querySelectorAll('#dlgHost button, #dlgHost a[href], #dlgHost input, #dlgHost select, #dlgHost textarea');}
+  function _dlgKey(e){
+    if(e.key==='Escape'){e.preventDefault();closeDlg();return;}
+    if(e.key==='Tab'){var f=_dlgFocusables();if(!f.length)return;var first=f[0],last=f[f.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}
   }
-  async function applyEdition(id,name){
-    setMsg('mktmsg','','Applying \\u201c'+esc(name)+'\\u201d\\u2026');
-    var r=await api('/api/platform/marketplace/editions/'+encodeURIComponent(id)+'/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    var x=await r.json().catch(function(){return {};});
-    if(r.ok){
-      setMsg('mktmsg','ok','Applied: created a website draft'+(x.employeesCreated?(' and '+x.employeesCreated+' AI assistant(s)'):'')+(x.accentApplied?', set your brand accent':'')+'. Check the AI Website Builder + AI Employees.');
-      loadWebsites();loadBranding();
-      if(typeof loadAiEmployees==='function')loadAiEmployees();
-    }
-    else{setMsg('mktmsg','err',mktError(x,r.status,'Could not apply that edition.'));}
-  }
-  async function loadMarketplace(){
-    var r=await api('/api/platform/marketplace/website-templates'); if(!r.ok)return;
-    var d=await r.json();
-    var el=document.getElementById('marketplace'); if(!el)return; clear(el);
-    var list=d.templates||[];
-    if(!list.length){el.appendChild(emptyMsg('No templates available.'));return;}
-    var canUse=(myRole==='owner'||myRole==='admin');
-    list.forEach(function(t){
-      var row=document.createElement('div');row.className='item';
-      if(t.previewImage){var im=document.createElement('img');im.src=t.previewImage;im.alt='';im.loading='lazy';im.title='AI-generated sample';im.style.cssText='width:140px;height:88px;object-fit:cover;object-position:top;border-radius:8px;flex:none;margin-right:12px;background:rgba(127,127,127,0.12);';im.onerror=function(){im.style.display='none';};row.appendChild(im);}
-      var left=document.createElement('div');
-      var n=document.createElement('div');n.textContent=esc(t.name);n.style.fontWeight='600';left.appendChild(n);
-      var s=document.createElement('div');s.className='sub';s.textContent=esc(t.industry)+' \\u00b7 '+esc(t.description);left.appendChild(s);
-      row.appendChild(left);
-      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex:none;align-items:center;';
-      if(t.tier==='premium'){var pp=document.createElement('span');pp.className='pill';pp.textContent='Premium';actions.appendChild(pp);}
-      if(canUse){
-        var b=document.createElement('button');b.className='btn ghost';b.style.padding='6px 12px';b.textContent='Use template';
-        b.addEventListener('click',function(){useTemplate(t.id,t.name);});actions.appendChild(b);
+  function openConfirm(opts){
+    _dlgPrev=document.activeElement;
+    var host=document.getElementById('dlgHost'); if(!host)return; clear(host);
+    var back=document.createElement('div');back.className='dlg-back';
+    back.addEventListener('click',function(e){if(e.target===back)closeDlg();});
+    var dlg=document.createElement('div');dlg.className='dlg';dlg.setAttribute('role','dialog');dlg.setAttribute('aria-modal','true');dlg.setAttribute('aria-label',opts.title);
+    var h=document.createElement('div');h.className='dlg-h';h.textContent=opts.title;dlg.appendChild(h);
+    var b=document.createElement('div');b.className='dlg-b';
+    if(opts.intro){var pI=document.createElement('p');pI.textContent=opts.intro;b.appendChild(pI);}
+    if(opts.lines&&opts.lines.length){var ul=document.createElement('ul');opts.lines.forEach(function(t){var li=document.createElement('li');li.textContent=t;ul.appendChild(li);});b.appendChild(ul);}
+    var fieldEls={};
+    (opts.fields||[]).forEach(function(fld){
+      if(fld.type==='checkbox'){
+        var wrap=document.createElement('label');wrap.style.cssText='display:flex;align-items:center;gap:9px;margin-top:12px;font-size:0.9rem;color:var(--text);cursor:pointer;';
+        var cb=document.createElement('input');cb.type='checkbox';cb.checked=!!fld.value;cb.style.cssText='width:auto;flex:none;';
+        wrap.appendChild(cb);wrap.appendChild(document.createTextNode(fld.label));b.appendChild(wrap);fieldEls[fld.key]=cb;
+      } else {
+        var lb=document.createElement('label');lb.textContent=fld.label;lb.style.marginTop='12px';b.appendChild(lb);
+        var inp=document.createElement('input');inp.value=fld.value||'';if(fld.placeholder)inp.placeholder=fld.placeholder;b.appendChild(inp);fieldEls[fld.key]=inp;
       }
-      row.appendChild(actions);
-      el.appendChild(row);
     });
+    if(opts.note){var pN=document.createElement('p');pN.className='hint';pN.style.marginTop='10px';pN.textContent=opts.note;b.appendChild(pN);}
+    dlg.appendChild(b);
+    var f=document.createElement('div');f.className='dlg-f';
+    var cancel=document.createElement('button');cancel.className='btn ghost';cancel.textContent='Cancel';cancel.addEventListener('click',closeDlg);
+    var ok=document.createElement('button');ok.className='btn';ok.style.width='auto';ok.textContent=opts.confirmLabel||'Confirm';
+    if(opts.danger)ok.style.background='var(--danger)';
+    ok.addEventListener('click',function(){if(ok.disabled)return;ok.disabled=true;ok.textContent='Working\\u2026';
+      var vals={};for(var k in fieldEls){vals[k]=fieldEls[k].type==='checkbox'?fieldEls[k].checked:fieldEls[k].value;}
+      Promise.resolve(opts.onConfirm(vals)).then(function(){closeDlg();}).catch(function(){ok.disabled=false;ok.textContent=opts.confirmLabel||'Confirm';});});
+    f.appendChild(cancel);f.appendChild(ok);dlg.appendChild(f);
+    back.appendChild(dlg);host.appendChild(back);
+    document.addEventListener('keydown',_dlgKey,true);
+    ok.focus();
+  }
+  // ---- Shared catalog helpers ----
+  function planHasPremium(){var p=dashData&&dashData.billing&&dashData.billing.planId;return p==='business'||p==='partner'||p==='enterprise';}
+  function makeThumb(url,alt){
+    if(url){var im=document.createElement('img');im.className='thumb';im.src=url;im.alt=alt||'';im.loading='lazy';im.title='AI-generated sample';
+      im.onerror=function(){var ph=document.createElement('div');ph.className='thumb ph';ph.textContent='Preview sample';if(im.parentNode)im.parentNode.replaceChild(ph,im);};return im;}
+    var ph=document.createElement('div');ph.className='thumb ph';ph.textContent='Preview sample';return ph;
   }
   function mktError(x,status,fallback){
-    if(status===402&&x.error&&x.error.code==='PREMIUM_REQUIRED'){return 'That\\u2019s a premium template — upgrade to Business or higher to use it.';}
-    if(status===402){return 'Your plan\\u2019s site limit is reached — upgrade to add more.';}
+    if(status===402&&x.error&&x.error.code==='PREMIUM_REQUIRED'){return 'Premium \\u2014 available on the Business plan or higher.';}
+    if(status===402&&x.error&&x.error.code==='PLAN_LIMIT'){return 'Your plan\\u2019s website limit is reached \\u2014 upgrade to add more.';}
+    if(status===403){return 'Only owners and admins can do that.';}
     return (x.error&&x.error.message)||fallback;
   }
+  // ---- AI Employee Marketplace (packages: employee + website design + tools) ----
+  var edAll=[], edShown=0, CATALOG_PAGE=6, edWired=false;
+  async function loadEditions(){
+    var r=await api('/api/platform/marketplace/editions');
+    var el=document.getElementById('editions'); if(!el)return;
+    if(!r.ok){clear(el);el.appendChild(emptyMsg('The marketplace is unavailable right now.'));return;}
+    var d=await r.json(); edAll=d.editions||[]; edShown=CATALOG_PAGE;
+    if(!edWired){edWired=true;
+      document.getElementById('edSearch').addEventListener('input',function(){edShown=CATALOG_PAGE;renderEditions();});
+      document.getElementById('edPlan').addEventListener('change',function(){edShown=CATALOG_PAGE;renderEditions();});
+      document.getElementById('edMore').addEventListener('click',function(){edShown+=CATALOG_PAGE;renderEditions();});
+    }
+    renderEditions();
+  }
+  function filterCatalog(list,q,plan,extra){
+    return list.filter(function(it){
+      if(q && ((esc(it.name)+' '+esc(it.description)+' '+esc(it.industry||'')).toLowerCase().indexOf(q)<0))return false;
+      if(plan==='premium'&&it.tier!=='premium')return false;
+      if(plan==='included'&&!(it.tier!=='premium'||planHasPremium()))return false;
+      return extra?extra(it):true;
+    });
+  }
+  function statusBadge(it){
+    var s=document.createElement('span');
+    if(it.tier==='premium'&&!planHasPremium()){s.className='badge warn';s.textContent='Upgrade required';}
+    else if(it.tier==='premium'){s.className='badge muted';s.textContent='Premium';}
+    else{s.className='badge ok';s.textContent='Included';}
+    return s;
+  }
+  function renderEditions(){
+    var el=document.getElementById('editions'); if(!el)return; clear(el);
+    var q=(document.getElementById('edSearch').value||'').toLowerCase();
+    var filtered=filterCatalog(edAll,q,document.getElementById('edPlan').value);
+    if(!filtered.length){el.appendChild(emptyMsg('No AI employee packages match your search.'));document.getElementById('edMore').style.display='none';return;}
+    var grid=document.createElement('div');grid.className='cardgrid';
+    filtered.slice(0,edShown).forEach(function(e){grid.appendChild(edCard(e));});
+    el.appendChild(grid);
+    document.getElementById('edMore').style.display=(filtered.length>edShown)?'':'none';
+  }
+  function edCard(e){
+    var card=document.createElement('div');card.className='tcard';
+    card.appendChild(makeThumb(e.previewImage,'Sample of '+e.name));
+    var body=document.createElement('div');body.className='body';
+    var kind=document.createElement('span');kind.className='kind pkg';kind.textContent='\\ud83e\\udde9 AI Employee Package';body.appendChild(kind);
+    var ttl=document.createElement('div');ttl.className='ttl';ttl.textContent=esc(e.name);body.appendChild(ttl);
+    var desc=document.createElement('div');desc.className='desc';desc.textContent=esc(e.description);body.appendChild(desc);
+    var emps=(e.employees||[]);
+    var caps=document.createElement('div');caps.className='desc';
+    caps.textContent='Includes '+emps.length+' AI employee'+(emps.length===1?'':'s')+(emps.length?': '+emps.map(function(m){return esc(m.title||m.name);}).join(', '):'')+' \\u00b7 a matching website design';
+    body.appendChild(caps);
+    var foot=document.createElement('div');foot.className='foot';
+    foot.appendChild(statusBadge(e));
+    if(canManageWorkspace()){
+      var b=document.createElement('button');b.className='btn';b.style.cssText='width:auto;padding:7px 13px;font-size:0.82rem;';b.textContent='Add employee + website';
+      b.addEventListener('click',function(){confirmInstallEdition(e);});foot.appendChild(b);
+    }
+    body.appendChild(foot);card.appendChild(body);
+    return card;
+  }
+  function confirmInstallEdition(e){
+    var emps=(e.employees||[]);
+    var lines=['Creates a new draft website \\u201c'+e.name+'\\u201d (existing sites are untouched)'];
+    emps.forEach(function(m){lines.push('Creates AI employee: '+(m.title||m.name));});
+    lines.push('Uses one site from your plan\\u2019s website allowance. No charge.');
+    openConfirm({
+      title:'Install \\u201c'+e.name+'\\u201d?',
+      intro:'This package is additive \\u2014 it creates new resources and will not delete or overwrite existing websites, AI employees, workflows, or published content.',
+      lines:lines,
+      fields:[{type:'checkbox',key:'applyBranding',label:'Also set my workspace brand color to this package\\u2019s accent (organization-wide)',value:false}],
+      note:(e.tier==='premium'&&!planHasPremium())?'Premium package \\u2014 available on Business and higher.':'',
+      confirmLabel:'Install package',
+      onConfirm:function(v){return applyEdition(e.id,e.name,!!v.applyBranding);}
+    });
+  }
+  async function applyEdition(id,name,applyBranding){
+    setMsg('mktmsg','','Installing \\u201c'+esc(name)+'\\u201d\\u2026');
+    var r=await api('/api/platform/marketplace/editions/'+encodeURIComponent(id)+'/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({applyBranding:!!applyBranding})});
+    var x=await r.json().catch(function(){return {};});
+    if(r.ok){
+      var parts=[];
+      if(x.website)parts.push('created 1 draft website');
+      parts.push('created '+(x.employeesCreated||0)+' AI employee(s)');
+      if(x.accentApplied)parts.push('set your brand accent');
+      if(typeof x.employeesRequested==='number'&&x.employeesCreated<x.employeesRequested)parts.push('('+ (x.employeesRequested-x.employeesCreated) +' employee(s) could not be created)');
+      setMsg('mktmsg','ok','Installed \\u2014 '+parts.join(', ')+'. Find the site in My Websites.');
+      webSubLoaded.mywebsites=false;loadWebsites();if(applyBranding)loadBranding();
+      if(typeof loadAiEmployees==='function')loadAiEmployees();
+      return;
+    }
+    setMsg('mktmsg','err',mktError(x,r.status,'Could not install that package.'));
+    throw new Error('apply failed');
+  }
+  // ---- Website Templates (standalone designs; no AI employee) ----
+  var tplAll=[], tplShown=0, tplWired=false;
+  async function loadMarketplace(){
+    var r=await api('/api/platform/marketplace/website-templates');
+    var el=document.getElementById('marketplace'); if(!el)return;
+    if(!r.ok){clear(el);el.appendChild(emptyMsg('Templates are unavailable right now.'));return;}
+    var d=await r.json(); tplAll=d.templates||[]; tplShown=CATALOG_PAGE;
+    var ind=document.getElementById('tplIndustry');
+    if(ind&&ind.options.length<=1){var seen={};tplAll.forEach(function(t){if(t.industry&&!seen[t.industry]){seen[t.industry]=1;var o=document.createElement('option');o.value=t.industry;o.textContent=t.industry;ind.appendChild(o);}});}
+    if(!tplWired){tplWired=true;
+      document.getElementById('tplSearch').addEventListener('input',function(){tplShown=CATALOG_PAGE;renderTemplates();});
+      document.getElementById('tplIndustry').addEventListener('change',function(){tplShown=CATALOG_PAGE;renderTemplates();});
+      document.getElementById('tplPlan').addEventListener('change',function(){tplShown=CATALOG_PAGE;renderTemplates();});
+      document.getElementById('tplMore').addEventListener('click',function(){tplShown+=CATALOG_PAGE;renderTemplates();});
+    }
+    renderTemplates();
+  }
+  function renderTemplates(){
+    var el=document.getElementById('marketplace'); if(!el)return; clear(el);
+    var q=(document.getElementById('tplSearch').value||'').toLowerCase();
+    var ind=document.getElementById('tplIndustry').value;
+    var filtered=filterCatalog(tplAll,q,document.getElementById('tplPlan').value,function(t){return !ind||t.industry===ind;});
+    if(!filtered.length){el.appendChild(emptyMsg('No website templates match your search.'));document.getElementById('tplMore').style.display='none';return;}
+    var grid=document.createElement('div');grid.className='cardgrid';
+    filtered.slice(0,tplShown).forEach(function(t){grid.appendChild(tplCard(t));});
+    el.appendChild(grid);
+    document.getElementById('tplMore').style.display=(filtered.length>tplShown)?'':'none';
+  }
+  function tplCard(t){
+    var card=document.createElement('div');card.className='tcard';
+    card.appendChild(makeThumb(t.previewImage,'Sample of the '+t.name+' template'));
+    var body=document.createElement('div');body.className='body';
+    var kind=document.createElement('span');kind.className='kind tpl';kind.textContent='\\ud83c\\udfa8 Website Template';body.appendChild(kind);
+    var ttl=document.createElement('div');ttl.className='ttl';ttl.textContent=esc(t.name);body.appendChild(ttl);
+    var meta=document.createElement('div');meta.className='desc';meta.style.color='var(--muted-strong)';meta.textContent=esc(t.industry||'');body.appendChild(meta);
+    var desc=document.createElement('div');desc.className='desc';desc.textContent=esc(t.description);body.appendChild(desc);
+    var foot=document.createElement('div');foot.className='foot';
+    foot.appendChild(statusBadge(t));
+    if(canManageWorkspace()){
+      var b=document.createElement('button');b.className='btn ghost';b.style.cssText='padding:7px 13px;font-size:0.82rem;';b.textContent='Use template';
+      b.addEventListener('click',function(){confirmUseTemplate(t);});foot.appendChild(b);
+    }
+    body.appendChild(foot);card.appendChild(body);
+    return card;
+  }
+  function confirmUseTemplate(t){
+    openConfirm({
+      title:'Use \\u201c'+t.name+'\\u201d?',
+      intro:'This creates a brand-new draft website from this standalone design. No AI employee is included, and no existing website is changed.',
+      lines:['Creates a new draft site seeded with this template\\u2019s brief and accent','You then Generate and Publish it from My Websites'],
+      note:(t.tier==='premium'&&!planHasPremium())?'Premium template \\u2014 available on Business and higher.':'Counts one draft toward your plan\\u2019s website limit. No charge.',
+      confirmLabel:'Create draft',
+      onConfirm:function(){return useTemplate(t.id,t.name);}
+    });
+  }
   async function useTemplate(id,name){
-    setMsg('mktmsg','','Creating a draft from \\u201c'+esc(name)+'\\u201d\\u2026');
+    setMsg('tplmsg','','Creating a draft from \\u201c'+esc(name)+'\\u201d\\u2026');
     var r=await api('/api/platform/marketplace/website-templates/'+encodeURIComponent(id)+'/use',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     var x=await r.json().catch(function(){return {};});
-    if(r.ok){setMsg('mktmsg','ok','Draft created in the AI Website Builder — click Generate there to build it.');loadWebsites();}
-    else{setMsg('mktmsg','err',mktError(x,r.status,'Could not use that template.'));}
+    if(r.ok){setMsg('tplmsg','ok','Draft created \\u2014 open My Websites and click Generate to build it.');webSubLoaded.mywebsites=false;loadWebsites();return;}
+    setMsg('tplmsg','err',mktError(x,r.status,'Could not use that template.'));
+    throw new Error('use failed');
   }
   async function loadWebsites(){
-    var r=await api('/api/platform/websites'); if(!r.ok)return;
-    var d=await r.json(); aiReady=d.generationAvailable!==false;
+    var el=document.getElementById('websites'); if(!el)return;
+    var r=await api('/api/platform/websites');
+    if(!r.ok){clear(el);el.appendChild(emptyMsg('Could not load your websites.'));return;}
+    var d=await r.json(); aiReady=d.generationAvailable!==false; setGenNote();
     var verified=[];
     var dr=await api('/api/platform/domains');
     if(dr.ok){var dd=await dr.json();(dd.domains||[]).forEach(function(x){if(x.verified)verified.push(x.domain);});}
-    var el=document.getElementById('websites'); clear(el);
+    clear(el);
     var list=d.websites||[];
-    if(!list.length){el.appendChild(emptyMsg('No sites yet. Describe a business below to build one.'));return;}
-    list.forEach(function(w){
-      var wrap=document.createElement('div');wrap.className='item';wrap.style.flexDirection='column';wrap.style.alignItems='stretch';
-      var row=document.createElement('div');row.style.display='flex';row.style.alignItems='center';row.style.justifyContent='space-between';row.style.gap='8px';
-      var left=document.createElement('div');
-      var nm=document.createElement('div');nm.textContent=esc(w.name);nm.style.fontWeight='600';left.appendChild(nm);
-      if(w.brief){var s=document.createElement('div');s.className='sub';s.textContent=esc(w.brief);left.appendChild(s);}
-      row.appendChild(left);
-      var actions=document.createElement('div');actions.style.display='flex';actions.style.alignItems='center';actions.style.gap='8px';actions.style.flex='none';
-      var st=document.createElement('span');st.className='pill';st.textContent=w.hasContent?esc(w.status):'empty';actions.appendChild(st);
-      var gen=document.createElement('button');gen.className='btn';gen.style.width='auto';gen.style.padding='6px 12px';gen.textContent=w.hasContent?'Regenerate':'Generate';
-      gen.addEventListener('click',function(){generateWebsite(w.id,gen);});actions.appendChild(gen);
-      if(w.hasContent){
-        var pv=document.createElement('a');pv.className='btn ghost';pv.style.padding='6px 12px';pv.textContent='Preview';
-        pv.href='/api/platform/websites/'+encodeURIComponent(w.id)+'/preview';pv.target='_blank';pv.rel='noopener';actions.appendChild(pv);
-      }
-      var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Delete';
-      rm.addEventListener('click',function(){removeWebsite(w.id);});actions.appendChild(rm);
-      row.appendChild(actions);wrap.appendChild(row);
-      if(w.hasContent){
-        var pub=document.createElement('div');pub.style.marginTop='10px';pub.style.display='flex';pub.style.alignItems='center';pub.style.gap='8px';pub.style.flexWrap='wrap';
-        if(w.status==='published'&&w.domain){
-          var live=document.createElement('a');live.className='btn';live.style.width='auto';live.style.padding='6px 12px';live.textContent='Live at '+esc(w.domain)+' \\u2197';
-          live.href='https://'+w.domain;live.target='_blank';live.rel='noopener';pub.appendChild(live);
-          var unp=document.createElement('button');unp.className='btn ghost';unp.style.padding='6px 12px';unp.textContent='Unpublish';
-          unp.addEventListener('click',function(){unpublishWebsite(w.id);});pub.appendChild(unp);
-        }else if(verified.length){
-          var lbl=document.createElement('span');lbl.className='hint';lbl.textContent='Publish to:';pub.appendChild(lbl);
-          var sel=document.createElement('select');sel.style.width='auto';
-          verified.forEach(function(dn){var o=document.createElement('option');o.value=dn;o.textContent=dn;sel.appendChild(o);});pub.appendChild(sel);
-          var pb=document.createElement('button');pb.className='btn';pb.style.width='auto';pb.style.padding='6px 12px';pb.textContent='Publish';
-          pb.addEventListener('click',function(){publishWebsite(w.id,sel.value);});pub.appendChild(pb);
-        }else{
-          var hint=document.createElement('div');hint.className='hint';hint.textContent='Add & verify a custom domain (panel below) to publish this site live.';pub.appendChild(hint);
-        }
-        wrap.appendChild(pub);
-      }
-      el.appendChild(wrap);
+    if(!list.length){el.appendChild(websitesEmpty());return;}
+    var manage=canManageWorkspace();
+    list.forEach(function(w){el.appendChild(websiteRow(w,verified,manage));});
+  }
+  function websitesEmpty(){
+    var box=document.createElement('div');
+    var e=document.createElement('div');e.className='empty';e.textContent='No websites yet. Start one of these ways:';box.appendChild(e);
+    var qa=document.createElement('div');qa.className='qa';qa.style.marginTop='10px';
+    [['Create with AI','create'],['AI Employee Marketplace','marketplace'],['Website Templates','templates']].forEach(function(a){
+      if(a[1]==='create'&&!canManageWorkspace())return;
+      var b=document.createElement('button');b.textContent=a[0];b.addEventListener('click',function(){location.hash='#web/'+a[1];});qa.appendChild(b);
     });
+    box.appendChild(qa);return box;
+  }
+  function websiteRow(w,verified,manage){
+    var wrap=document.createElement('div');wrap.className='item';wrap.style.flexDirection='column';wrap.style.alignItems='stretch';
+    var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px;';
+    var left=document.createElement('div');left.style.minWidth='0';
+    var nm=document.createElement('div');nm.textContent=esc(w.name);nm.style.fontWeight='600';left.appendChild(nm);
+    if(w.brief){var s=document.createElement('div');s.className='sub';s.textContent=esc(w.brief);left.appendChild(s);}
+    var meta=document.createElement('div');meta.className='sub';meta.style.cssText='font-size:0.72rem;opacity:0.8;';
+    meta.textContent='Updated '+timeAgo(w.updatedAt)+(w.domain?(' \\u00b7 '+esc(w.domain)):'');left.appendChild(meta);
+    row.appendChild(left);
+    var actions=document.createElement('div');actions.style.cssText='display:flex;align-items:center;gap:8px;flex:none;flex-wrap:wrap;justify-content:flex-end;';
+    // Status conveyed by words + shape, not color alone.
+    var st=document.createElement('span');
+    if(!w.hasContent){st.className='badge muted';st.textContent='Draft \\u00b7 not generated';}
+    else if(w.status==='published'){st.className='badge ok';st.textContent='Published';}
+    else{st.className='badge warn';st.textContent='Generated \\u00b7 draft';}
+    actions.appendChild(st);
+    if(manage){var gen=document.createElement('button');gen.className='btn';gen.style.cssText='width:auto;padding:6px 12px;';gen.textContent=w.hasContent?'Regenerate':'Generate';
+      gen.addEventListener('click',function(){generateWebsite(w.id,gen);});actions.appendChild(gen);}
+    if(w.hasContent){var pv=document.createElement('a');pv.className='btn ghost';pv.style.padding='6px 12px';pv.textContent='Preview';
+      pv.href='/api/platform/websites/'+encodeURIComponent(w.id)+'/preview';pv.target='_blank';pv.rel='noopener';actions.appendChild(pv);}
+    if(manage){
+      var ed=document.createElement('button');ed.className='btn ghost';ed.style.padding='6px 12px';ed.textContent='Edit';ed.addEventListener('click',function(){editWebsite(w);});actions.appendChild(ed);
+      var rm=document.createElement('button');rm.className='btn ghost';rm.style.padding='6px 12px';rm.textContent='Delete';rm.addEventListener('click',function(){confirmDeleteWebsite(w);});actions.appendChild(rm);
+    }
+    row.appendChild(actions);wrap.appendChild(row);
+    if(w.hasContent){
+      var pub=document.createElement('div');pub.style.cssText='margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+      if(w.status==='published'&&w.domain){
+        var live=document.createElement('a');live.className='btn';live.style.cssText='width:auto;padding:6px 12px;';live.textContent='View live at '+esc(w.domain)+' \\u2197';
+        live.href='https://'+w.domain;live.target='_blank';live.rel='noopener';pub.appendChild(live);
+        if(manage){var unp=document.createElement('button');unp.className='btn ghost';unp.style.padding='6px 12px';unp.textContent='Unpublish';unp.addEventListener('click',function(){unpublishWebsite(w.id);});pub.appendChild(unp);}
+      }else if(manage&&verified.length){
+        var lbl=document.createElement('span');lbl.className='hint';lbl.textContent='Publish to:';pub.appendChild(lbl);
+        var sel=document.createElement('select');sel.style.width='auto';verified.forEach(function(dn){var o=document.createElement('option');o.value=dn;o.textContent=dn;sel.appendChild(o);});pub.appendChild(sel);
+        var pb=document.createElement('button');pb.className='btn';pb.style.cssText='width:auto;padding:6px 12px;';pb.textContent='Publish';pb.addEventListener('click',function(){publishWebsite(w.id,sel.value);});pub.appendChild(pb);
+      }else if(manage){
+        var hint=document.createElement('div');hint.className='hint';hint.textContent='Add & verify a custom domain in Hosting & Domains to publish this site live.';pub.appendChild(hint);
+      }
+      wrap.appendChild(pub);
+    }
+    return wrap;
   }
   async function publishWebsite(id,domain){
-    if(!domain){setMsg('wmsg','err','Choose a verified domain.');return;}
-    setMsg('wmsg','','Publishing\\u2026');
+    if(!domain){setMsg('wlmsg','err','Choose a verified domain.');return;}
+    setMsg('wlmsg','','Publishing\\u2026');
     var r=await api('/api/platform/websites/'+encodeURIComponent(id)+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({domain:domain})});
     var x=await r.json().catch(function(){return {};});
-    if(r.ok){setMsg('wmsg','ok','Published — live at '+domain+'.');loadWebsites();}
-    else{setMsg('wmsg','err',(x.error&&x.error.message)||'Could not publish.');}
+    if(r.ok){setMsg('wlmsg','ok','Published \\u2014 live at '+domain+'.');webSubLoaded.mywebsites=false;loadWebsites();}
+    else{setMsg('wlmsg','err',(x.error&&x.error.message)||'Could not publish.');}
   }
   async function unpublishWebsite(id){
     var r=await api('/api/platform/websites/'+encodeURIComponent(id)+'/unpublish',{method:'POST'});
-    if(r.ok){setMsg('wmsg','ok','Unpublished.');loadWebsites();}
+    if(r.ok){setMsg('wlmsg','ok','Unpublished \\u2014 the site is back to draft.');webSubLoaded.mywebsites=false;loadWebsites();}
   }
   async function generateWebsite(id,btn){
-    if(btn){btn.disabled=true;btn.textContent='Generating\\u2026';}
-    var r=await api('/api/platform/websites/'+encodeURIComponent(id)+'/generate',{method:'POST'});
-    if(r.ok){setMsg('wmsg','ok','Site generated. Click Preview to view it.');loadWebsites();return;}
+    if(btn){if(btn.disabled)return;btn.disabled=true;btn.dataset.t=btn.textContent;btn.textContent='Generating\\u2026';}
+    setMsg('wlmsg','','Generating the site with AI\\u2026');
+    // Idempotency key so a retried/duplicate request is not metered twice.
+    var key=((currentUser&&currentUser.id)||'u')+'-'+id+'-'+Date.now();
+    var r=await api('/api/platform/websites/'+encodeURIComponent(id)+'/generate',{method:'POST',headers:{'X-Idempotency-Key':key}});
     var e=await r.json().catch(function(){return {};});
-    setMsg('wmsg','err',(e.error&&e.error.message)||'Could not generate.');
-    if(btn){btn.disabled=false;btn.textContent='Generate';}
+    if(r.ok){setMsg('wlmsg','ok','Site generated. Click Preview to view it.');webSubLoaded.mywebsites=false;loadWebsites();return;}
+    var msg=r.status===409?'A generation is already running for this site \\u2014 please wait a moment.':
+      (r.status===503?'AI generation isn\\u2019t configured. Add your AI key in the AI section, or use the platform\\u2019s included AI.':
+      (r.status===402?'Your monthly AI generation allowance is used up \\u2014 upgrade your plan or add your own AI key.':
+      ((e.error&&e.error.message)||'Could not generate.')));
+    setMsg('wlmsg','err',msg);
+    if(btn){btn.disabled=false;btn.textContent=btn.dataset.t||'Generate';}
+  }
+  function editWebsite(w){
+    openConfirm({title:'Edit website',
+      fields:[{type:'text',key:'name',label:'Website name',value:w.name},{type:'text',key:'brief',label:'Description',value:w.brief||''}],
+      confirmLabel:'Save changes',
+      onConfirm:function(v){return saveWebsite(w.id,v);}});
+  }
+  async function saveWebsite(id,v){
+    if(!v.name||!v.name.trim()){setMsg('wlmsg','err','A website name is required.');throw new Error('name');}
+    var r=await api('/api/platform/websites/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:v.name.trim(),brief:(v.brief||'').trim()})});
+    if(r.ok){setMsg('wlmsg','ok','Saved.');webSubLoaded.mywebsites=false;loadWebsites();return;}
+    var e=await r.json().catch(function(){return {};});setMsg('wlmsg','err',(e.error&&e.error.message)||'Could not save.');throw new Error('save');
+  }
+  function confirmDeleteWebsite(w){
+    openConfirm({title:'Delete \\u201c'+w.name+'\\u201d?',
+      intro:'This permanently removes the website'+(w.status==='published'?' and takes it offline':'')+'. This cannot be undone.',
+      confirmLabel:'Delete website',danger:true,
+      onConfirm:function(){return removeWebsite(w.id);}});
   }
   async function removeWebsite(id){
     var r=await api('/api/platform/websites/'+encodeURIComponent(id),{method:'DELETE'});
-    if(r.ok)loadWebsites();
+    if(r.ok){setMsg('wlmsg','ok','Website deleted.');webSubLoaded.mywebsites=false;loadWebsites();return;}
+    setMsg('wlmsg','err','Could not delete that website.');throw new Error('del');
+  }
+  function setGenNote(){
+    var n=document.getElementById('wgenNote'); if(!n)return;
+    n.textContent=aiReady
+      ? 'Creating a website makes a draft record. It does not generate or publish anything yet \\u2014 open My Websites to Generate the content, then Publish to a verified domain. Generation uses your plan\\u2019s monthly AI allowance (or your own AI key).'
+      : 'Creating a website makes a draft record. AI generation isn\\u2019t configured yet \\u2014 add an AI key in the AI section to generate content.';
   }
   async function loadAiSettings(){
     var r=await api('/api/platform/ai-settings');
@@ -2202,7 +2553,8 @@ export function dashboardPage(): string {
     'Account':'settings'
   };
   function panelLabel(p){var h=p.querySelector('h2');return h?((h.firstChild&&h.firstChild.textContent||h.textContent||'').trim()):'';}
-  function sectionOf(p){return SEC_BY_ID[p.id]||SEC_BY_LABEL[panelLabel(p)]||'settings';}
+  // A panel tagged with data-websub belongs to the Website workspace.
+  function sectionOf(p){if(p.getAttribute&&p.getAttribute('data-websub'))return 'web';return SEC_BY_ID[p.id]||SEC_BY_LABEL[panelLabel(p)]||'settings';}
   function allPanels(){return document.querySelectorAll('.wrap .panel');}
   // A panel is role-hidden when the init logic set an inline display:none.
   function roleHidden(p){return p.style.display==='none';}
@@ -2215,23 +2567,92 @@ export function dashboardPage(): string {
       if(sectionOf(p)===key)p.classList.remove('sec-hide');
       else p.classList.add('sec-hide');
     }
+    // The Website workspace sub-navigation shows only inside the web section.
+    var wsn=document.getElementById('websubnav');
+    if(wsn)wsn.classList.toggle('sec-hide',key!=='web');
+    if(key==='web')showWebSub(activeWebSub);
     var nav=document.getElementById('secnav');
     if(nav){var tabs=nav.querySelectorAll('a');for(var j=0;j<tabs.length;j++){tabs[j].classList.toggle('active',tabs[j].getAttribute('data-sec')===key);}}
     try{window.scrollTo(0,0);}catch(_){/* noop */}
   }
   function buildSecNav(){
     var nav=document.getElementById('secnav'); if(!nav)return; clear(nav);
-    // Which sections actually have at least one visible (role-allowed) panel?
-    var present={}; var panels=allPanels();
+    // Which sections have at least one visible (role-allowed) panel? The Website
+    // workspace is always available (members can view it), so force it present.
+    var present={web:true}; var panels=allPanels();
     for(var i=0;i<panels.length;i++){var p=panels[i];if(!roleHidden(p))present[sectionOf(p)]=true;}
     SECTIONS.forEach(function(s){
       if(!present[s[0]])return;
       var a=document.createElement('a');a.setAttribute('data-sec',s[0]);a.textContent=s[1];
-      a.addEventListener('click',function(){showSection(s[0]);});
+      a.addEventListener('click',function(){
+        location.hash = s[0]==='web' ? ('#web/'+activeWebSub) : ('#'+s[0]);
+      });
       nav.appendChild(a);
     });
-    showSection('home');
+    buildWebSubNav();
+    routeFromHash();
   }
+  // ---- Website workspace sub-navigation ----
+  var WEB_SUBS=[
+    ['mywebsites','My Websites',false],
+    ['create','Create Website',true],
+    ['marketplace','AI Employee Marketplace',false],
+    ['templates','Website Templates',false],
+    ['hosting','Hosting & Domains',false],
+    ['branding','Branding',true]
+  ];
+  var activeWebSub='mywebsites', webSubLoaded={};
+  function allowedWebSubs(){return WEB_SUBS.filter(function(s){return !(s[2]&&!canManageWorkspace());}).map(function(s){return s[0];});}
+  function buildWebSubNav(){
+    var nav=document.getElementById('websubnav'); if(!nav)return; clear(nav);
+    WEB_SUBS.forEach(function(s){
+      if(s[2]&&!canManageWorkspace())return; // manage-only tabs hidden from members
+      var b=document.createElement('button');b.setAttribute('role','tab');b.setAttribute('data-websub',s[0]);
+      b.setAttribute('aria-controls','wsub-'+s[0]);b.setAttribute('aria-selected','false');b.textContent=s[1];b.tabIndex=-1;
+      b.addEventListener('click',function(){location.hash='#web/'+s[0];});
+      b.addEventListener('keydown',function(e){webSubKey(e,s[0]);});
+      nav.appendChild(b);
+    });
+  }
+  function webSubKey(e,key){
+    var order=allowedWebSubs(); var i=order.indexOf(key); if(i<0)return;
+    var nx=null;
+    if(e.key==='ArrowRight'||e.key==='ArrowDown')nx=order[(i+1)%order.length];
+    else if(e.key==='ArrowLeft'||e.key==='ArrowUp')nx=order[(i-1+order.length)%order.length];
+    else if(e.key==='Home')nx=order[0];
+    else if(e.key==='End')nx=order[order.length-1];
+    if(nx){e.preventDefault();location.hash='#web/'+nx;var b=document.querySelector('#websubnav [data-websub="'+nx+'"]');if(b)b.focus();}
+  }
+  function showWebSub(key){
+    var allowed=allowedWebSubs();
+    if(allowed.indexOf(key)<0)key=allowed[0]||'mywebsites';
+    activeWebSub=key;
+    var subs=document.querySelectorAll('[data-websub]');
+    for(var i=0;i<subs.length;i++){var p=subs[i];
+      if(p.parentElement&&p.parentElement.id==='websubnav')continue; // skip the tab buttons
+      p.classList.toggle('websub-hide',p.getAttribute('data-websub')!==key);
+    }
+    var nav=document.getElementById('websubnav');
+    if(nav){var tabs=nav.querySelectorAll('[role=tab]');for(var j=0;j<tabs.length;j++){var on=tabs[j].getAttribute('data-websub')===key;tabs[j].classList.toggle('active',on);tabs[j].setAttribute('aria-selected',on?'true':'false');tabs[j].tabIndex=on?0:-1;}}
+    loadWebSub(key);
+  }
+  function loadWebSub(key){
+    if(key==='create'){setGenNote();return;}
+    if(webSubLoaded[key])return; webSubLoaded[key]=true;
+    if(key==='mywebsites')loadWebsites();
+    else if(key==='marketplace')loadEditions();
+    else if(key==='templates')loadMarketplace();
+    else if(key==='hosting'){loadHosting();loadDomains();}
+    else if(key==='branding'){loadBrands();}
+  }
+  function routeFromHash(){
+    var h=(location.hash||'').replace(/^#/,'');
+    if(h.indexOf('web/')===0){ if(activeSection!=='web')showSection('web'); showWebSub(h.slice(4)); return; }
+    var sec=h||'home';
+    var valid=false; for(var i=0;i<SECTIONS.length;i++){if(SECTIONS[i][0]===sec)valid=true;}
+    showSection(valid?sec:'home');
+  }
+  window.addEventListener('hashchange',routeFromHash);
   async function init(){
     var me=await api('/auth/me');
     if(!me.ok){window.location='/login';return;}
@@ -2259,7 +2680,6 @@ export function dashboardPage(): string {
       document.getElementById('aiToolsPanel').style.display='';
       document.getElementById('aiEmployeesPanel').style.display='';
       document.getElementById('auditPanel').style.display='';
-      loadBrands();
       loadTeam();
       loadPortalUsers();
       loadEmails();
@@ -2274,7 +2694,9 @@ export function dashboardPage(): string {
     if(u.role==='owner'){
       document.getElementById('aiPanel').style.display='';
     }
-    await loadDashboard(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadMarketplace(); await loadEditions(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
+    // Website sub-sections (websites, marketplace, templates, hosting, domains,
+    // brands) load lazily when their tab is first opened — see loadWebSub().
+    await loadDashboard(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms();
     if(u.role==='owner'){await loadAiSettings();}
     await loadActivity();
     await loadFiles();
@@ -2330,7 +2752,7 @@ export function dashboardPage(): string {
       {label:'Create support ticket',hint:'Support',run:function(){go('tickets','tsubject');}},
       {label:'Create proposal',hint:'Proposals',run:function(){go('proposals','prtitle');}},
       {label:'Create campaign',hint:'Marketing',run:function(){go('campaigns','mname');}},
-      {label:'Build a website',hint:'AI Website Builder',run:function(){go('websites','wbrief');}},
+      {label:'Build a website',hint:'Create Website',run:function(){close();location.hash='#web/create';setTimeout(function(){var w=document.getElementById('wname');if(w)w.focus();},60);}},
       {label:'New autoresponder',hint:'Autoresponders',run:function(){go('dripSequences','dsname');}},
       {label:'Invite team member',hint:'Team',run:function(){go('team','tmemail');}},
       {label:'Open notifications',hint:'',run:function(){close();var b=document.getElementById('bell');if(b)b.click();}},
@@ -2582,14 +3004,19 @@ export function dashboardPage(): string {
     if(r.ok){setMsg('aimsg','ok','Removed. Using the platform\\u2019s included AI.');loadAiSettings();}
   });
   document.getElementById('addWebsite').addEventListener('click',async function(){
+    var btn=this;if(btn.disabled)return;
     var nm=document.getElementById('wname'),br=document.getElementById('wbrief'),cl=document.getElementById('wclient');
-    if(!nm.value.trim()){setMsg('wmsg','err','A site name is required.');return;}
-    setMsg('wmsg','','Creating\\u2026');
+    if(!nm.value.trim()){setMsg('wmsg','err','A website name is required.');return;}
+    btn.disabled=true;btn.textContent='Creating\\u2026';setMsg('wmsg','','Creating a draft website\\u2026');
     var r=await api('/api/platform/websites',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:nm.value.trim(),brief:br.value.trim()||undefined,clientId:cl.value||undefined})});
     var x=await r.json().catch(function(){return {};});
-    if(r.ok){nm.value='';br.value='';setMsg('wmsg','ok',aiReady?'Site created. Click Generate to build it with AI.':'Site created. AI generation isn\\u2019t enabled yet.');loadWebsites();}
-    else{setMsg('wmsg','err',(x.error&&x.error.message)||'Could not create site.');}
+    btn.disabled=false;btn.textContent='Create website';
+    if(r.ok){nm.value='';br.value='';setMsg('wmsg','ok','Draft website created \\u2014 open My Websites to Generate it with AI.');webSubLoaded.mywebsites=false;loadWebsites();}
+    else if(r.status===402){setMsg('wmsg','err','Your plan\\u2019s website limit is reached \\u2014 upgrade to add more.');}
+    else if(r.status===403){setMsg('wmsg','err','Only owners and admins can create websites.');}
+    else{setMsg('wmsg','err',(x.error&&x.error.message)||'Could not create the website.');}
+    // entered values are preserved above (only cleared on success).
   });
   document.getElementById('addHosting').addEventListener('click',async function(){
     var dom=document.getElementById('hdomain'),cl=document.getElementById('hclient');
@@ -2660,16 +3087,19 @@ export function dashboardPage(): string {
     if(r.ok){desc.value='';qty.value='1';price.value='0';setMsg('imsg','ok','Invoice created.');loadInvoices();}
     else{var e=await r.json().catch(function(){return {};});setMsg('imsg','err',(e.error&&e.error.message)||'Could not create.');}
   });
+  (function(){var bc=document.getElementById('bcolor');if(bc)bc.addEventListener('input',previewBrand);})();
   document.getElementById('saveBrand').addEventListener('click',async function(){
-    setMsg('bmsg','','Saving…');
+    var btn=this;if(btn.disabled)return;btn.disabled=true;setMsg('bmsg','','Saving\\u2026');
     var r=await api('/api/platform/branding',{method:'PUT',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({displayName:document.getElementById('bname').value.trim(),
         primaryColor:document.getElementById('bcolor').value.trim()})});
     var d=await r.json().catch(function(){return {};});
-    if(r.ok){setMsg('bmsg','ok','Saved.');var b=d.branding||{};
-      applyAccent(b.primaryColor);
+    btn.disabled=false;
+    if(r.ok){setMsg('bmsg','ok','Saved \\u2014 this workspace-wide branding is live.');var b=d.branding||{};
+      applyAccent(b.primaryColor);previewBrand();
       if(b.displayName){document.getElementById('orgName').textContent=b.displayName;}}
-    else{setMsg('bmsg','err',(d.error&&d.error.message)||'Could not save.');}
+    else if(r.status===403){setMsg('bmsg','err','Only owners and admins can change branding.');}
+    else{setMsg('bmsg','err',(d.error&&d.error.message)||'Could not save \\u2014 check the color is a valid #rrggbb value.');}
   });
   document.getElementById('addDomain').addEventListener('click',async function(){
     var d=document.getElementById('dname');

@@ -97,7 +97,10 @@ import type { PlatformProgramService } from "./programs/PlatformProgramService";
 import type { PlatformProjectService } from "./projects/PlatformProjectService";
 import type { PlatformProposalService } from "./proposals/PlatformProposalService";
 import type { PlatformTicketService } from "./support/PlatformTicketService";
-import { GeneratorUnavailableError } from "./websites/PlatformWebsiteService";
+import {
+  GeneratorUnavailableError,
+  GenerationInProgressError,
+} from "./websites/PlatformWebsiteService";
 import type { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import type { PlatformWebsiteRecord } from "./websites/PlatformWebsite";
 
@@ -2840,11 +2843,18 @@ export function createPlatformApiRouter(
           .then(() =>
             domains.add(domainInput),
           )
-          .then((domain) =>
+          .then((domain) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "domain.added",
+              subjectType: "domain",
+              subjectId: domain.id,
+              title: `Added domain ${domain.domain}`,
+            });
             res
               .status(201)
-              .json({ domain }),
-          )
+              .json({ domain });
+          })
           .catch((error: unknown) => {
             const message =
               error instanceof Error
@@ -2900,9 +2910,16 @@ export function createPlatformApiRouter(
           .verify(
             String(req.params.id),
           )
-          .then((domain) =>
-            res.json({ domain }),
-          )
+          .then((domain) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "domain.verified",
+              subjectType: "domain",
+              subjectId: domain.id,
+              title: `Verified domain ${domain.domain}`,
+            });
+            res.json({ domain });
+          })
           .catch((error: unknown) => {
             const message =
               error instanceof Error
@@ -3024,12 +3041,20 @@ export function createPlatformApiRouter(
               ),
             }),
           )
-          .then((account) =>
+          .then((account) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "hosting.created",
+              subjectType: "website",
+              subjectId: account.id,
+              title: `Added hosting for ${account.domain}`,
+            });
             res
               .status(201)
               .json({
                 hosting: account,
-              }),
+              });
+          },
           )
           .catch(
             (error: unknown) => {
@@ -5450,7 +5475,14 @@ export function createPlatformApiRouter(
                 ),
             }),
           )
-          .then((website) =>
+          .then((website) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "website.created",
+              subjectType: "website",
+              subjectId: website.id,
+              title: `Created website ${website.name}`,
+            });
             res
               .status(201)
               .json({
@@ -5458,8 +5490,8 @@ export function createPlatformApiRouter(
                   websiteSummary(
                     website,
                   ),
-              }),
-          )
+              });
+          })
           .catch(
             (error: unknown) => {
               if (
@@ -5509,20 +5541,51 @@ export function createPlatformApiRouter(
       "/websites/:id/generate",
       requireRole("owner", "admin"),
       (req, res, next) => {
+        const idem =
+          req.headers[
+            "x-idempotency-key"
+          ];
         websites
           .generate(
             String(req.params.id),
+            typeof idem === "string"
+              ? idem
+              : undefined,
           )
-          .then((website) =>
+          .then((website) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "website.generated",
+              subjectType: "website",
+              subjectId: website.id,
+              title: `Generated website ${website.name}`,
+            });
             res.json({
               website:
                 websiteSummary(
                   website,
                 ),
-            }),
-          )
+            });
+          })
           .catch(
             (error: unknown) => {
+              if (
+                error instanceof
+                GenerationInProgressError
+              ) {
+                res
+                  .status(409)
+                  .json({
+                    error: {
+                      code: "GENERATION_IN_PROGRESS",
+                      message:
+                        error.message,
+                    },
+                  });
+
+                return;
+              }
+
               if (
                 error instanceof
                 GeneratorUnavailableError
@@ -5860,14 +5923,21 @@ export function createPlatformApiRouter(
           .unpublish(
             String(req.params.id),
           )
-          .then((website) =>
+          .then((website) => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "website.unpublished",
+              subjectType: "website",
+              subjectId: website.id,
+              title: `Unpublished website ${website.name}`,
+            });
             res.json({
               website:
                 websiteSummary(
                   website,
                 ),
-            }),
-          )
+            });
+          })
           .catch(next);
       },
     );
@@ -5876,13 +5946,21 @@ export function createPlatformApiRouter(
       "/websites/:id",
       requireRole("owner", "admin"),
       (req, res, next) => {
+        const websiteId = String(
+          req.params.id,
+        );
         websites
-          .delete(
-            String(req.params.id),
-          )
-          .then(() =>
-            res.json({ ok: true }),
-          )
+          .delete(websiteId)
+          .then(() => {
+            void deps.activity?.record({
+              ...actor(req),
+              type: "website.deleted",
+              subjectType: "website",
+              subjectId: websiteId,
+              title: "Deleted a website",
+            });
+            res.json({ ok: true });
+          })
           .catch(next);
       },
     );
@@ -5972,9 +6050,24 @@ export function createPlatformApiRouter(
                     optionalString(
                       body.clientId,
                     ),
+                  // Records provenance: a standalone template. No employees,
+                  // no branding change.
+                  sourceTemplateId:
+                    template.id,
                 }),
               )
-              .then((website) =>
+              .then((website) => {
+                void deps.activity?.record(
+                  {
+                    ...actor(req),
+                    type: "website_template.used",
+                    subjectType:
+                      "website",
+                    subjectId:
+                      website.id,
+                    title: `Used template ${template.name}`,
+                  },
+                );
                 res
                   .status(201)
                   .json({
@@ -5983,8 +6076,8 @@ export function createPlatformApiRouter(
                       id: template.id,
                       name: template.name,
                     },
-                  }),
-              );
+                  });
+              });
           })
           .catch((error: unknown) => {
             if (
@@ -6073,6 +6166,16 @@ export function createPlatformApiRouter(
                   )
               : Promise.resolve();
 
+            // The organization-wide brand color is only changed when the
+            // caller EXPLICITLY opts in (server-validated, not trusting the UI).
+            // Default off so applying a package never surprises the workspace.
+            const requestBody = asObject(
+              req.body,
+            );
+            const applyBranding =
+              requestBody.applyBranding ===
+              true;
+
             return gate
               .then(() =>
                 websites.create({
@@ -6081,26 +6184,47 @@ export function createPlatformApiRouter(
                     template?.brief,
                   accentColor:
                     edition.accentColor,
+                  // Provenance: applied from an edition (and its template).
+                  sourceEditionId:
+                    edition.id,
+                  sourceTemplateId:
+                    edition.websiteTemplateId,
                 }),
               )
               .then(async (website) => {
-            // Accent + employees are enhancements — best-effort so one
-            // failure doesn't undo the created site. Report what stuck.
+            // Employees are best-effort so one failure doesn't undo the
+            // created site; branding only when explicitly requested. Report
+            // exactly what happened (this is NOT an atomic transaction).
             let accentApplied = false;
-            try {
-              await deps.branding?.update(
-                {
-                  primaryColor:
-                    edition.accentColor,
-                },
-              );
-              accentApplied = Boolean(
-                deps.branding,
-              );
-            } catch {
-              accentApplied = false;
+            if (
+              applyBranding &&
+              deps.branding
+            ) {
+              try {
+                await deps.branding.update(
+                  {
+                    primaryColor:
+                      edition.accentColor,
+                  },
+                );
+                accentApplied = true;
+                void deps.activity?.record(
+                  {
+                    ...actor(req),
+                    type: "branding.updated",
+                    subjectType:
+                      "team",
+                    title:
+                      "Updated branding accent from a package",
+                  },
+                );
+              } catch {
+                accentApplied = false;
+              }
             }
 
+            const employeesRequested =
+              edition.employees.length;
             let employeesCreated = 0;
             if (deps.aiEmployees) {
               for (const emp of edition.employees) {
@@ -6115,6 +6239,15 @@ export function createPlatformApiRouter(
               }
             }
 
+            void deps.activity?.record({
+              ...actor(req),
+              type: "marketplace_edition.applied",
+              subjectType: "website",
+              subjectId: website.id,
+              title: `Installed package ${edition.name}`,
+              summary: `${employeesCreated} AI employee(s)`,
+            });
+
             res.status(201).json({
               edition: {
                 id: edition.id,
@@ -6126,6 +6259,7 @@ export function createPlatformApiRouter(
               },
               accentApplied,
               employeesCreated,
+              employeesRequested,
             });
               });
           })
@@ -6329,6 +6463,10 @@ function websiteSummary(
     hasContent: Boolean(
       website.html,
     ),
+    sourceTemplateId:
+      website.sourceTemplateId,
+    sourceEditionId:
+      website.sourceEditionId,
     createdAt: website.createdAt,
     updatedAt: website.updatedAt,
   };

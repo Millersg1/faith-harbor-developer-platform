@@ -13,7 +13,7 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Authentication | ~85% | 3 cookie surfaces, scrypt, revocable sessions, password reset |
 | Authorization | ~75% | Service-layer role guards; RLS backstop pending |
 | Billing | ~70% | Stripe subscriptions (live-capable); customer portal + tax pending |
-| Website Builder | ~70% | Generate + publish to verified domain; template marketplace pending |
+| Website Builder | ~78% | Reorganized Website workspace (6 accessible sub-sections); generate (durably idempotent) + publish to verified domain; AI-employee packages vs standalone templates clearly separated; provenance persisted |
 | White-label | ~65% | Branded printable invoices + branded emails + branded client portal (P5-M4); per-doc PDF theming beyond invoices pending |
 | AI | ~70% | BYO keys, metering, caps, KB retrieval, tool registry, Command Center, Employees (role-scoped assistants); Phase 3 complete |
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
@@ -55,6 +55,18 @@ the tenant surface further.
   decision.
 - **No down-migrations / rollback** for schema (additive `CREATE TABLE IF NOT
   EXISTS` only).
+- **FOLLOW-UP: live AutoSSL status.** SSL is provisioned/renewed by the hosting
+  infra's AutoSSL, but the domain record has no SSL field and the app doesn't
+  query AutoSSL. The Website workspace states the AutoSSL policy and shows a
+  neutral "AutoSSL provisioning expected" after verification — it never claims a
+  live "SSL Active". Wiring a real AutoSSL-status read (via the hosting/cPanel
+  API) is a named follow-up.
+- **FOLLOW-UP: website/hosting `sites` limit accounting.** Websites and hosting
+  accounts both count against the plan `sites` limit but tally independently.
+  Product intent (one combined entitlement vs separate keys vs a
+  hosting↔website relationship) is unconfirmed, so enforcement was deliberately
+  left unchanged in the Website redesign. Decide the rule from plan docs before
+  changing billing semantics.
 - **Timestamps stored as TEXT ISO** (UTC) rather than `timestamptz`.
 - **Sandbox has no outbound network to api.github.com** — CI can't be polled
   from the dev environment; verified by pushing + checking Actions in the UI.

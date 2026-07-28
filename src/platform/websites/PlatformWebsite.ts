@@ -13,9 +13,7 @@
  * `organizationId` is stamped from the tenant context, never the caller. A
  * `clientId`, when present, must belong to the same organization.
  */
-export type PlatformWebsiteStatus =
-  | "draft"
-  | "published";
+export type PlatformWebsiteStatus = "draft" | "published";
 
 export interface PlatformWebsiteRecord {
   id: string;
@@ -32,6 +30,15 @@ export interface PlatformWebsiteRecord {
   status: PlatformWebsiteStatus;
   /** Domain the site is published on, once published. */
   domain?: string;
+  /**
+   * Provenance (optional, additive). When a site was created from a standalone
+   * website template, `sourceTemplateId` records which one; when created by
+   * applying an AI Employee Marketplace edition, `sourceEditionId` records the
+   * edition and `sourceTemplateId` the template it referenced. Both null for a
+   * site created directly in the builder. Stable ids, never display names.
+   */
+  sourceTemplateId?: string;
+  sourceEditionId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,6 +48,8 @@ export interface CreatePlatformWebsiteRequest {
   brief?: string;
   accentColor?: string;
   clientId?: string;
+  sourceTemplateId?: string;
+  sourceEditionId?: string;
 }
 
 export interface UpdatePlatformWebsiteRequest {

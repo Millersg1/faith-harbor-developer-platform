@@ -6,6 +6,72 @@ Faith Harbor OS is unaffected.
 
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
+### Added
+- **Website workspace redesign.** The tenant **Website** section is no longer
+  one very long page; it's an accessible internal workspace with six
+  sub-sections behind a `role="tablist"` sub-nav (**My Websites** — the default,
+  Create Website, AI Employee Marketplace, Website Templates, Hosting & Domains,
+  Branding). Only the active sub-section renders; each is deep-linkable via
+  `#web/<sub>` with working browser back/forward, arrow-key tab navigation, and
+  visible focus. The main **Website** app tab is unchanged.
+  - **Fixed the "giant empty column."** The short AI builder was paired in the
+    shared 2-column `.grid2` with the tall Marketplace catalog, so it stretched
+    to match. Website panels are now full-width (`grid-column: 1 / -1`) and the
+    builder lives in its own **Create Website** section at natural height.
+  - **AI Employee Marketplace vs Website Templates made unmistakable.** Two
+    distinct experiences with icon+word badges (🧩 *AI Employee Package* vs 🎨
+    *Website Template*), separate intros, search, industry/eligibility filters,
+    a responsive card grid (1/2/3 by width), and Load-more paging. Every
+    install/use goes through a **confirmation summary** (focus-trapped dialog,
+    ESC to close) that states exactly what will be created or changed.
+  - **Safe, explicit package application.** Applying an Industry Edition is
+    additive (new draft website + its AI employees) and now changes the
+    organization's brand color **only when explicitly opted in** — a checkbox in
+    the confirmation, **validated server-side** (`applyBranding`), default off.
+    The response reports the accurate result: website created, employees
+    created vs requested (best-effort employee creation is honestly surfaced),
+    and whether branding changed.
+  - **My Websites** shows real summary fields (name, brief, status, domain,
+    updated) with only working, role-gated actions (Generate/Regenerate,
+    Preview, Edit, Publish to a verified domain, Unpublish, Delete-with-confirm,
+    View-live) and an honest empty state linking to Create / Marketplace /
+    Templates. Members get read + Preview only.
+  - **Hosting & Domains** groups hosting accounts and custom domains with honest
+    statuses (Active/Pending/…, Connected/Verification-required) and **never**
+    displays credentials or secrets. Per the infra reality, SSL is described as
+    an **AutoSSL policy** ("provisioned and renewed through AutoSSL after the
+    domain is connected and DNS is configured") with a **neutral** post-verify
+    status ("AutoSSL provisioning expected") — no fabricated live "SSL Active"
+    badge (live AutoSSL-status integration is a documented follow-up).
+  - **Branding** is a dedicated section: workspace-wide identity, a live color
+    preview with a contrast note (reusing `safeAccent`/`accentInk`), and copy
+    that distinguishes org-wide branding from a website's own accent.
+
+### Added (backend, additive)
+- **Durable website-generation idempotency.** A per-website lock
+  (`website_generation_locks` table; Postgres `ON CONFLICT DO NOTHING`, safe
+  across processes) prevents two concurrent/duplicated generations from both
+  running and **double-metering AI allowance** — the second gets
+  `409 GENERATION_IN_PROGRESS`. A deliberate later regeneration is a new
+  operation. `POST /websites/:id/generate` accepts an `X-Idempotency-Key`.
+- **Website provenance.** Additive `source_template_id` / `source_edition_id`
+  columns on `websites` (+ `ALTER TABLE … ADD COLUMN IF NOT EXISTS` migration
+  for existing rows, which stay valid as null). Standalone-template use records
+  `sourceTemplateId`; edition apply records `sourceEditionId` and its
+  `sourceTemplateId`; direct builds leave both null. Exposed in the website
+  summary.
+- **Activity events** for meaningful Website actions: `website.created`,
+  `website.generated`, `website.published`, `website.unpublished`,
+  `website.deleted`, `website_template.used`, `marketplace_edition.applied`,
+  `branding.updated` (on opt-in package branding), `hosting.created`,
+  `domain.added`, `domain.verified`. No secrets, raw HTML, or verification
+  tokens are placed in metadata.
+- **Site-limit accounting — no change (documented follow-up).** Websites and
+  hosting accounts both count against the plan `sites` limit but tally
+  independently. Product intent (combined vs separate entitlements) is
+  unconfirmed, so enforcement is deliberately **left unchanged** and recorded as
+  a named follow-up rather than guessing at billing semantics.
+
 ### Changed
 - **Dashboard polish pass.** Narrow visual follow-up to the Home overhaul
   (no behavior/endpoint/permission changes): (1) the seven metric cards now use

@@ -11,6 +11,7 @@ import type {
   UpdatePlatformWebsiteRequest,
 } from "./PlatformWebsite";
 import { PlatformWebsiteRepository } from "./PlatformWebsiteRepository";
+import type { WebsiteGenerationLockRepository } from "./WebsiteGenerationLockRepository";
 import {
   createWebsiteGenerator,
   DisconnectedWebsiteGenerator,
@@ -28,8 +29,15 @@ export type GeneratorFactory = (input: {
 export class GeneratorUnavailableError extends Error {
   constructor(message: string) {
     super(message);
-    this.name =
-      "GeneratorUnavailableError";
+    this.name = "GeneratorUnavailableError";
+  }
+}
+
+/** Thrown when a generation is already in flight for the same website. */
+export class GenerationInProgressError extends Error {
+  constructor() {
+    super("A generation is already running for this website.");
+    this.name = "GenerationInProgressError";
   }
 }
 
@@ -43,16 +51,14 @@ export class GeneratorUnavailableError extends Error {
  */
 export class PlatformWebsiteService {
   constructor(
-    private readonly repository =
-      new PlatformWebsiteRepository(),
-    private readonly generator: WebsiteGenerator =
-      new DisconnectedWebsiteGenerator(),
+    private readonly repository = new PlatformWebsiteRepository(),
+    private readonly generator: WebsiteGenerator = new DisconnectedWebsiteGenerator(),
     private readonly clients?: PlatformClientService,
     private readonly aiSettings?: OrganizationAiSettingsService,
     private readonly aiUsage?: AiUsageRepository,
     private readonly billing?: BillingService,
-    private readonly generatorFactory: GeneratorFactory =
-      createWebsiteGenerator,
+    private readonly generatorFactory: GeneratorFactory = createWebsiteGenerator,
+    private readonly locks?: WebsiteGenerationLockRepository,
   ) {}
 
   /**
@@ -69,73 +75,81 @@ export class PlatformWebsiteService {
     const name = request.name.trim();
 
     if (!name) {
-      throw new Error(
-        "A website needs a name.",
-      );
+      throw new Error("A website needs a name.");
     }
 
     if (request.clientId) {
-      await this.assertClientInTenant(
-        request.clientId,
-      );
+      await this.assertClientInTenant(request.clientId);
     }
 
-    const now =
-      new Date().toISOString();
+    const now = new Date().toISOString();
 
     return this.repository.create({
       id: randomUUID(),
       clientId: request.clientId,
       name,
-      brief:
-        request.brief?.trim() ||
-        undefined,
-      accentColor:
-        request.accentColor?.trim() ||
-        undefined,
+      brief: request.brief?.trim() || undefined,
+      accentColor: request.accentColor?.trim() || undefined,
       status: "draft",
+      sourceTemplateId: request.sourceTemplateId,
+      sourceEditionId: request.sourceEditionId,
       createdAt: now,
       updatedAt: now,
     });
   }
 
-  async get(
-    id: string,
-  ): Promise<PlatformWebsiteRecord> {
-    const website =
-      await this.repository.get(id);
+  async get(id: string): Promise<PlatformWebsiteRecord> {
+    const website = await this.repository.get(id);
 
     if (!website) {
-      throw new Error(
-        "Website not found.",
-      );
+      throw new Error("Website not found.");
     }
 
     return website;
   }
 
-  async list(): Promise<
-    readonly PlatformWebsiteRecord[]
-  > {
+  async list(): Promise<readonly PlatformWebsiteRecord[]> {
     return this.repository.list();
   }
 
   async count(): Promise<number> {
-    return (
-      await this.repository.list()
-    ).length;
+    return (await this.repository.list()).length;
   }
 
   /**
    * Generates (or regenerates) the site's HTML from its brief via the AI
    * generator, and stores it. Throws {@link GeneratorUnavailableError} when
    * no AI key is configured so the API can surface a clear message.
+   *
+   * A durable per-website lock (when wired) guards this so two concurrent or
+   * duplicated requests can't both run and both meter AI usage; the second
+   * gets {@link GenerationInProgressError}. A deliberate later regeneration
+   * (after the first completes and the lock is released) is a new operation.
    */
   async generate(
     id: string,
+    idempotencyKey?: string,
   ): Promise<PlatformWebsiteRecord> {
-    const website =
-      await this.get(id);
+    // Confirm existence + tenant ownership before claiming the lock.
+    await this.get(id);
+
+    if (!this.locks) {
+      return this.generateInternal(id);
+    }
+
+    const claimed = await this.locks.tryLock(id, idempotencyKey);
+    if (!claimed) {
+      throw new GenerationInProgressError();
+    }
+    try {
+      return await this.generateInternal(id);
+    } finally {
+      await this.locks.unlock(id).catch(() => undefined);
+    }
+  }
+
+  private async generateInternal(id: string): Promise<PlatformWebsiteRecord> {
+    const website = await this.get(id);
 
     // Resolve which generator to use: the tenant's own key (their spend)
     // when they've configured one, otherwise the platform's included AI.
@@ -148,13 +162,11 @@ export class PlatformWebsiteService {
     let provider: string;
 
     if (settings?.apiKey) {
-      generator =
-        this.generatorFactory({
-          provider:
-            settings.provider,
-          apiKey: settings.apiKey,
-          model: settings.model,
-        });
+      generator = this.generatorFactory({
+        provider: settings.provider,
+        apiKey: settings.apiKey,
+        model: settings.model,
+      });
       ownKey = true;
       provider = settings.provider;
     } else {
@@ -173,41 +185,25 @@ export class PlatformWebsiteService {
     // included AI. A tenant on their own key spends their own money, so it's
     // never capped. Throws PlanLimitError (→ 402) when the allowance is used
     // up. The metering below is what this count reads from.
-    if (
-      !ownKey &&
-      this.billing &&
-      this.aiUsage
-    ) {
-      const monthStart =
-        startOfUtcMonth();
-      const used =
-        await this.aiUsage.platformCountSince(
-          "website_generation",
-          monthStart,
-        );
-
-      await this.billing.assertWithinLimit(
-        "aiGenerations",
-        used,
+    if (!ownKey && this.billing && this.aiUsage) {
+      const monthStart = startOfUtcMonth();
+      const used = await this.aiUsage.platformCountSince(
+        "website_generation",
+        monthStart,
       );
+
+      await this.billing.assertWithinLimit("aiGenerations", used);
     }
 
-    const result =
-      await generator.generate({
-        name: website.name,
-        description:
-          website.brief ||
-          website.name,
-        accentColor:
-          website.accentColor,
-      });
+    const result = await generator.generate({
+      name: website.name,
+      description: website.brief || website.name,
+      accentColor: website.accentColor,
+    });
 
     // Meter the usage so cost is always visible (and never an open tab).
     if (this.aiUsage) {
-      const model =
-        result.model ||
-        settings?.model ||
-        "unknown";
+      const model = result.model || settings?.model || "unknown";
       const usage = result.usage ?? {
         inputTokens: 0,
         outputTokens: 0,
@@ -218,108 +214,75 @@ export class PlatformWebsiteService {
         kind: "website_generation",
         provider,
         model,
-        inputTokens:
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        costMicros: estimateCostMicros(
+          model,
           usage.inputTokens,
-        outputTokens:
           usage.outputTokens,
-        costMicros:
-          estimateCostMicros(
-            model,
-            usage.inputTokens,
-            usage.outputTokens,
-          ),
+        ),
         ownKey,
-        createdAt:
-          new Date().toISOString(),
+        createdAt: new Date().toISOString(),
       });
     }
 
-    const updated: PlatformWebsiteRecord =
-      {
-        ...website,
-        html: result.html,
-        updatedAt:
-          new Date().toISOString(),
-      };
+    const updated: PlatformWebsiteRecord = {
+      ...website,
+      html: result.html,
+      updatedAt: new Date().toISOString(),
+    };
 
-    return this.repository.update(
-      updated,
-    );
+    return this.repository.update(updated);
   }
 
   async update(
     id: string,
     changes: UpdatePlatformWebsiteRequest,
   ): Promise<PlatformWebsiteRecord> {
-    const existing =
-      await this.get(id);
+    const existing = await this.get(id);
 
     if (changes.clientId) {
-      await this.assertClientInTenant(
-        changes.clientId,
-      );
+      await this.assertClientInTenant(changes.clientId);
     }
 
     const clientId =
       changes.clientId === null
         ? undefined
-        : (changes.clientId ??
-          existing.clientId);
+        : (changes.clientId ?? existing.clientId);
 
-    const updated: PlatformWebsiteRecord =
-      {
-        ...existing,
-        clientId,
-        name:
-          changes.name?.trim() ||
-          existing.name,
-        brief:
-          changes.brief !== undefined
-            ? changes.brief.trim() ||
-              undefined
-            : existing.brief,
-        accentColor:
-          changes.accentColor !==
-          undefined
-            ? changes.accentColor.trim() ||
-              undefined
-            : existing.accentColor,
-        html:
-          changes.html !== undefined
-            ? changes.html
-            : existing.html,
-        status:
-          changes.status ??
-          existing.status,
-        domain:
-          changes.domain !== undefined
-            ? changes.domain.trim() ||
-              undefined
-            : existing.domain,
-        updatedAt:
-          new Date().toISOString(),
-      };
+    const updated: PlatformWebsiteRecord = {
+      ...existing,
+      clientId,
+      name: changes.name?.trim() || existing.name,
+      brief:
+        changes.brief !== undefined
+          ? changes.brief.trim() || undefined
+          : existing.brief,
+      accentColor:
+        changes.accentColor !== undefined
+          ? changes.accentColor.trim() || undefined
+          : existing.accentColor,
+      html: changes.html !== undefined ? changes.html : existing.html,
+      status: changes.status ?? existing.status,
+      domain:
+        changes.domain !== undefined
+          ? changes.domain.trim() || undefined
+          : existing.domain,
+      updatedAt: new Date().toISOString(),
+    };
 
-    return this.repository.update(
-      updated,
-    );
+    return this.repository.update(updated);
   }
 
   /**
    * Publishes a generated site to a domain (which the caller must already
    * have verified belongs to this tenant). Refuses to publish an empty site.
    */
-  async publish(
-    id: string,
-    domain: string,
-  ): Promise<PlatformWebsiteRecord> {
-    const website =
-      await this.get(id);
+  async publish(id: string, domain: string): Promise<PlatformWebsiteRecord> {
+    const website = await this.get(id);
 
     if (!website.html) {
-      throw new Error(
-        "Generate the site before publishing it.",
-      );
+      throw new Error("Generate the site before publishing it.");
     }
 
     return this.update(id, {
@@ -328,36 +291,24 @@ export class PlatformWebsiteService {
     });
   }
 
-  async unpublish(
-    id: string,
-  ): Promise<PlatformWebsiteRecord> {
+  async unpublish(id: string): Promise<PlatformWebsiteRecord> {
     return this.update(id, {
       status: "draft",
     });
   }
 
   /** The HTML of this tenant's published site on `domain` (or undefined). */
-  async findPublishedHtmlByDomain(
-    domain: string,
-  ): Promise<string | undefined> {
-    return this.repository.findPublishedHtmlByDomain(
-      domain,
-    );
+  async findPublishedHtmlByDomain(domain: string): Promise<string | undefined> {
+    return this.repository.findPublishedHtmlByDomain(domain);
   }
 
-  async delete(
-    id: string,
-  ): Promise<void> {
+  async delete(id: string): Promise<void> {
     await this.repository.delete(id);
   }
 
-  private async assertClientInTenant(
-    clientId: string,
-  ): Promise<void> {
+  private async assertClientInTenant(clientId: string): Promise<void> {
     if (!this.clients) {
-      throw new Error(
-        "Cannot attach a client: client service is unavailable.",
-      );
+      throw new Error("Cannot attach a client: client service is unavailable.");
     }
 
     await this.clients.get(clientId);
@@ -369,10 +320,6 @@ export function startOfUtcMonth(): string {
   const now = new Date();
 
   return new Date(
-    Date.UTC(
-      now.getUTCFullYear(),
-      now.getUTCMonth(),
-      1,
-    ),
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
   ).toISOString();
 }

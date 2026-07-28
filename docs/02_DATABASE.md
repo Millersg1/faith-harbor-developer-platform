@@ -80,6 +80,8 @@ new table is introduced in the milestone that adds its module (see
 | Table | Columns | Indexes |
 |---|---|---|
 | organization_workspace_preferences | organization_id PK → organizations ON DELETE CASCADE, onboarding_dismissed BOOLEAN NOT NULL DEFAULT FALSE, updated_at | PK on organization_id |
+| websites (added cols) | + source_template_id TEXT, + source_edition_id TEXT (additive; `ALTER TABLE … ADD COLUMN IF NOT EXISTS`; existing rows stay null) — website provenance | — |
+| website_generation_locks | website_id PK → websites ON DELETE CASCADE, organization_id → organizations ON DELETE CASCADE, idempotency_key TEXT, started_at | PK on website_id (atomic `ON CONFLICT DO NOTHING` claim) |
 
 Added additively in `PostgresDatabase.initialize()` (`CREATE TABLE IF NOT
 EXISTS`), a per-organization singleton alongside `organization_branding`.

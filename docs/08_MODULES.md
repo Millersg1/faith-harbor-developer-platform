@@ -138,6 +138,34 @@ Source lives under `src/platform/<module>/`.
   settings. The dashboard "Hide" persists `onboardingDismissed`; a member's
   reopen is session-only.
 
+### Websites & Website workspace (`websites/`, `web/pages.ts`)
+- **Purpose:** AI-generated tenant/client websites plus the reorganized
+  **Website workspace** UI (server-rendered, in `web/pages.ts`).
+- **UI:** the `web` dashboard section renders an accessible sub-navigation
+  (`role="tablist"`, deep-linked via `#web/<sub>`, back/forward + arrow keys):
+  **My Websites** (default), Create Website, AI Employee Marketplace, Website
+  Templates, Hosting & Domains, Branding. Only the active sub-section renders;
+  Website panels are full-width (`grid-column: 1/-1`) so the builder no longer
+  stretches beside the catalog. Install/use actions go through a focus-trapped
+  confirmation dialog stating exactly what is created/changed.
+- **Provenance:** `PlatformWebsiteRecord` carries optional `sourceTemplateId` /
+  `sourceEditionId` (stable ids, not names). Template `use` sets the template
+  id; edition `apply` sets the edition id + its template id; direct builds leave
+  both null. Additive migration; existing rows stay valid.
+- **Generation idempotency:** `PlatformWebsiteService.generate(id, key?)` claims
+  a durable per-website lock (`WebsiteGenerationLockRepository` →
+  `website_generation_locks`, atomic `ON CONFLICT DO NOTHING`) so two
+  concurrent/duplicate requests can't both run and double-meter AI usage — the
+  loser gets `GenerationInProgressError` (409). A later regeneration is a new
+  op. AI usage is metered exactly once per successful generation.
+- **Marketplace apply is explicit:** the edition `apply` route only changes
+  org branding when the request carries `applyBranding: true` (server-validated,
+  default off), and returns an accurate result (website, employeesCreated vs
+  employeesRequested — best-effort). Activity events cover the meaningful
+  lifecycle. Hosting/domain records never expose credentials or tokens as
+  secrets; SSL is described as an AutoSSL policy with a neutral post-verify
+  status (no live cert-status field yet).
+
 ### Marketplace (`marketplace/`)
 - **Purpose:** a code-defined catalogue a tenant browses and installs from — the
   first Phase 4 surface. `MarketplaceCatalog` holds `WEBSITE_TEMPLATES`

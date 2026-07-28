@@ -14,6 +14,8 @@ interface WebsiteRow {
   html: string | null;
   status: string;
   domain: string | null;
+  source_template_id: string | null;
+  source_edition_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -24,30 +26,22 @@ interface WebsiteRow {
  * context (fail closed) and constrain every query to it.
  */
 export class PlatformWebsiteRepository extends TenantScopedRepository {
-  private readonly memory =
-    new Map<
-      string,
-      PlatformWebsiteRecord
-    >();
+  private readonly memory = new Map<string, PlatformWebsiteRecord>();
 
   async create(
-    website: Omit<
-      PlatformWebsiteRecord,
-      "organizationId"
-    >,
+    website: Omit<PlatformWebsiteRecord, "organizationId">,
   ): Promise<PlatformWebsiteRecord> {
-    const organizationId =
-      this.tenantId();
+    const organizationId = this.tenantId();
 
-    const record: PlatformWebsiteRecord =
-      { ...website, organizationId };
+    const record: PlatformWebsiteRecord = { ...website, organizationId };
 
     if (this.db) {
       await this.db.query(
         `INSERT INTO websites
            (id, organization_id, client_id, name, brief, accent_color,
-            html, status, domain, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            html, status, domain, source_template_id, source_edition_id,
+            created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           record.id,
           record.organizationId,
@@ -58,6 +52,8 @@ export class PlatformWebsiteRepository extends TenantScopedRepository {
           record.html ?? null,
           record.status,
           record.domain ?? null,
+          record.sourceTemplateId ?? null,
+          record.sourceEditionId ?? null,
           record.createdAt,
           record.updatedAt,
         ],
@@ -66,87 +62,56 @@ export class PlatformWebsiteRepository extends TenantScopedRepository {
       return record;
     }
 
-    this.memory.set(
-      record.id,
-      record,
-    );
+    this.memory.set(record.id, record);
 
     return record;
   }
 
-  async get(
-    id: string,
-  ): Promise<
-    PlatformWebsiteRecord | undefined
-  > {
-    const organizationId =
-      this.tenantId();
+  async get(id: string): Promise<PlatformWebsiteRecord | undefined> {
+    const organizationId = this.tenantId();
 
     if (this.db) {
-      const result =
-        await this.db.query(
-          "SELECT * FROM websites WHERE id = $1 AND organization_id = $2",
-          [id, organizationId],
-        );
-
-      const row = asRow(
-        result.rows[0],
+      const result = await this.db.query(
+        "SELECT * FROM websites WHERE id = $1 AND organization_id = $2",
+        [id, organizationId],
       );
 
-      return row
-        ? mapRow(row)
-        : undefined;
+      const row = asRow(result.rows[0]);
+
+      return row ? mapRow(row) : undefined;
     }
 
     const record = this.memory.get(id);
 
-    return record &&
-      record.organizationId ===
-        organizationId
+    return record && record.organizationId === organizationId
       ? record
       : undefined;
   }
 
-  async list(): Promise<
-    PlatformWebsiteRecord[]
-  > {
-    const organizationId =
-      this.tenantId();
+  async list(): Promise<PlatformWebsiteRecord[]> {
+    const organizationId = this.tenantId();
 
     if (this.db) {
-      const result =
-        await this.db.query(
-          `SELECT * FROM websites
+      const result = await this.db.query(
+        `SELECT * FROM websites
             WHERE organization_id = $1
             ORDER BY created_at DESC`,
-          [organizationId],
-        );
+        [organizationId],
+      );
 
       return result.rows
         .map(asRow)
-        .filter(
-          (
-            row,
-          ): row is WebsiteRow =>
-            row !== undefined,
-        )
+        .filter((row): row is WebsiteRow => row !== undefined)
         .map(mapRow);
     }
 
-    return Array.from(
-      this.memory.values(),
-    ).filter(
-      (record) =>
-        record.organizationId ===
-        organizationId,
+    return Array.from(this.memory.values()).filter(
+      (record) => record.organizationId === organizationId,
     );
   }
 
-  async update(
-    website: PlatformWebsiteRecord,
-  ): Promise<PlatformWebsiteRecord> {
-    const organizationId =
-      this.tenantId();
+  async update(website: PlatformWebsiteRecord): Promise<PlatformWebsiteRecord> {
+    const organizationId = this.tenantId();
 
     if (this.db) {
       await this.db.query(
@@ -171,19 +136,10 @@ export class PlatformWebsiteRepository extends TenantScopedRepository {
       return website;
     }
 
-    const existing = this.memory.get(
-      website.id,
-    );
+    const existing = this.memory.get(website.id);
 
-    if (
-      existing &&
-      existing.organizationId ===
-        organizationId
-    ) {
-      this.memory.set(
-        website.id,
-        website,
-      );
+    if (existing && existing.organizationId === organizationId) {
+      this.memory.set(website.id, website);
     }
 
     return website;
@@ -193,36 +149,28 @@ export class PlatformWebsiteRepository extends TenantScopedRepository {
    * Returns the HTML of the current tenant's PUBLISHED website served on
    * `domain`, or undefined. Used to serve a live site on its custom domain.
    */
-  async findPublishedHtmlByDomain(
-    domain: string,
-  ): Promise<string | undefined> {
-    const organizationId =
-      this.tenantId();
+  async findPublishedHtmlByDomain(domain: string): Promise<string | undefined> {
+    const organizationId = this.tenantId();
 
     if (this.db) {
-      const result =
-        await this.db.query(
-          `SELECT html FROM websites
+      const result = await this.db.query(
+        `SELECT html FROM websites
             WHERE organization_id = $1 AND domain = $2
               AND status = 'published' AND html IS NOT NULL
             LIMIT 1`,
-          [organizationId, domain],
-        );
+        [organizationId, domain],
+      );
 
-      const row = result.rows[0] as
-        | { html?: string }
-        | undefined;
+      const row = result.rows[0] as { html?: string } | undefined;
 
       return row?.html || undefined;
     }
 
     for (const record of this.memory.values()) {
       if (
-        record.organizationId ===
-          organizationId &&
+        record.organizationId === organizationId &&
         record.domain === domain &&
-        record.status ===
-          "published" &&
+        record.status === "published" &&
         record.html
       ) {
         return record.html;
@@ -232,11 +180,8 @@ export class PlatformWebsiteRepository extends TenantScopedRepository {
     return undefined;
   }
 
-  async delete(
-    id: string,
-  ): Promise<void> {
-    const organizationId =
-      this.tenantId();
+  async delete(id: string): Promise<void> {
+    const organizationId = this.tenantId();
 
     if (this.db) {
       await this.db.query(
@@ -249,11 +194,7 @@ export class PlatformWebsiteRepository extends TenantScopedRepository {
 
     const existing = this.memory.get(id);
 
-    if (
-      existing &&
-      existing.organizationId ===
-        organizationId
-    ) {
+    if (existing && existing.organizationId === organizationId) {
       this.memory.delete(id);
     }
   }
@@ -265,20 +206,15 @@ function asRow(
   return row as WebsiteRow | undefined;
 }
 
-function mapRow(
-  row: WebsiteRow,
-): PlatformWebsiteRecord {
-  const record: PlatformWebsiteRecord =
-    {
-      id: row.id,
-      organizationId:
-        row.organization_id,
-      name: row.name,
-      status:
-        row.status as PlatformWebsiteStatus,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+function mapRow(row: WebsiteRow): PlatformWebsiteRecord {
+  const record: PlatformWebsiteRecord = {
+    id: row.id,
+    organizationId: row.organization_id,
+    name: row.name,
+    status: row.status as PlatformWebsiteStatus,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 
   if (row.client_id) {
     record.clientId = row.client_id;
@@ -289,8 +225,7 @@ function mapRow(
   }
 
   if (row.accent_color) {
-    record.accentColor =
-      row.accent_color;
+    record.accentColor = row.accent_color;
   }
 
   if (row.html) {
@@ -299,6 +234,14 @@ function mapRow(
 
   if (row.domain) {
     record.domain = row.domain;
+  }
+
+  if (row.source_template_id) {
+    record.sourceTemplateId = row.source_template_id;
+  }
+
+  if (row.source_edition_id) {
+    record.sourceEditionId = row.source_edition_id;
   }
 
   return record;
