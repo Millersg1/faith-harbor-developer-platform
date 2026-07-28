@@ -96,3 +96,8 @@ restart.
 GitHub Actions runs `npm ci && npm run validate` (`typecheck && test &&
 build`). The dev sandbox has no outbound network to `api.github.com`, so CI is
 verified by pushing and viewing the Actions tab.
+
+## Related
+
+For migrating, cloning, or recovering client WordPress sites hosted on the
+platform, see [`15_WORDPRESS_MIGRATION_SOP.md`](15_WORDPRESS_MIGRATION_SOP.md).

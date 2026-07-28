@@ -71,6 +71,7 @@ Included guides:
 - Coding Standards
 - Release Process
 - Changelog
+- [WordPress Website Migration & Recovery Procedure](15_WORDPRESS_MIGRATION_SOP.md)
 
 ---
 

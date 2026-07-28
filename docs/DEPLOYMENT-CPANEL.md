@@ -142,3 +142,9 @@ npm run build:all
   configuration is needed for the frontend.
 - Human approval safeguards (delete confirmations, human-authority AI
   governance) remain in place in production.
+
+## Related
+
+For migrating, cloning, or recovering client WordPress sites hosted on this
+cPanel infrastructure, see
+[`15_WORDPRESS_MIGRATION_SOP.md`](15_WORDPRESS_MIGRATION_SOP.md).
