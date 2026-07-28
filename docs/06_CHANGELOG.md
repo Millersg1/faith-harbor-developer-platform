@@ -7,6 +7,59 @@ Faith Harbor OS is unaffected.
 ## [Unreleased] — Phase 3 in progress (2026-07-26)
 
 ### Added
+- **Tenant dashboard (Home) overhaul.** The Home route is now an operational
+  **Command Center** ("Dashboard" tab) instead of a wall of panels:
+  - **Personalized welcome** — a time-of-day greeting by the user's *name*
+    (email only as a fallback; the email moves to the account identity, not the
+    hero). Renamed the "Home" tab to **Dashboard** (label only; the section key
+    and routing are unchanged).
+  - **Operational overview** — real, tenant-scoped metric cards (clients,
+    active leads, active projects, open requests, websites, campaigns, AI
+    employees) from a new **`GET /api/platform/dashboard`** aggregate. Counts
+    are computed server-side (open tickets by real status, active projects by
+    status); an unwired module shows an honest **"not set up"** state, never a
+    misleading zero. **No MRR/revenue** is shown — the billing model has no
+    reliable per-tenant revenue yet. Each available metric links to its module.
+  - **Quick actions** — permission-aware shortcuts (Add client, New project,
+    Support request, New campaign for everyone; Build website, Hire AI employee,
+    Invite teammate for owner/admin only, matching the server `requireRole`
+    gates). No dead buttons.
+  - **Recent activity** — real actor / module / timestamp per event (via the
+    tested `actorLabel`), with a genuinely useful empty state (offers valid
+    quick actions, never fabricated activity).
+  - **Compact subscription card** — plan name, price (custom for Enterprise),
+    status badge, and renewal date (never invented when `currentPeriodEnd` is
+    null); the plan picker is owner-only and behind a "Manage plan" toggle
+    (server still enforces owner-only plan changes; no Stripe IDs exposed).
+  - **Conditional onboarding** — the Success Center now auto-collapses when the
+    workspace completes it, with a "Show setup checklist" control to reopen.
+    Dismissal is a **server-persisted, shared workspace preference** (new
+    `OrganizationWorkspacePreferences` singleton + migration), changeable only
+    by owner/admin (`PATCH /api/platform/preferences`, `requireRole`); members
+    get a session-only reveal. Replaces the previous browser-only `localStorage`
+    flag.
+  - **Fixed the progress bar** — it was rendering *full* at 2 / 6 because the
+    track used an **undefined `--line` token** (falling back to bright `#eee`).
+    Progress is now computed dynamically (`completedSteps / total`), bound to a
+    real track/fill, and exposed with `role="progressbar"` + `aria-valuenow`.
+  - **Contrast & accessibility** — defined the missing `--card` / `--line`
+    tokens (removing every light `#fff`/`#e5e7eb` fallback that produced white
+    cards on the dark theme), gave the near-invisible **Hide** / **Update**
+    controls a clearly-visible secondary-button style, and added
+    hover/active/**disabled** + visible `:focus-visible` states and accessible
+    names on icon-only controls.
+  - **White-label contrast guard** — a tenant's brand color is validated
+    (`safeAccent`) and the on-accent text ("ink") is chosen by luminance
+    (`accentInk`), so a dark brand color can no longer make branded buttons or
+    the active tab unreadable. Platform ownership, tenant boundaries, auth,
+    billing authority, and data isolation are unchanged.
+  - **Engineering** — pure formatting/validation helpers live in
+    `web/dashboardFormat.ts`, are **unit-tested**, and are embedded verbatim
+    into the client script (via `toString()`) so the browser runs the exact
+    tested code. **33 new tests** (dashboard/preferences HTTP incl. tenant
+    isolation + member-403; format helpers; page regression for the token bug).
+    Verified in-browser (Playwright) at desktop/tablet/phone across new,
+    partial, and completed workspaces as owner and member.
 - **White-label polish** (P5-M4): a tenant's brand now carries across three new
   surfaces. (1) **Branded printable invoice** — `GET
   /api/platform/invoices/:id/printable` serves a self-contained, brand-themed

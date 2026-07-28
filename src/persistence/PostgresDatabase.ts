@@ -186,6 +186,17 @@ export class PostgresDatabase
       );
     `);
 
+    // Per-tenant shared workspace/dashboard preferences. One row per
+    // organization, cascading on tenant deletion.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS organization_workspace_preferences (
+        organization_id      TEXT PRIMARY KEY
+                               REFERENCES organizations (id) ON DELETE CASCADE,
+        onboarding_dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at           TEXT NOT NULL
+      );
+    `);
+
     // Platform administrators (All Elite Cloud staff) — global accounts,
     // NOT tied to any organization; they act across all tenants.
     await this.pool.query(`

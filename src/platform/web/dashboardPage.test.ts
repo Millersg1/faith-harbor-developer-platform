@@ -1,0 +1,55 @@
+import { describe, expect, it } from "vitest";
+
+import { dashboardPage, loginPage } from "./pages";
+
+const html = dashboardPage();
+
+describe("dashboardPage — theme tokens", () => {
+  it("defines --card and --line in :root (no undefined-token regression)", () => {
+    expect(html).toMatch(/:root[^}]*--card:/);
+    expect(html).toMatch(/:root[^}]*--line:/);
+    expect(html).toMatch(/--accent-ink:/);
+  });
+
+  it("never falls back to light values that create white cards on dark bg", () => {
+    expect(html).not.toContain("var(--card,#fff)");
+    expect(html).not.toContain("var(--line,#e5e7eb)");
+    expect(html).not.toContain("var(--line,#eee)");
+    // The same guard on the login page (shares the token block).
+    expect(loginPage()).not.toContain("var(--card,#fff)");
+  });
+});
+
+describe("dashboardPage — accessibility & structure", () => {
+  it("renders the onboarding progress with progressbar semantics", () => {
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuemin="0"');
+    expect(html).toContain('aria-valuemax="100"');
+  });
+
+  it("gives icon-only controls accessible names", () => {
+    expect(html).toContain('aria-label="Search"');
+    expect(html).toContain('aria-label="Notifications"');
+  });
+
+  it("has a personalized greeting and metrics/quick-action containers", () => {
+    expect(html).toContain('id="greeting"');
+    expect(html).toContain('id="metrics"');
+    expect(html).toContain('id="quickActions"');
+  });
+});
+
+describe("dashboardPage — embedded tested helpers", () => {
+  it("embeds the pure format/validation helpers so the browser runs tested code", () => {
+    expect(html).toContain("function progressPercent");
+    expect(html).toContain("function greetingFor");
+    expect(html).toContain("function safeAccent");
+    expect(html).toContain("function accentInk");
+  });
+
+  it("keeps the HTML-escape helper and renders API data via textContent", () => {
+    // Data is rendered with textContent (never innerHTML from API data).
+    expect(html).toContain("function esc(");
+    expect(html).not.toContain(".innerHTML=d.");
+  });
+});

@@ -9,18 +9,32 @@
  */
 
 import { landingHtml } from "./landing";
+import { DASHBOARD_FORMAT_FNS } from "./dashboardFormat";
+
+/** The tested format helpers, serialized so the browser runs the exact code. */
+const DASHBOARD_HELPERS_JS =
+  DASHBOARD_FORMAT_FNS.map((fn) =>
+    fn.toString(),
+  ).join("\n");
 
 const STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --accent: #2dd4bf;
+    --accent-strong: #14b8a6;
+    --accent-ink: #06231f;
     --bg: #0b1220;
     --surface: #131f33;
     --surface-2: #172740;
-    --border: rgba(255,255,255,0.09);
-    --text: #e6edf5;
-    --muted: #9fb0c3;
-    --danger: #f26d6d;
+    --surface-3: #1e3050;
+    --card: #142137;
+    --border: rgba(255,255,255,0.12);
+    --line: rgba(255,255,255,0.10);
+    --text: #eef3fa;
+    --muted: #aebccd;
+    --muted-strong: #cdd8e6;
+    --danger: #f87171;
+    --warn: #fbbf24;
     --ok: #4ade80;
     --radius: 14px;
   }
@@ -67,11 +81,22 @@ const STYLES = `
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
     width: 100%; margin-top: 20px; padding: 12px 16px; font-size: 0.95rem; font-weight: 700;
-    color: #06231f; background: var(--accent); border: 0; border-radius: 11px; cursor: pointer;
+    color: var(--accent-ink); background: var(--accent); border: 0; border-radius: 11px; cursor: pointer;
   }
-  .btn:hover { filter: brightness(1.06); }
+  .btn:hover { filter: brightness(1.07); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled, .btn[disabled] { opacity: 0.45; cursor: not-allowed; filter: none; transform: none; }
   .btn.sec { background: transparent; color: var(--text); border: 1px solid var(--border); }
-  .btn.ghost { width: auto; margin: 0; padding: 8px 14px; background: rgba(255,255,255,0.06); color: var(--text); }
+  /* Secondary button — clearly visible on the dark surface, never accent-tinted
+     (so a dark tenant brand color can't make it disappear). Both class spellings. */
+  .btn.ghost, .btn-ghost { width: auto; margin: 0; padding: 9px 15px; font-weight: 600;
+    background: var(--surface-3); color: var(--text); border: 1px solid var(--border); }
+  .btn.ghost:hover, .btn-ghost:hover { background: #26406a; border-color: var(--accent); filter: none; color: #fff; }
+  .btn.ghost:active, .btn-ghost:active { transform: translateY(1px); }
+  /* Visible keyboard focus everywhere. */
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+  [tabindex]:focus-visible, .secnav a:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
   .row { display: flex; gap: 10px; }
   .alt { margin-top: 18px; font-size: 0.88rem; color: var(--muted); text-align: center; }
   .msg { min-height: 1.2em; margin-top: 14px; font-size: 0.86rem; font-weight: 600; }
@@ -101,9 +126,33 @@ const STYLES = `
   .secnav a { white-space: nowrap; font-size: 0.78rem; color: var(--muted); text-decoration: none; cursor: pointer;
     padding: 6px 13px; border: 1px solid var(--border); border-radius: 999px; user-select: none; }
   .secnav a:hover { color: var(--text); border-color: var(--accent); }
-  .secnav a.active { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .secnav a.active { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); font-weight: 700; }
   .sec-hide { display: none !important; }
   [id^="sec_"] { scroll-margin-top: 64px; }
+
+  /* Dashboard Home */
+  .dash-hero h1 { font-size: 1.55rem; letter-spacing: -0.02em; }
+  .dash-hero p { color: var(--muted-strong); font-size: 0.92rem; margin-top: 4px; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 12px; }
+  .metric { display: block; padding: 15px 16px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; color: var(--text); text-decoration: none; transition: border-color .15s ease, transform .15s ease; }
+  .metric:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .metric .n { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .metric .l { color: var(--muted); font-size: 0.78rem; margin-top: 3px; }
+  .metric.unavail { border-style: dashed; }
+  .metric.unavail .n { color: var(--muted); font-size: 0.95rem; font-weight: 600; }
+  .qa { display: flex; flex-wrap: wrap; gap: 10px; }
+  .qa button { display: inline-flex; align-items: center; gap: 7px; padding: 10px 14px; font-size: 0.85rem; font-weight: 600;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+  .qa button:hover { border-color: var(--accent); background: var(--surface-3); }
+  .progress { height: 10px; background: var(--surface-3); border: 1px solid var(--border); border-radius: 99px; overflow: hidden; }
+  .progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-strong), var(--accent)); border-radius: 99px; transition: width .35s ease; }
+  .badge { display: inline-block; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 999px; }
+  .badge.ok { background: rgba(74,222,128,0.18); color: #9df0b8; }
+  .badge.warn { background: rgba(251,191,36,0.18); color: #fcd34d; }
+  .badge.muted { background: rgba(174,188,205,0.16); color: var(--muted-strong); }
+  .subtle-btn { background: none; border: 0; color: var(--accent); font-size: 0.82rem; font-weight: 600; cursor: pointer; padding: 0; }
+  .subtle-btn:hover { text-decoration: underline; }
   .dns { margin-top: 10px; padding: 12px 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 10px; }
   .dns .hint { margin-bottom: 10px; }
   .dns .rec { display: flex; flex-direction: column; gap: 8px; }
@@ -420,8 +469,8 @@ export function dashboardPage(): string {
         <button class="btn ghost" id="bell" title="Notifications" aria-label="Notifications" style="width:auto;padding:8px 12px;position:relative;">
           &#128276;<span id="bellCount" style="display:none;position:absolute;top:-4px;right:-4px;background:#e5484d;color:#fff;border-radius:10px;font-size:0.68rem;line-height:1;padding:3px 6px;font-weight:700;">0</span>
         </button>
-        <div id="notifPanel" role="menu" style="display:none;position:absolute;right:0;top:44px;width:340px;max-width:88vw;max-height:60vh;overflow:auto;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.18);z-index:50;">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line,#e5e7eb);">
+        <div id="notifPanel" role="menu" style="display:none;position:absolute;right:0;top:44px;width:340px;max-width:88vw;max-height:60vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.18);z-index:50;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);">
             <strong style="font-size:0.9rem;">Notifications</strong>
             <button class="btn ghost" id="markAllRead" style="width:auto;padding:4px 8px;font-size:0.78rem;">Mark all read</button>
           </div>
@@ -432,15 +481,15 @@ export function dashboardPage(): string {
     </div>
   </div></div>
   <div id="palette" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;padding:10vh 16px 16px;">
-    <div style="max-width:580px;margin:0 auto;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,0.35);overflow:hidden;">
-      <input id="paletteInput" placeholder="Search clients, leads, invoices… or type a command" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;border:0;outline:0;padding:16px 18px;font-size:1rem;background:transparent;color:inherit;border-bottom:1px solid var(--line,#eee);" />
+    <div style="max-width:580px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,0.35);overflow:hidden;">
+      <input id="paletteInput" placeholder="Search clients, leads, invoices… or type a command" autocomplete="off" spellcheck="false" style="width:100%;box-sizing:border-box;border:0;outline:0;padding:16px 18px;font-size:1rem;background:transparent;color:inherit;border-bottom:1px solid var(--line);" />
       <div id="paletteResults" style="max-height:56vh;overflow:auto;"></div>
-      <div style="padding:8px 14px;font-size:0.72rem;opacity:0.6;border-top:1px solid var(--line,#eee);">&#8593;&#8595; to navigate · Enter to open · Esc to close</div>
+      <div style="padding:8px 14px;font-size:0.72rem;opacity:0.6;border-top:1px solid var(--line);">&#8593;&#8595; to navigate · Enter to open · Esc to close</div>
     </div>
   </div>
   <div id="journey" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:100;padding:8vh 16px 16px;">
-    <div style="max-width:600px;margin:0 auto;background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,0.35);overflow:hidden;">
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line,#eee);">
+    <div style="max-width:600px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,0.35);overflow:hidden;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);">
         <strong id="journeyTitle" style="font-size:0.95rem;">Journey</strong>
         <button class="btn ghost" id="journeyClose" style="width:auto;padding:4px 10px;">Close</button>
       </div>
@@ -449,36 +498,52 @@ export function dashboardPage(): string {
   </div>
   <div class="wrap">
     <div class="secnav" id="secnav"></div>
+    <div class="panel" id="dashHero" style="margin-bottom:18px;">
+      <div class="dash-hero">
+        <h1 id="greeting">Welcome</h1>
+        <p id="dashSummary">Loading your workspace…</p>
+      </div>
+      <div class="metrics" id="metrics" style="margin-top:16px;"></div>
+      <div id="quickActionsWrap" style="margin-top:18px;">
+        <div class="hint" style="margin-bottom:8px;">Quick actions</div>
+        <div class="qa" id="quickActions"></div>
+      </div>
+      <button class="subtle-btn" id="onbReopen" style="display:none;margin-top:14px;">Show setup checklist</button>
+    </div>
     <div class="panel" id="onboardingPanel" style="margin-bottom:18px;display:none;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;">
         <div>
           <h2 style="margin-bottom:4px;">Get started <span class="pill" id="onbCount"></span></h2>
           <p class="hint" style="margin-bottom:0;">A few steps to get the most out of your workspace.</p>
         </div>
-        <button class="btn btn-ghost" id="onbDismiss" style="width:auto;font-size:0.78rem;">Hide</button>
+        <button class="btn btn-ghost" id="onbDismiss" style="display:none;font-size:0.8rem;">Hide</button>
       </div>
-      <div style="height:8px;background:var(--line,#eee);border-radius:99px;overflow:hidden;margin:14px 0 4px;">
-        <div id="onbBar" style="height:100%;width:0;background:var(--accent);transition:width .3s;"></div>
+      <div class="progress" id="onbProgress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Setup progress" style="margin:14px 0 6px;">
+        <span id="onbBar" style="width:0;"></span>
       </div>
       <div class="list" id="onbList"><div class="empty">Loading…</div></div>
-    </div>
-    <div class="panel" id="billingPanel" style="margin-bottom:18px;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;">
-        <div>
-          <h2 style="margin-bottom:4px;">Plan <span class="pill" id="planStatus"></span></h2>
-          <p class="hint" id="planSummary" style="margin-bottom:0;">Loading…</p>
-        </div>
-        <div id="planPickerWrap" style="display:none;gap:10px;align-items:flex-end;">
-          <div class="f"><label for="planPicker">Change plan</label><select id="planPicker"></select></div>
-          <button class="btn" id="changePlan" style="width:auto;">Update</button>
-        </div>
-      </div>
-      <div class="msg" id="plmsg"></div>
     </div>
     <div class="panel" id="activityPanel" style="margin-bottom:18px;">
       <h2>Recent activity</h2>
       <p class="hint">The latest things that happened across your workspace.</p>
       <div class="list" id="activityFeed"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="panel" id="billingPanel" style="margin-bottom:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700;font-size:1.02rem;" id="planName">Plan</div>
+            <div class="hint" id="planSummary" style="margin:2px 0 0;">Loading…</div>
+          </div>
+          <span class="badge muted" id="planStatus"></span>
+        </div>
+        <button class="btn btn-ghost" id="managePlan" style="display:none;font-size:0.82rem;">Manage plan</button>
+      </div>
+      <div id="planPickerWrap" style="display:none;gap:10px;align-items:flex-end;margin-top:14px;">
+        <div class="f"><label for="planPicker">Change plan</label><select id="planPicker"></select></div>
+        <button class="btn" id="changePlan" style="width:auto;">Update</button>
+      </div>
+      <div class="msg" id="plmsg"></div>
     </div>
     <div class="grid2">
       <div class="panel">
@@ -860,7 +925,16 @@ export function dashboardPage(): string {
     </div>
   </div>`;
   const script = `
-  var slug='', clientsCache=[], myRole='';
+  ${DASHBOARD_HELPERS_JS}
+  var slug='', clientsCache=[], myRole='', DEFAULT_ACCENT='#2dd4bf';
+  // Apply a tenant brand accent only when it's a valid, legible color; pick a
+  // readable ink for accent backgrounds so branded controls never go invisible.
+  function applyAccent(color){
+    var acc=safeAccent(color, DEFAULT_ACCENT);
+    var root=document.documentElement;
+    root.style.setProperty('--accent', acc);
+    root.style.setProperty('--accent-ink', accentInk(acc));
+  }
   function esc(s){return s==null?'':String(s);}
   function money(n){return '$'+(Number(n||0)).toFixed(2);}
   function clear(el){while(el.firstChild){el.removeChild(el.firstChild);}}
@@ -891,48 +965,178 @@ export function dashboardPage(): string {
       sel.value=prev;
     }
   }
+  var onbData=null, onbDismissed=false;
+  function canManageWorkspace(){return myRole==='owner'||myRole==='admin';}
   async function loadOnboarding(){
+    var r=await api('/api/platform/onboarding');
+    onbData=r.ok?await r.json():null;
+    var pr=await api('/api/platform/preferences');
+    if(pr.ok){var pd=await pr.json();onbDismissed=!!(pd.preferences&&pd.preferences.onboardingDismissed);}
+    renderOnboarding();
+  }
+  function renderOnboarding(){
     var panel=document.getElementById('onboardingPanel');
+    var reopen=document.getElementById('onbReopen');
     if(!panel)return;
-    if(localStorage.getItem('onbHidden')==='1'){panel.style.display='none';return;}
-    var r=await api('/api/platform/onboarding'); if(!r.ok){panel.style.display='none';return;}
-    var d=await r.json(); var steps=d.steps||[];
-    if(!steps.length){panel.style.display='none';return;}
-    var bar=document.getElementById('onbBar'); if(bar){bar.style.width=(d.percent||0)+'%';}
-    var cnt=document.getElementById('onbCount'); if(cnt){cnt.textContent=(d.completed||0)+' / '+(d.total||0);}
+    var d=onbData;
+    if(!d||!d.steps||!d.steps.length){panel.style.display='none';if(reopen)reopen.style.display='none';return;}
+    var completed=d.completed||0, total=d.total||0;
+    var pct=progressPercent(completed,total);
+    var prog=document.getElementById('onbProgress');
+    var bar=document.getElementById('onbBar'); if(bar)bar.style.width=pct+'%';
+    if(prog){prog.setAttribute('aria-valuenow',String(pct));prog.setAttribute('aria-valuetext',completed+' of '+total+' steps complete');}
+    var cnt=document.getElementById('onbCount'); if(cnt)cnt.textContent=completed+' / '+total;
     var list=document.getElementById('onbList'); clear(list);
-    steps.forEach(function(s){
-      var row=document.createElement('div'); row.className='li';
-      row.style.cssText='display:flex;align-items:flex-start;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line,#eee);';
+    d.steps.forEach(function(s){
+      var row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:flex-start;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line);';
       var mark=document.createElement('div');
-      mark.style.cssText='flex:0 0 auto;width:22px;height:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;'+
-        (s.done?'background:var(--accent);color:#fff;':'background:transparent;border:2px solid var(--line,#ddd);color:transparent;');
+      mark.setAttribute('aria-hidden','true');
+      mark.style.cssText='flex:0 0 auto;width:22px;height:22px;border-radius:99px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;'+
+        (s.done?'background:var(--accent);color:var(--accent-ink);':'background:transparent;border:2px solid var(--muted);color:transparent;');
       mark.textContent=s.done?'\\u2713':'';
       var body=document.createElement('div'); body.style.flex='1';
-      var t=document.createElement('div'); t.style.cssText='font-weight:600;font-size:0.9rem;'+(s.done?'text-decoration:line-through;opacity:0.6;':'');
-      t.textContent=s.title;
+      var t=document.createElement('div'); t.style.cssText='font-weight:600;font-size:0.9rem;color:var(--text);'+(s.done?'text-decoration:line-through;color:var(--muted);':'');
+      // Non-color status cue in addition to the strike-through/checkmark.
+      t.textContent=s.title+(s.done?'  \\u2014 done':'');
       var desc=document.createElement('div'); desc.className='hint'; desc.style.margin='2px 0 0'; desc.textContent=s.description;
       body.appendChild(t); body.appendChild(desc);
+      row.appendChild(mark); row.appendChild(body);
       if(!s.done && s.href){
-        var go=document.createElement('a'); go.href=s.href; go.textContent='Start \\u2192';
-        go.style.cssText='flex:0 0 auto;font-size:0.8rem;color:var(--accent);text-decoration:none;align-self:center;';
-        row.appendChild(mark); row.appendChild(body); row.appendChild(go);
-      } else {
-        row.appendChild(mark); row.appendChild(body);
+        var go=document.createElement('a'); go.href=s.href; go.textContent='Start \\u2192'; go.className='subtle-btn';
+        go.style.cssText='flex:0 0 auto;align-self:center;text-decoration:none;';
+        row.appendChild(go);
       }
       list.appendChild(row);
     });
     if(d.allDone){
       var done=document.createElement('div'); done.className='empty'; done.style.paddingTop='12px';
-      done.textContent='\\ud83c\\udf89 You are all set — nicely done.';
+      done.textContent='\\ud83c\\udf89 You are all set \\u2014 nicely done.';
       list.appendChild(done);
     }
-    panel.style.display='';
+    // Auto-collapse once the workspace finishes onboarding or dismisses it.
+    var collapsed=onbDismissed||d.allDone;
+    panel.style.display=collapsed?'none':'';
+    if(reopen)reopen.style.display=collapsed?'':'none';
     var dismiss=document.getElementById('onbDismiss');
-    if(dismiss && !dismiss.dataset.wired){
-      dismiss.dataset.wired='1';
-      dismiss.addEventListener('click',function(){localStorage.setItem('onbHidden','1');panel.style.display='none';});
+    if(dismiss)dismiss.style.display=canManageWorkspace()?'':'none';
+  }
+  async function setOnboardingDismissed(v){
+    onbDismissed=v; renderOnboarding();
+    // Persist as a shared workspace preference (owner/admin only; enforced
+    // server-side too). Members get a session-only reveal, not a saved change.
+    if(canManageWorkspace()){
+      await api('/api/platform/preferences',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({onboardingDismissed:v})});
     }
+  }
+
+  // ---- Dashboard (Home) summary ----
+  var currentUser=null, dashData=null;
+  var METRIC_DEFS=[
+    ['clients','Clients','clients'],
+    ['leads','Active leads','clients'],
+    ['activeProjects','Active projects','work'],
+    ['openTickets','Open requests','work'],
+    ['websites','Websites','web'],
+    ['campaigns','Campaigns','marketing'],
+    ['aiEmployees','AI employees','ai']
+  ];
+  var QUICK_ACTIONS=[
+    {label:'Add client',sec:'clients'},
+    {label:'New project',sec:'work'},
+    {label:'Support request',sec:'work'},
+    {label:'New campaign',sec:'marketing'},
+    {label:'Build website',sec:'web',manage:true},
+    {label:'Hire AI employee',sec:'ai',manage:true},
+    {label:'Invite teammate',sec:'settings',manage:true}
+  ];
+  async function loadDashboard(){
+    var r=await api('/api/platform/dashboard');
+    dashData=r.ok?await r.json():{metrics:{},billing:null};
+    renderMetrics(); renderSummary(); renderBillingCard();
+  }
+  function renderGreeting(){
+    var el=document.getElementById('greeting'); if(!el||!currentUser)return;
+    el.textContent=greetingFor(currentUser.name,currentUser.email,new Date().getHours());
+  }
+  function renderSummary(){
+    var el=document.getElementById('dashSummary'); if(!el)return;
+    var m=(dashData&&dashData.metrics)||{};
+    var parts=[];
+    function add(v,sing,plur){ if(typeof v==='number'){parts.push(v+' '+(v===1?sing:plur));} }
+    add(m.clients,'client','clients');
+    add(m.activeProjects,'active project','active projects');
+    add(m.openTickets,'open request','open requests');
+    el.textContent=parts.length?('Here\\u2019s your workspace at a glance \\u2014 '+parts.join(', ')+'.'):'Your workspace is ready \\u2014 add your first client to get started.';
+  }
+  function renderMetrics(){
+    var el=document.getElementById('metrics'); if(!el)return; clear(el);
+    var m=(dashData&&dashData.metrics)||{};
+    METRIC_DEFS.forEach(function(def){
+      var key=def[0], label=def[1], sec=def[2];
+      var val=m[key];
+      var avail=(typeof val==='number');
+      var card=document.createElement(avail?'a':'div');
+      card.className='metric'+(avail?'':' unavail');
+      if(avail){card.href='#';card.setAttribute('role','link');card.addEventListener('click',function(e){e.preventDefault();showSection(sec);});}
+      var n=document.createElement('div');n.className='n';n.textContent=avail?String(val):'\\u2014';
+      var l=document.createElement('div');l.className='l';l.textContent=avail?label:(label+' \\u00b7 not set up');
+      card.appendChild(n);card.appendChild(l);
+      el.appendChild(card);
+    });
+  }
+  function renderQuickActions(){
+    var el=document.getElementById('quickActions'); if(!el)return; clear(el);
+    QUICK_ACTIONS.forEach(function(a){
+      if(a.manage && !canManageWorkspace())return;
+      var b=document.createElement('button');
+      b.textContent='+ '+a.label;
+      b.addEventListener('click',function(){ showSection(a.sec); focusFirstField(a.sec); });
+      el.appendChild(b);
+    });
+  }
+  function focusFirstField(sec){
+    try{
+      var panels=allPanels();
+      for(var i=0;i<panels.length;i++){var p=panels[i];
+        if(sectionOf(p)===sec && !p.classList.contains('sec-hide')){
+          var inp=p.querySelector('input[type=text],input[type=email],input:not([type]),textarea,select');
+          if(inp)inp.focus(); return;
+        }
+      }
+    }catch(_){/* focus is best-effort */}
+  }
+  function renderBillingCard(){
+    var b=dashData&&dashData.billing;
+    var nameEl=document.getElementById('planName');
+    var sumEl=document.getElementById('planSummary');
+    var stEl=document.getElementById('planStatus');
+    var manage=document.getElementById('managePlan');
+    if(!b){
+      if(nameEl)nameEl.textContent='Plan';
+      if(sumEl)sumEl.textContent='Billing is not configured for this workspace.';
+      if(stEl)stEl.style.display='none';
+      if(manage)manage.style.display='none';
+      return;
+    }
+    if(nameEl)nameEl.textContent=b.planName||'Plan';
+    if(sumEl)sumEl.textContent=planPriceText(b.priceCents,b.interval)+' \\u00b7 '+renewalText(b.currentPeriodEnd);
+    if(stEl){stEl.style.display='';stEl.textContent=b.status||'';
+      stEl.className='badge '+((b.status==='active'||b.status==='trialing')?'ok':((b.status==='past_due'||b.status==='canceled')?'warn':'muted'));}
+    if(manage)manage.style.display=b.canManage?'':'none';
+  }
+  async function loadPlans(){
+    var sel=document.getElementById('planPicker'); if(!sel||sel.dataset.loaded)return;
+    var pr=await api('/api/platform/billing/plans'); if(!pr.ok)return;
+    var pd=await pr.json(); clear(sel);
+    var currentId=dashData&&dashData.billing&&dashData.billing.planId;
+    (pd.plans||[]).forEach(function(p){
+      var o=document.createElement('option');o.value=p.id;
+      o.textContent=p.name+' \\u2014 '+planPriceText(p.priceCents,p.interval)+(p.selfServe?'':' (contact sales)');
+      if(p.id===currentId)o.selected=true;
+      sel.appendChild(o);
+    });
+    sel.dataset.loaded='1';
   }
   async function loadClients(){
     var r=await api('/api/platform/clients'); if(!r.ok)return;
@@ -981,7 +1185,7 @@ export function dashboardPage(): string {
     if(!slug)return;
     var r=await fetch('/api/platform/branding',{headers:{'X-Org-Slug':slug}});
     if(!r.ok)return; var d=await r.json(); var b=d.branding||{};
-    if(b.primaryColor){document.documentElement.style.setProperty('--accent',b.primaryColor);}
+    applyAccent(b.primaryColor);
     if(b.displayName){document.getElementById('orgName').textContent=b.displayName;}
     document.getElementById('bname').value=b.displayName||'';
     document.getElementById('bcolor').value=b.primaryColor||'';
@@ -1353,7 +1557,7 @@ export function dashboardPage(): string {
     if(!list.length){el.appendChild(emptyMsg('No notifications yet.'));return;}
     list.forEach(function(n){
       var row=document.createElement('div');
-      row.style.cssText='padding:11px 14px;border-bottom:1px solid var(--line,#eee);cursor:pointer;'+(n.readAt?'':'background:rgba(99,102,241,0.07);');
+      row.style.cssText='padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;'+(n.readAt?'':'background:rgba(99,102,241,0.07);');
       var t=document.createElement('div');t.textContent=esc(n.title);t.style.cssText='font-weight:600;font-size:0.85rem;';row.appendChild(t);
       if(n.body){var b=document.createElement('div');b.className='sub';b.textContent=esc(n.body);b.style.fontSize='0.8rem';row.appendChild(b);}
       var meta=document.createElement('div');meta.className='sub';meta.style.cssText='font-size:0.72rem;opacity:0.7;margin-top:2px;';meta.textContent=timeAgo(n.createdAt);row.appendChild(meta);
@@ -1371,19 +1575,34 @@ export function dashboardPage(): string {
     var d=await r.json(); setBell(d.unreadCount||0);
   }
   async function loadActivity(){
-    var r=await api('/api/platform/activity?limit=25'); if(!r.ok)return;
+    var r=await api('/api/platform/activity?limit=8'); if(!r.ok)return;
     var d=await r.json();
     var el=document.getElementById('activityFeed'); clear(el);
     var list=d.events||[];
-    if(!list.length){el.appendChild(emptyMsg('No activity yet. As your team works, it shows up here.'));return;}
+    if(!list.length){
+      var e0=document.createElement('div');e0.className='empty';
+      e0.textContent='No activity yet \\u2014 it will appear here as you and your team work. Start with a quick action:';
+      el.appendChild(e0);
+      var row=document.createElement('div');row.className='qa';row.style.marginTop='10px';
+      [['Add a client','clients'],['Create a project','work']].forEach(function(a){
+        var b=document.createElement('button');b.textContent='+ '+a[0];
+        b.addEventListener('click',function(){showSection(a[1]);focusFirstField(a[1]);});
+        row.appendChild(b);
+      });
+      el.appendChild(row);
+      return;
+    }
     list.forEach(function(e){
       var row=document.createElement('div');row.className='item';
-      var left=document.createElement('div');
+      var left=document.createElement('div');left.style.minWidth='0';
       var t=document.createElement('div');t.textContent=esc(e.title);t.style.fontWeight='600';left.appendChild(t);
-      var parts=[];if(e.actorName)parts.push(esc(e.actorName));parts.push(timeAgo(e.createdAt));
+      // actor (name, else friendly by type) · module · time
+      var parts=[actorLabel(e.actorType,e.actorName)];
+      if(e.subjectType)parts.push(esc(String(e.subjectType).replace(/_/g,' ')));
+      parts.push(timeAgo(e.createdAt));
       var s=document.createElement('div');s.className='sub';s.textContent=parts.join(' \\u00b7 ');left.appendChild(s);
       row.appendChild(left);
-      if(e.summary){var p=document.createElement('span');p.className='pill';p.textContent=esc(e.summary);row.appendChild(p);}
+      if(e.summary){var p=document.createElement('span');p.className='badge muted';p.textContent=esc(e.summary);p.style.flex='0 0 auto';row.appendChild(p);}
       el.appendChild(row);
     });
   }
@@ -1938,27 +2157,14 @@ export function dashboardPage(): string {
       document.getElementById('aiUsage').textContent='This month: '+(us.generations||0)+' generations · '+((us.inputTokens||0)+(us.outputTokens||0))+' tokens · ~$'+(Number(ud.costUsd||0)).toFixed(4)+' est. · Included AI: '+allow;}
   }
   function planPrice(p){return p.priceCents==null?'Custom pricing':('$'+(p.priceCents/100).toFixed(0)+'/mo');}
-  async function loadBilling(){
-    var r=await api('/api/platform/billing'); if(!r.ok)return;
-    var d=await r.json(); var plan=d.plan||{}; var sub=d.subscription||{};
-    document.getElementById('planStatus').textContent=esc(sub.status||'');
-    document.getElementById('planSummary').textContent='You\\u2019re on '+esc(plan.name||'')+' \\u2014 '+planPrice(plan)+'.';
-    var pr=await api('/api/platform/billing/plans');
-    if(pr.ok){
-      var pd=await pr.json(); var sel=document.getElementById('planPicker'); clear(sel);
-      (pd.plans||[]).forEach(function(p){
-        var o=document.createElement('option'); o.value=p.id;
-        o.textContent=esc(p.name)+' \\u2014 '+planPrice(p)+(p.selfServe?'':' (contact sales)');
-        if(p.id===plan.id)o.selected=true;
-        sel.appendChild(o);
-      });
-    }
-  }
+  // Billing now comes from the aggregate dashboard summary; refreshing billing
+  // means refreshing the dashboard (metrics + billing card).
+  async function loadBilling(){ await loadDashboard(); if(document.getElementById('planPicker')){document.getElementById('planPicker').dataset.loaded='';await loadPlans();} }
   // The dashboard is organized into a few sections shown one at a time, so the
   // owner lands on a clean page instead of every panel at once. A panel's
   // section is decided by its id, else by its heading text.
   var SECTIONS=[
-    ['home','Home'],
+    ['home','Dashboard'],
     ['clients','Clients & Sales'],
     ['work','Projects & Support'],
     ['web','Website'],
@@ -1968,7 +2174,7 @@ export function dashboardPage(): string {
     ['settings','Settings']
   ];
   var SEC_BY_ID={
-    onboardingPanel:'home',billingPanel:'home',activityPanel:'home',
+    dashHero:'home',onboardingPanel:'home',billingPanel:'home',activityPanel:'home',
     brandPanel:'web',domainPanel:'web',brandsPanel:'web',
     calendarPanel:'work',filesPanel:'work',
     formsPanel:'marketing',dripPanel:'marketing',emailPanel:'marketing',workflowsPanel:'marketing',
@@ -2019,9 +2225,14 @@ export function dashboardPage(): string {
     if(!me.ok){window.location='/login';return;}
     var d=await me.json(); var u=d.user||{}; var org=d.organization||{};
     slug=org.slug||'';
-    document.getElementById('who').textContent=esc(u.email)+' · '+esc(u.role);
+    currentUser=u;
+    // Show the name (not the email) as the primary identity; the account panel
+    // holds the full email.
+    document.getElementById('who').textContent=displayName(u.name,u.email)+' · '+esc(u.role);
     if(org.name){document.getElementById('orgName').textContent=esc(org.name);}
     myRole=u.role||'';
+    renderGreeting();
+    renderQuickActions();
     if(u.role==='owner'||u.role==='admin'){
       document.getElementById('brandPanel').style.display='';
       document.getElementById('domainPanel').style.display='';
@@ -2049,10 +2260,9 @@ export function dashboardPage(): string {
       loadAudit();
     }
     if(u.role==='owner'){
-      document.getElementById('planPickerWrap').style.display='flex';
       document.getElementById('aiPanel').style.display='';
     }
-    await loadBilling(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadMarketplace(); await loadEditions(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
+    await loadDashboard(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadWebsites(); await loadMarketplace(); await loadEditions(); await loadHosting(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms(); await loadDomains();
     if(u.role==='owner'){await loadAiSettings();}
     await loadActivity();
     await loadFiles();
@@ -2391,6 +2601,24 @@ export function dashboardPage(): string {
   document.getElementById('logout').addEventListener('click',async function(){
     await api('/auth/logout',{method:'POST'}); window.location='/login';
   });
+  (function(){
+    var dismiss=document.getElementById('onbDismiss');
+    if(dismiss)dismiss.addEventListener('click',function(){setOnboardingDismissed(true);});
+    var reopen=document.getElementById('onbReopen');
+    if(reopen)reopen.addEventListener('click',function(){
+      // Owner/admin restore the checklist for the whole workspace; a member
+      // just reveals it for their own session.
+      if(canManageWorkspace()){setOnboardingDismissed(false);}
+      else{onbDismissed=false;renderOnboarding();}
+    });
+    var manage=document.getElementById('managePlan');
+    if(manage)manage.addEventListener('click',function(){
+      var w=document.getElementById('planPickerWrap');
+      var show=(w.style.display==='none'||!w.style.display);
+      w.style.display=show?'flex':'none';
+      if(show)loadPlans();
+    });
+  })();
   document.getElementById('addClient').addEventListener('click',async function(){
     var name=document.getElementById('cname'),email=document.getElementById('cemail');
     if(!name.value.trim()){setMsg('cmsg','err','Name is required.');return;}
@@ -2427,7 +2655,7 @@ export function dashboardPage(): string {
         primaryColor:document.getElementById('bcolor').value.trim()})});
     var d=await r.json().catch(function(){return {};});
     if(r.ok){setMsg('bmsg','ok','Saved.');var b=d.branding||{};
-      if(b.primaryColor){document.documentElement.style.setProperty('--accent',b.primaryColor);}
+      applyAccent(b.primaryColor);
       if(b.displayName){document.getElementById('orgName').textContent=b.displayName;}}
     else{setMsg('bmsg','err',(d.error&&d.error.message)||'Could not save.');}
   });

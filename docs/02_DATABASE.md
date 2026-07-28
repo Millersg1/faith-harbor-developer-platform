@@ -75,6 +75,16 @@ new table is introduced in the milestone that adds its module (see
 | knowledge_documents | id, org, collection_id→knowledge_collections, name, mime_type, status, chunk_count, error, created_at | |
 | knowledge_chunks | id, org, collection_id, document_id, position, content, created_at | (org,collection_id) |
 
+## Phase 5 platform tables
+
+| Table | Columns | Indexes |
+|---|---|---|
+| organization_workspace_preferences | organization_id PK → organizations ON DELETE CASCADE, onboarding_dismissed BOOLEAN NOT NULL DEFAULT FALSE, updated_at | PK on organization_id |
+
+Added additively in `PostgresDatabase.initialize()` (`CREATE TABLE IF NOT
+EXISTS`), a per-organization singleton alongside `organization_branding`.
+Backs the tenant dashboard's shared "onboarding dismissed" preference.
+
 ## ERD (selected)
 
 ```mermaid

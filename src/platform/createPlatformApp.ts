@@ -19,6 +19,7 @@ import type { PasswordResetService } from "./auth/PasswordResetService";
 import { createRequireUser } from "./auth/requireUser";
 import { BillingService } from "./billing/BillingService";
 import { OnboardingService } from "./onboarding/OnboardingService";
+import { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
 import { BrandingService } from "./branding/BrandingService";
 import { PlatformBrandService } from "./brands/PlatformBrandService";
@@ -116,6 +117,7 @@ export interface PlatformAppDependencies {
   aiUsage?: AiUsageRepository;
   billing?: BillingService;
   onboarding?: OnboardingService;
+  preferences?: WorkspacePreferencesService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
   platformAnalytics?: PlatformAnalyticsService;
@@ -625,6 +627,7 @@ export function createPlatformApp(
       aiUsage: deps.aiUsage,
       billing: deps.billing,
       onboarding: deps.onboarding,
+      preferences: deps.preferences,
     }),
   );
 

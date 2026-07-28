@@ -10,6 +10,8 @@ import { PlatformAdminService } from "./admin/PlatformAdminService";
 import { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
 import { PlatformHealthService } from "./health/PlatformHealthService";
 import { OnboardingService } from "./onboarding/OnboardingService";
+import { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
+import { WorkspacePreferencesRepository } from "./preferences/WorkspacePreferencesRepository";
 import { PlatformAdminSessionService } from "./admin/PlatformAdminSessionService";
 import { AiUsageRepository } from "./ai/AiUsageRepository";
 import { OrganizationAiSettingsRepository } from "./ai/OrganizationAiSettingsRepository";
@@ -633,6 +635,13 @@ async function start(): Promise<void> {
 
   // Success Center checklist. Each signal is a REAL measurement of the
   // (ambiently tenant-scoped) services, evaluated inside the request context.
+  const workspacePreferences =
+    new WorkspacePreferencesService(
+      new WorkspacePreferencesRepository(
+        db,
+      ),
+    );
+
   const onboarding =
     new OnboardingService({
       brand: async () => {
@@ -712,6 +721,8 @@ async function start(): Promise<void> {
     platformAnalytics,
     platformHealth,
     onboarding,
+    preferences:
+      workspacePreferences,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

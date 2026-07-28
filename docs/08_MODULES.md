@@ -113,6 +113,31 @@ Source lives under `src/platform/<module>/`.
   portal session) and applies logo/accent/name client-side. Every tenant/client
   value is escaped.
 
+### Dashboard summary (`dashboard/`)
+- **Purpose:** the tenant Home "Command Center" — a single aggregate of real,
+  tenant-scoped metric counts plus a billing summary, so the browser makes one
+  call instead of downloading every list to count it.
+- **How:** `DashboardService` is pure — it takes injected count getters and a
+  billing getter and returns `{ metrics, billing }`. A metric whose getter is
+  omitted (module not wired) is **`null`** (honest "unavailable", never a
+  misleading zero); a getter that throws is also `null`. The router wires the
+  getters over the ambiently tenant-scoped services (open tickets by real
+  status, active projects by status, websites via `count()`), and adds a
+  request-scoped `canManage` (owner) to the billing summary. **No MRR** — the
+  billing model has no reliable per-tenant revenue. No Stripe IDs are exposed.
+  Tenant-scoped (`GET /api/platform/dashboard`).
+
+### Workspace preferences (`preferences/`)
+- **Purpose:** shared, per-organization dashboard preferences (currently the
+  onboarding "dismissed" flag) — server-persisted, not browser-only.
+- **How:** `OrganizationWorkspacePreferences` is a per-org singleton following
+  the branding/AI-settings pattern (`organization_workspace_preferences` table,
+  `TenantScopedRepository`, safe defaults when unset). `GET
+  /api/platform/preferences` is readable by any workspace user; **`PATCH`
+  requires owner/admin** (`requireRole`) because these are shared workspace
+  settings. The dashboard "Hide" persists `onboardingDismissed`; a member's
+  reopen is session-only.
+
 ### Marketplace (`marketplace/`)
 - **Purpose:** a code-defined catalogue a tenant browses and installs from — the
   first Phase 4 surface. `MarketplaceCatalog` holds `WEBSITE_TEMPLATES`

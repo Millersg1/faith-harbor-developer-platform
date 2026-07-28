@@ -70,6 +70,11 @@ import {
 } from "./marketplace/MarketplaceCatalog";
 import type { BrandingService } from "./branding/BrandingService";
 import type { OnboardingService } from "./onboarding/OnboardingService";
+import type { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
+import {
+  DashboardService,
+  type DashboardBillingSummary,
+} from "./dashboard/DashboardService";
 import {
   AiEmployeeValidationError,
   type AiEmployeeService,
@@ -133,6 +138,7 @@ export interface PlatformApiDependencies {
   aiUsage?: AiUsageRepository;
   billing?: BillingService;
   onboarding?: OnboardingService;
+  preferences?: WorkspacePreferencesService;
 }
 
 /**
@@ -159,6 +165,185 @@ export function createPlatformApiRouter(
           .then((checklist) =>
             res.json(checklist),
           )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Workspace preferences (shared; owner/admin may change) ----
+  if (deps.preferences) {
+    const preferences =
+      deps.preferences;
+
+    router.get(
+      "/preferences",
+      (_req, res, next) => {
+        preferences
+          .get()
+          .then((p) =>
+            res.json({
+              preferences: p,
+            }),
+          )
+          .catch(next);
+      },
+    );
+
+    router.patch(
+      "/preferences",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const body = asObject(
+          req.body,
+        );
+        const changes: {
+          onboardingDismissed?: boolean;
+        } = {};
+        if (
+          typeof body.onboardingDismissed ===
+          "boolean"
+        ) {
+          changes.onboardingDismissed =
+            body.onboardingDismissed;
+        }
+
+        preferences
+          .update(changes)
+          .then((p) =>
+            res.json({
+              preferences: p,
+            }),
+          )
+          .catch(next);
+      },
+    );
+  }
+
+  // ---- Dashboard summary: real tenant-scoped counts + billing summary ----
+  {
+    const counts: Partial<
+      Record<
+        string,
+        () => Promise<number>
+      >
+    > = {};
+    const clientsSvc = deps.clients;
+    if (clientsSvc) {
+      counts.clients = () =>
+        clientsSvc
+          .list()
+          .then((r) => r.length);
+    }
+    const leadsSvc = deps.leads;
+    if (leadsSvc) {
+      counts.leads = () =>
+        leadsSvc
+          .list()
+          .then((r) => r.length);
+    }
+    const projectsSvc = deps.projects;
+    if (projectsSvc) {
+      counts.activeProjects = () =>
+        projectsSvc
+          .list()
+          .then(
+            (r) =>
+              r.filter(
+                (p) =>
+                  p.status === "active",
+              ).length,
+          );
+    }
+    const ticketsSvc = deps.tickets;
+    if (ticketsSvc) {
+      counts.openTickets = () =>
+        ticketsSvc
+          .list()
+          .then(
+            (r) =>
+              r.filter(
+                (t) =>
+                  t.status !==
+                    "resolved" &&
+                  t.status !== "closed",
+              ).length,
+          );
+    }
+    const websitesSvc = deps.websites;
+    if (websitesSvc) {
+      counts.websites = () =>
+        websitesSvc.count();
+    }
+    const campaignsSvc = deps.campaigns;
+    if (campaignsSvc) {
+      counts.campaigns = () =>
+        campaignsSvc
+          .list()
+          .then((r) => r.length);
+    }
+    const employeesSvc =
+      deps.aiEmployees;
+    if (employeesSvc) {
+      counts.aiEmployees = () =>
+        employeesSvc
+          .list()
+          .then((r) => r.length);
+    }
+
+    const billingSvc = deps.billing;
+    const billingGetter = billingSvc
+      ? (): Promise<DashboardBillingSummary> =>
+          Promise.all([
+            billingSvc.getPlan(),
+            billingSvc.getSubscription(),
+          ]).then(([plan, sub]) => ({
+            planId: plan.id,
+            planName: plan.name,
+            status: sub.status,
+            priceCents: plan.priceCents,
+            interval: plan.interval,
+            currentPeriodEnd:
+              sub.currentPeriodEnd ??
+              null,
+            limits:
+              plan.limits as unknown as Record<
+                string,
+                number | null
+              >,
+          }))
+      : undefined;
+
+    const dashboard =
+      new DashboardService({
+        counts,
+        billing: billingGetter,
+      });
+
+    router.get(
+      "/dashboard",
+      (req, res, next) => {
+        dashboard
+          .summary()
+          .then((summary) => {
+            const role = (
+              req as AuthedRequest
+            ).auth?.user?.role;
+            // canManage is request/role-scoped; the plan change route is
+            // itself owner-only server-side, so this only hides UI.
+            const billing =
+              summary.billing
+                ? {
+                    ...summary.billing,
+                    canManage:
+                      role === "owner",
+                  }
+                : null;
+            res.json({
+              metrics:
+                summary.metrics,
+              billing,
+            });
+          })
           .catch(next);
       },
     );

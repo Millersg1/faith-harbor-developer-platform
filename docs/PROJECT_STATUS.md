@@ -19,7 +19,8 @@ _Last updated: 2026-07-26 · Branch: `feature/ai-console` (staging)_
 | Automation | ~70% | Drip + workflow engine (trigger→timed steps→actions) live; visual builder + more triggers pending |
 | Marketplace | ~20% | Website-template catalogue live (P4-M1); industry editions + installable modules pending |
 | Analytics | ~40% | Superadmin MRR/plan-mix/AI-cost (P5-M1) + system-health panel (P5-M2, live DB/worker/SMTP/AI/Stripe); per-tenant dashboards pending |
-| Onboarding | ~60% | Tenant Success Center checklist (P5-M3) — each step verified against real data; edition-specific steps + guided tours pending |
+| Onboarding | ~65% | Tenant Success Center checklist (P5-M3), now conditional/auto-collapsing with a server-persisted dismiss preference; edition-specific steps + guided tours pending |
+| Tenant dashboard (Home) | ~75% | Operational Command Center — real metric cards, quick actions, activity, compact billing, accessible progress, AA-contrast tokens, white-label contrast guard |
 | Forms | ~80% | Public forms + submissions + lead capture; drag-drop editor pending |
 | Calendar | ~55% | Agenda + CRUD; grid views + external sync pending |
 | Knowledge Base | ~55% | Collections/docs/chunks/keyword retrieval + citations; pgvector + LLM synthesis pending |
