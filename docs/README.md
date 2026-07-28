@@ -72,6 +72,7 @@ Included guides:
 - Release Process
 - Changelog
 - [WordPress Website Migration & Recovery Procedure](15_WORDPRESS_MIGRATION_SOP.md)
+- [Production Cutover Checklist — All Elite Cloud (multitenant)](16_PRODUCTION_CUTOVER_CHECKLIST.md)
 
 ---
 
