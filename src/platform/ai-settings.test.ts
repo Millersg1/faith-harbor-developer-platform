@@ -251,20 +251,27 @@ describe("AI settings & usage metering", () => {
           password: "password123",
         });
 
+    const memberCookie =
+      memberLogin.headers[
+        "set-cookie"
+      ];
+
     const denied = await request(app)
       .put("/api/platform/ai-settings")
-      .set(
-        "Cookie",
-        memberLogin.headers[
-          "set-cookie"
-        ],
-      )
+      .set("Cookie", memberCookie)
       .send({
         provider: "openai",
         apiKey:
           "sk-1234567890abcd",
       });
     expect(denied.status).toBe(403);
+
+    // A member also cannot READ the settings — owner-only even for status,
+    // and rejected server-side regardless of the UI.
+    const read = await request(app)
+      .get("/api/platform/ai-settings")
+      .set("Cookie", memberCookie);
+    expect(read.status).toBe(403);
   });
 
   it("meters platform-key generation as a platform cost", async () => {

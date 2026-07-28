@@ -6570,6 +6570,11 @@ export function createPlatformApiRouter(
 
     router.get(
       "/ai-settings",
+      // Owner-only, matching PUT/DELETE and the owner-only Usage & Settings
+      // surface — the response carries no secret, but the AI source/config
+      // status is owner business and must not be readable by members/admins
+      // even when the endpoint is called directly.
+      requireRole("owner"),
       (_req, res, next) => {
         aiSettings
           .getPublic()
