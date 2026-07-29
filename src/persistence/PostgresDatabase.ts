@@ -988,6 +988,115 @@ export class PostgresDatabase
         updated_at        TEXT NOT NULL
       );
     `);
+
+    // Platform legal documents — All Elite Cloud's OWN legal docs (Terms,
+    // Privacy, etc.). GLOBAL (no organization_id): there is one set, managed
+    // by platform owners and served at /legal/*. Published versions are
+    // immutable; editing a published doc creates a new version row. History is
+    // retained so acceptance records can point at the exact accepted version.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS platform_legal_documents (
+        id                 TEXT PRIMARY KEY,
+        kind               TEXT NOT NULL,
+        version            INTEGER NOT NULL,
+        title              TEXT NOT NULL,
+        summary            TEXT NOT NULL,
+        body_markdown      TEXT NOT NULL,
+        status             TEXT NOT NULL DEFAULT 'draft',
+        effective_date     TEXT,
+        requires_reconsent BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        published_at       TEXT,
+        created_by         TEXT,
+        UNIQUE (kind, version)
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS platform_legal_documents_kind_status_idx
+        ON platform_legal_documents (kind, status, version DESC);
+    `);
+
+    // Terms/Privacy acceptance evidence — one row per user acceptance of a
+    // specific platform document version. Tenant-scoped (organization_id) so a
+    // tenant admin can only ever see their own org's acceptance history.
+    // Append-only by convention: publishing a new version never rewrites past
+    // rows, preserving what was actually agreed and when.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS legal_acceptances (
+        id                 TEXT PRIMARY KEY,
+        organization_id    TEXT NOT NULL
+                             REFERENCES organizations (id) ON DELETE CASCADE,
+        user_id            TEXT NOT NULL,
+        document_kind      TEXT NOT NULL,
+        document_version   INTEGER NOT NULL,
+        accepted_at        TEXT NOT NULL,
+        source             TEXT NOT NULL,
+        ip                 TEXT
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS legal_acceptances_user_idx
+        ON legal_acceptances (organization_id, user_id, document_kind);
+    `);
+
+    // Tenant website legal documents — each organization's OWN legal pages for
+    // its generated website(s). Tenant-scoped and versioned, same immutability
+    // model as platform docs. A questionnaire (below) feeds generation.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_legal_documents (
+        id                 TEXT PRIMARY KEY,
+        organization_id    TEXT NOT NULL
+                             REFERENCES organizations (id) ON DELETE CASCADE,
+        kind               TEXT NOT NULL,
+        version            INTEGER NOT NULL,
+        title              TEXT NOT NULL,
+        body_markdown      TEXT NOT NULL,
+        status             TEXT NOT NULL DEFAULT 'draft',
+        human_reviewed     BOOLEAN NOT NULL DEFAULT FALSE,
+        effective_date     TEXT,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        published_at       TEXT,
+        created_by         TEXT,
+        UNIQUE (organization_id, kind, version)
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS tenant_legal_documents_kind_status_idx
+        ON tenant_legal_documents (organization_id, kind, status, version DESC);
+    `);
+
+    // One legal questionnaire per organization (the verified facts used to
+    // generate that tenant's website legal pages). Singleton per tenant.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_legal_questionnaire (
+        organization_id    TEXT PRIMARY KEY
+                             REFERENCES organizations (id) ON DELETE CASCADE,
+        answers            JSONB NOT NULL DEFAULT '{}'::jsonb,
+        updated_at         TEXT NOT NULL
+      );
+    `);
+
+    // Privacy / data-subject requests — public intake, tenant-scoped when the
+    // request targets a specific tenant. Never auto-deletes retained records.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS privacy_requests (
+        id                 TEXT PRIMARY KEY,
+        organization_id    TEXT,
+        type               TEXT NOT NULL,
+        email              TEXT NOT NULL,
+        details            TEXT,
+        status             TEXT NOT NULL DEFAULT 'received',
+        assigned_to        TEXT,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS privacy_requests_org_idx
+        ON privacy_requests (organization_id, status, created_at DESC);
+    `);
   }
 
   /**

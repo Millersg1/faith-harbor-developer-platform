@@ -62,6 +62,16 @@ import { PlatformWebsiteService } from "./websites/PlatformWebsiteService";
 import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApiRouter } from "./PlatformApiRouter";
+import type { PlatformLegalService } from "./legal/PlatformLegalService";
+import {
+  isLegalKind,
+  legalKindsInOrder,
+} from "./legal/PlatformLegalDocument";
+import {
+  legalDocumentPage,
+  legalIndexPage,
+  legalNotPublishedPage,
+} from "./legal/legalPages";
 import { createCsrfGuard } from "./security/CsrfGuard";
 import type { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
 import type { PlatformHealthService } from "./health/PlatformHealthService";
@@ -122,6 +132,7 @@ export interface PlatformAppDependencies {
   billing?: BillingService;
   onboarding?: OnboardingService;
   preferences?: WorkspacePreferencesService;
+  legal?: PlatformLegalService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
   platformAnalytics?: PlatformAnalyticsService;
@@ -377,6 +388,81 @@ export function createPlatformApp(
     res
       .type("html")
       .send(resetPasswordPage());
+  });
+
+  // Platform legal documents — All Elite Cloud's OWN policies, served at
+  // stable /legal/* URLs on every host. Global (not tenant-scoped). Only
+  // PUBLISHED documents render their body; an unpublished kind shows an honest
+  // "being finalized" notice, never a draft or a fabricated policy.
+  const legal = deps.legal;
+  app.get("/legal", (_req, res) => {
+    const published = new Set<string>();
+    const kinds = legalKindsInOrder();
+    Promise.all(
+      kinds.map((m) =>
+        (legal
+          ? legal.getPublished(m.kind)
+          : Promise.resolve(undefined)
+        ).then((doc) => {
+          if (doc) {
+            published.add(m.kind);
+          }
+        }),
+      ),
+    )
+      .then(() => {
+        res
+          .type("html")
+          .send(legalIndexPage(published));
+      })
+      .catch(() => {
+        res
+          .type("html")
+          .send(legalIndexPage(published));
+      });
+  });
+  app.get("/legal/:slug", (req, res, next) => {
+    const slug = String(req.params.slug);
+    if (!isLegalKind(slug)) {
+      next();
+      return;
+    }
+    if (!legal) {
+      res
+        .type("html")
+        .send(legalNotPublishedPage(slug));
+      return;
+    }
+    legal
+      .getPublished(slug)
+      .then((doc) => {
+        if (!doc) {
+          res
+            .type("html")
+            .send(legalNotPublishedPage(slug));
+          return;
+        }
+        legal
+          .listVersions(slug)
+          .then((versions) => {
+            const prior = versions.filter(
+              (v) => v.status === "superseded",
+            );
+            res
+              .type("html")
+              .send(legalDocumentPage(doc, prior));
+          })
+          .catch(() => {
+            res
+              .type("html")
+              .send(legalDocumentPage(doc, []));
+          });
+      })
+      .catch(() => {
+        res
+          .type("html")
+          .send(legalNotPublishedPage(slug));
+      });
   });
 
   // Public form share page + submit endpoint (NO auth — resolves the tenant

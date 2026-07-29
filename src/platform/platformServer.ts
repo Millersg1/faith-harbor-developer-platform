@@ -96,6 +96,9 @@ import { KnowledgeService } from "./knowledge/KnowledgeService";
 import { KnowledgeRepository } from "./knowledge/KnowledgeRepository";
 import { AuditService } from "./audit/AuditService";
 import { AuditRepository } from "./audit/AuditRepository";
+import { PlatformLegalService } from "./legal/PlatformLegalService";
+import { PlatformLegalDocumentRepository } from "./legal/PlatformLegalDocumentRepository";
+import { platformLegalSeeds } from "./legal/content/platformLegalContent";
 import { WorkflowService } from "./workflows/WorkflowService";
 import { WorkflowRepository } from "./workflows/WorkflowRepository";
 import { AiToolRegistry } from "./ai/tools/AiToolRegistry";
@@ -479,6 +482,25 @@ async function start(): Promise<void> {
   const audit = new AuditService(
     new AuditRepository(db),
   );
+
+  // Platform legal documents (All Elite Cloud's own Terms/Privacy/etc.).
+  // Global, owner-managed, versioned + immutable-after-publish. Lifecycle
+  // actions are logged as structured audit lines (no bodies/PII), since the
+  // tenant AuditService is organization-scoped and these documents are not.
+  const legal = new PlatformLegalService(
+    new PlatformLegalDocumentRepository(db),
+    {
+      audit: (event) => {
+        console.log(
+          `[legal-audit] ${event.action} kind=${event.kind} v${event.version} id=${event.documentId}`,
+        );
+      },
+    },
+  );
+  // Seed verified platform documents on first run only (idempotent: never
+  // overwrites owner edits). Documents needing owner/attorney facts seed as
+  // drafts and are not served publicly until published.
+  await legal.seedIfEmpty(platformLegalSeeds());
   // Owners/admins to notify (shared by the notification dispatcher + workflows).
   const notifyRecipients = () =>
     users
@@ -738,6 +760,7 @@ async function start(): Promise<void> {
     onboarding,
     preferences:
       workspacePreferences,
+    legal,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

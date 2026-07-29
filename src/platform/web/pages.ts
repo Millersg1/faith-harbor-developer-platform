@@ -258,6 +258,10 @@ const STYLES = `
   .dns .k { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); min-width: 42px; }
   .dns code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; word-break: break-all; }
+  .legalfoot { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center;
+    padding: 22px 16px; margin-top: 8px; border-top: 1px solid var(--border); }
+  .legalfoot a { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
+  .legalfoot a:hover { color: var(--text); text-decoration: underline; }
 `;
 
 function layout(opts: {
@@ -281,6 +285,13 @@ function layout(opts: {
 </head>
 <body>
 ${opts.body}
+<footer class="legalfoot" role="contentinfo">
+<a href="/legal/terms">Terms</a>
+<a href="/legal/privacy">Privacy</a>
+<a href="/legal/cookies">Cookies</a>
+<a href="/legal/subscriptions">Subscriptions</a>
+<a href="/legal">All policies</a>
+</footer>
 ${opts.script ? `<script>${opts.script}</script>` : ""}
 </body>
 </html>`;
