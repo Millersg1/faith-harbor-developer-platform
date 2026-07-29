@@ -4,6 +4,27 @@ import { dashboardPage, loginPage } from "./pages";
 
 const html = dashboardPage();
 
+describe("dashboardPage — site icons", () => {
+  it("links the favicon set, apple-touch-icon, and web manifest in the head", () => {
+    expect(html).toContain(
+      '<link rel="icon" href="/favicon.ico"',
+    );
+    expect(html).toContain(
+      'href="/favicon-32.png"',
+    );
+    expect(html).toContain(
+      'rel="apple-touch-icon" href="/apple-touch-icon.png"',
+    );
+    expect(html).toContain(
+      'rel="manifest" href="/site.webmanifest"',
+    );
+    // Same head is shared with the login page.
+    expect(loginPage()).toContain(
+      'rel="icon" href="/favicon.ico"',
+    );
+  });
+});
+
 describe("dashboardPage — theme tokens", () => {
   it("defines --card and --line in :root (no undefined-token regression)", () => {
     expect(html).toMatch(/:root[^}]*--card:/);

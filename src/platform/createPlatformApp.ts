@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import express, {
   type ErrorRequestHandler,
 } from "express";
@@ -281,6 +283,22 @@ export function createPlatformApp(
   // 20mb accommodates base64-encoded file uploads (the File service caps the
   // decoded size well below this); ordinary API bodies are tiny.
   app.use(express.json({ limit: "20mb" }));
+
+  // Site icons + web manifest (favicon.ico, favicon-16/32/192/512.png,
+  // apple-touch-icon.png, site.webmanifest), served at the web root for every
+  // hostname (root domain and tenant subdomains). Bundled beside this module
+  // (dist/platform/web/public); requests that don't match a file fall through
+  // to the app routes below.
+  app.use(
+    express.static(
+      join(__dirname, "web/public"),
+      {
+        index: false,
+        maxAge: "7d",
+        fallthrough: true,
+      },
+    ),
+  );
 
   app.get(
     "/health",

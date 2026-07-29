@@ -92,6 +92,34 @@ describe("createPlatformApp (composition root)", () => {
     );
   });
 
+  it("serves the site icons and web manifest", async () => {
+    const app = build();
+
+    const ico = await request(app).get(
+      "/favicon.ico",
+    );
+    expect(ico.status).toBe(200);
+    expect(
+      ico.headers["content-type"],
+    ).toMatch(/icon|image/);
+
+    const png = await request(app).get(
+      "/apple-touch-icon.png",
+    );
+    expect(png.status).toBe(200);
+    expect(
+      png.headers["content-type"],
+    ).toContain("image/png");
+
+    const manifest = await request(
+      app,
+    ).get("/site.webmanifest");
+    expect(manifest.status).toBe(200);
+    expect(manifest.text).toContain(
+      "All Elite Cloud",
+    );
+  });
+
   it("runs the full onboarding + tenant workflow end to end", async () => {
     const app = build();
 
