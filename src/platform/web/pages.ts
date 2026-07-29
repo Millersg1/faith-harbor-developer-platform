@@ -53,7 +53,7 @@ const STYLES = `
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.01em; }
   .logo {
     width: 30px; height: 30px; border-radius: 9px; flex: none;
-    background: linear-gradient(135deg, var(--accent), #6366f1);
+    background: center / cover no-repeat url("/favicon-192.png");
     box-shadow: 0 6px 18px rgba(45,212,191,0.35);
   }
   .muted { color: var(--muted); }
