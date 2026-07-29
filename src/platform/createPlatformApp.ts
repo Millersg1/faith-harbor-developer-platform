@@ -840,6 +840,31 @@ async function handleStripeEvent(
 
     if (
       type ===
+      "customer.subscription.created"
+    ) {
+      // A subscription created outside our Checkout (e.g. Stripe API/dashboard).
+      // Establish the mapping + activate from the subscription's metadata,
+      // exactly like a completed checkout. Idempotent with checkout.completed.
+      const planId = str(meta.planId);
+      if (planId) {
+        await billing.applyCheckoutCompleted(
+          {
+            organizationId,
+            planId,
+            stripeCustomerId: customerId,
+            stripeSubscriptionId:
+              subscriptionId,
+          },
+        );
+        await auditBilling(
+          audit,
+          organizationId,
+          "billing.subscription.activated",
+          { planId },
+        );
+      }
+    } else if (
+      type ===
       "customer.subscription.updated"
     ) {
       await billing.applySubscriptionUpdated(

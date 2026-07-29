@@ -539,6 +539,31 @@ describe("Stripe billing lifecycle", () => {
     ).toBe("active");
   });
 
+  it("activates from customer.subscription.created (API/dashboard-created subs) via metadata", async () => {
+    const { app, ownerCookie, orgId } =
+      await build(stubGateway());
+    await hook(app, {
+      id: "sc1",
+      type: "customer.subscription.created",
+      data: {
+        object: {
+          id: "sub_api",
+          customer: "cus_api",
+          metadata: {
+            organizationId: orgId,
+            planId: "professional",
+          },
+        },
+      },
+    });
+    expect(
+      await statusOf(app, ownerCookie),
+    ).toEqual({
+      status: "active",
+      plan: "professional",
+    });
+  });
+
   it("maps customer.subscription.updated status and cancels on canceled", async () => {
     const { app, ownerCookie, orgId } =
       await build(stubGateway());

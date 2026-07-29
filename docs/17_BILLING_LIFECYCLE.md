@@ -25,6 +25,7 @@ The endpoint is `POST /webhooks/stripe`, mounted with `express.raw` **before**
 | Event | Effect |
 |---|---|
 | `checkout.session.completed` | Activate the paid plan; **store** `stripe_customer_id` + `stripe_subscription_id` (this establishes the tenant↔Stripe mapping). Status → `active`. |
+| `customer.subscription.created` | Same as checkout for subscriptions created outside Checkout (Stripe API/dashboard): establish the mapping + activate from the subscription's `organizationId`/`planId` metadata. Idempotent with `checkout.session.completed`. |
 | `customer.subscription.updated` | Map Stripe status → ours (below); keep the plan (or update it if the event carries a known `planId`). A mapped `canceled` drops to the default plan. |
 | `customer.subscription.deleted` | Cancel: revert to the default (Essentials) plan, status → `canceled`. |
 | `invoice.payment_failed` | Status → `past_due`. **Plan/access retained.** |
