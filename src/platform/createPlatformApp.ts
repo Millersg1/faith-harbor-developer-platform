@@ -271,6 +271,7 @@ export function createPlatformApp(
       handleStripeEvent(
         billing,
         event,
+        deps.audit,
       ).finally(() =>
         res.json({ received: true }),
       );
@@ -710,41 +711,69 @@ async function resolvePublishedHtml(
  * plan come from metadata we set when creating the checkout, so they're only
  * trusted here because the caller already verified the webhook signature.
  */
+/**
+ * Processes a signature-verified Stripe webhook event. Idempotent (each event
+ * id is handled once), and binds every non-checkout event to a tenant via the
+ * customer/subscription id we stored at checkout — never the event's own
+ * metadata. Unmapped or irrelevant events are safely ignored. Never logs
+ * secrets, payment details, or signatures. See docs/17_BILLING_LIFECYCLE.md.
+ */
 async function handleStripeEvent(
   billing: BillingService,
   event: unknown,
+  audit?: AuditService,
 ): Promise<void> {
   const e = event as {
+    id?: string;
     type?: string;
     data?: {
       object?: Record<string, unknown>;
     };
   };
 
-  const obj = e.data?.object ?? {};
-  const meta = (obj.metadata ??
-    {}) as Record<string, unknown>;
-  const organizationId =
-    typeof meta.organizationId ===
-    "string"
-      ? meta.organizationId
-      : undefined;
+  const eventId =
+    typeof e.id === "string"
+      ? e.id
+      : "";
+  const type = e.type;
 
-  if (!organizationId) {
+  if (!type) {
     return;
   }
 
+  const str = (
+    v: unknown,
+  ): string | undefined =>
+    typeof v === "string" && v
+      ? v
+      : undefined;
+
   try {
+    // Idempotency: skip a duplicate/replayed delivery.
     if (
-      e.type ===
+      !(await billing.beginEvent(
+        eventId,
+        type,
+      ))
+    ) {
+      return;
+    }
+
+    const obj = e.data?.object ?? {};
+    const meta = (obj.metadata ??
+      {}) as Record<string, unknown>;
+
+    if (
+      type ===
       "checkout.session.completed"
     ) {
-      const planId =
-        typeof meta.planId === "string"
-          ? meta.planId
-          : undefined;
+      // The establishing event: bind via the metadata WE set at checkout.
+      const organizationId = str(
+        meta.organizationId,
+      );
+      const planId = str(meta.planId);
 
-      if (!planId) {
+      if (!organizationId || !planId) {
         return;
       }
 
@@ -752,30 +781,153 @@ async function handleStripeEvent(
         {
           organizationId,
           planId,
-          stripeCustomerId:
-            typeof obj.customer ===
-            "string"
-              ? obj.customer
-              : undefined,
-          stripeSubscriptionId:
-            typeof obj.subscription ===
-            "string"
-              ? obj.subscription
-              : undefined,
+          stripeCustomerId: str(
+            obj.customer,
+          ),
+          stripeSubscriptionId: str(
+            obj.subscription,
+          ),
         },
       );
+      await auditBilling(
+        audit,
+        organizationId,
+        "billing.subscription.activated",
+        { planId },
+      );
+
+      return;
+    }
+
+    // Every other event: resolve the tenant from the id we stored, not from
+    // the event's (mutable) metadata.
+    const customerId = str(obj.customer);
+    const subscriptionId =
+      type.startsWith(
+        "customer.subscription.",
+      )
+        ? str(obj.id)
+        : str(obj.subscription);
+
+    let organizationId: string | undefined;
+    if (customerId) {
+      organizationId =
+        await billing.findOrganizationByStripeCustomer(
+          customerId,
+        );
+    }
+    if (!organizationId && subscriptionId) {
+      organizationId =
+        await billing.findOrganizationByStripeSubscription(
+          subscriptionId,
+        );
+    }
+    // Fallback ONLY when no stored mapping matched: the organizationId we set
+    // in the subscription's metadata. Safe because the event is signature-
+    // verified (only our own Stripe account can emit it) and we set this
+    // metadata server-side — the stored-id lookup above always wins, so a
+    // mismatched metadata id can never redirect an event to another tenant.
+    if (!organizationId) {
+      organizationId = str(
+        meta.organizationId,
+      );
+    }
+
+    if (!organizationId) {
+      // Unknown/unmapped customer — safely ignore (already acked 200).
+      return;
+    }
+
+    if (
+      type ===
+      "customer.subscription.updated"
+    ) {
+      await billing.applySubscriptionUpdated(
+        {
+          organizationId,
+          stripeStatus: str(obj.status),
+          planId: str(meta.planId),
+          currentPeriodEnd: str(
+            obj.current_period_end,
+          ),
+        },
+      );
+      await auditBilling(
+        audit,
+        organizationId,
+        "billing.subscription.updated",
+        { status: str(obj.status) },
+      );
     } else if (
-      e.type ===
+      type ===
       "customer.subscription.deleted"
     ) {
       await billing.applySubscriptionCanceled(
         { organizationId },
       );
+      await auditBilling(
+        audit,
+        organizationId,
+        "billing.subscription.canceled",
+        {},
+      );
+    } else if (
+      type === "invoice.payment_failed"
+    ) {
+      await billing.applyPaymentFailed({
+        organizationId,
+      });
+      await auditBilling(
+        audit,
+        organizationId,
+        "billing.payment_failed",
+        {},
+      );
+    } else if (
+      type === "invoice.paid"
+    ) {
+      await billing.applyPaymentSucceeded(
+        { organizationId },
+      );
+      await auditBilling(
+        audit,
+        organizationId,
+        "billing.payment_recovered",
+        {},
+      );
     }
+    // Any other event type is irrelevant — acknowledged and ignored.
   } catch (error) {
     console.error(
       "Failed to process Stripe event.",
       error,
     );
   }
+}
+
+/**
+ * Records a billing lifecycle audit event in the org's scope — never any
+ * Stripe secret, customer, payment, or signature detail.
+ */
+async function auditBilling(
+  audit: AuditService | undefined,
+  organizationId: string,
+  action: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  if (!audit) {
+    return;
+  }
+
+  await runWithTenant(
+    { organizationId },
+    () =>
+      audit.record({
+        action,
+        actorType: "system",
+        outcome: "success",
+        targetType: "billing",
+        metadata,
+      }),
+  );
 }

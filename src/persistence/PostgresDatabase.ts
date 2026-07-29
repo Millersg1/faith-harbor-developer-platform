@@ -256,6 +256,25 @@ export class PostgresDatabase
         updated_at             TEXT NOT NULL
       );
     `);
+    // Reverse lookups from a Stripe id to the owning org — used to bind
+    // subscription/invoice webhook events to a tenant WITHOUT trusting event
+    // metadata (the mapping is established, signature-verified, at checkout).
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS organization_subscriptions_customer_idx
+        ON organization_subscriptions (stripe_customer_id);
+      CREATE INDEX IF NOT EXISTS organization_subscriptions_subscription_idx
+        ON organization_subscriptions (stripe_subscription_id);
+    `);
+    // Idempotency ledger: every Stripe webhook event id we have processed, so
+    // duplicate/replayed deliveries are no-ops. Global (not tenant-scoped) —
+    // the event is deduped before we resolve which tenant it belongs to.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS stripe_processed_events (
+        event_id     TEXT PRIMARY KEY,
+        type         TEXT NOT NULL,
+        processed_at TEXT NOT NULL
+      );
+    `);
 
     // Hosting accounts (hosted websites) — the featured All Elite Hosting
     // product, ported onto the tenant template. Every row belongs to one

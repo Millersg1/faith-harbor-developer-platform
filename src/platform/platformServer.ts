@@ -18,6 +18,7 @@ import { OrganizationAiSettingsRepository } from "./ai/OrganizationAiSettingsRep
 import { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsService";
 import { BillingService } from "./billing/BillingService";
 import { SubscriptionRepository } from "./billing/SubscriptionRepository";
+import { ProcessedEventsRepository } from "./billing/ProcessedEventsRepository";
 import {
   DisconnectedStripeSubscriptionGateway,
   HttpStripeSubscriptionGateway,
@@ -226,6 +227,7 @@ async function start(): Promise<void> {
     new BillingService(
       new SubscriptionRepository(db),
       stripeGateway,
+      new ProcessedEventsRepository(db),
     );
   const hosting =
     new PlatformHostingService(

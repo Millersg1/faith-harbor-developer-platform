@@ -637,6 +637,10 @@ export function dashboardPage(): string {
         </div>
         <button class="btn btn-ghost" id="managePlan" style="display:none;font-size:0.82rem;">Manage plan</button>
       </div>
+      <div id="billingWarning" role="alert" style="display:none;margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--warn);background:rgba(251,191,36,0.08);">
+        <div class="sub" id="billingWarningText" style="font-weight:600;"></div>
+        <button class="btn" id="updatePayment" style="width:auto;margin-top:8px;display:none;">Update payment method</button>
+      </div>
       <div id="planPickerWrap" style="display:none;gap:10px;align-items:flex-end;margin-top:14px;">
         <div class="f"><label for="planPicker">Change plan</label><select id="planPicker"></select></div>
         <button class="btn" id="changePlan" style="width:auto;">Update</button>
@@ -1281,6 +1285,22 @@ export function dashboardPage(): string {
     if(stEl){stEl.style.display='';stEl.textContent=b.status||'';
       stEl.className='badge '+((b.status==='active'||b.status==='trialing')?'ok':((b.status==='past_due'||b.status==='canceled')?'warn':'muted'));}
     if(manage)manage.style.display=b.canManage?'':'none';
+    // Past-due grace warning + update-payment action — owner/admin only,
+    // never ordinary members. The plan stays active during Stripe's retry
+    // window; this just nudges them to fix the card.
+    var warn=document.getElementById('billingWarning');
+    var warnText=document.getElementById('billingWarningText');
+    var payBtn=document.getElementById('updatePayment');
+    if(warn){
+      if(b.status==='past_due'&&canManageWorkspace()){
+        warn.style.display='';
+        if(warnText)warnText.textContent='Your last payment didn\\u2019t go through. Your plan stays active during the retry period \\u2014 update your payment method to avoid any interruption.';
+        if(payBtn)payBtn.style.display='';
+      }else{
+        warn.style.display='none';
+        if(payBtn)payBtn.style.display='none';
+      }
+    }
   }
   async function loadPlans(){
     var sel=document.getElementById('planPicker'); if(!sel||sel.dataset.loaded)return;
@@ -3410,6 +3430,15 @@ export function dashboardPage(): string {
       var show=(w.style.display==='none'||!w.style.display);
       w.style.display=show?'flex':'none';
       if(show)loadPlans();
+    });
+    var payBtn=document.getElementById('updatePayment');
+    if(payBtn)payBtn.addEventListener('click',async function(){
+      if(payBtn.disabled)return;payBtn.disabled=true;setMsg('plmsg','','Opening secure billing portal\\u2026');
+      var r=await api('/api/platform/billing/portal',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+      payBtn.disabled=false;
+      if(r.ok){var d=await r.json();if(d.url){window.location=d.url;return;}}
+      var x=await r.json().catch(function(){return {};});
+      setMsg('plmsg','err',(x.error&&x.error.message)||'Could not open the billing portal.');
     });
   })();
   document.getElementById('addClient').addEventListener('click',async function(){

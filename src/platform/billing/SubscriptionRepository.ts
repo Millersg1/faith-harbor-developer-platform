@@ -76,6 +76,81 @@ export class SubscriptionRepository extends TenantScopedRepository {
   }
 
   /**
+   * SYSTEM ONLY — finds the subscription (and thus the org) that owns a Stripe
+   * customer id. Used to bind webhook events to a tenant from the id we stored
+   * at checkout, rather than trusting the event's metadata. Not tenant-scoped.
+   */
+  async findByStripeCustomerId(
+    stripeCustomerId: string,
+  ): Promise<
+    OrganizationSubscriptionRecord | undefined
+  > {
+    if (this.db) {
+      const result =
+        await this.db.query(
+          "SELECT * FROM organization_subscriptions WHERE stripe_customer_id = $1 LIMIT 1",
+          [stripeCustomerId],
+        );
+      const row = result.rows[0] as
+        | unknown as
+        | SubscriptionRow
+        | undefined;
+
+      return row
+        ? mapRow(row)
+        : undefined;
+    }
+
+    for (const rec of this.memory.values()) {
+      if (
+        rec.stripeCustomerId ===
+        stripeCustomerId
+      ) {
+        return rec;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * SYSTEM ONLY — finds the subscription that owns a Stripe subscription id.
+   * A fallback binding when only the subscription id is present. Not scoped.
+   */
+  async findByStripeSubscriptionId(
+    stripeSubscriptionId: string,
+  ): Promise<
+    OrganizationSubscriptionRecord | undefined
+  > {
+    if (this.db) {
+      const result =
+        await this.db.query(
+          "SELECT * FROM organization_subscriptions WHERE stripe_subscription_id = $1 LIMIT 1",
+          [stripeSubscriptionId],
+        );
+      const row = result.rows[0] as
+        | unknown as
+        | SubscriptionRow
+        | undefined;
+
+      return row
+        ? mapRow(row)
+        : undefined;
+    }
+
+    for (const rec of this.memory.values()) {
+      if (
+        rec.stripeSubscriptionId ===
+        stripeSubscriptionId
+      ) {
+        return rec;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
    * Inserts or replaces the current tenant's subscription. The
    * organization id comes from the tenant context, never the record.
    */

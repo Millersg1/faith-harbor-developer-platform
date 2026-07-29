@@ -36,12 +36,27 @@ export interface CheckoutResult {
   url: string;
 }
 
+export interface BillingPortalInput {
+  /** The Stripe customer whose billing is being managed. */
+  customerId: string;
+  /** Where Stripe returns the user after they finish. */
+  returnUrl: string;
+}
+
 export interface StripeSubscriptionGateway {
   isConnected(): boolean;
 
   createSubscriptionCheckout(
     input: SubscriptionCheckoutInput,
   ): Promise<CheckoutResult>;
+
+  /**
+   * Creates a Stripe Billing Portal session so a customer can update their
+   * payment method / manage the subscription. Returns the hosted URL.
+   */
+  createBillingPortalSession(
+    input: BillingPortalInput,
+  ): Promise<{ url: string }>;
 
   /**
    * Verifies a Stripe webhook signature against the raw request body.
@@ -68,6 +83,14 @@ export class DisconnectedStripeSubscriptionGateway
   ): Promise<CheckoutResult> {
     throw new Error(
       "Stripe is not configured. Set STRIPE_SECRET_KEY to accept subscriptions.",
+    );
+  }
+
+  async createBillingPortalSession(
+    _input: BillingPortalInput,
+  ): Promise<{ url: string }> {
+    throw new Error(
+      "Stripe is not configured.",
     );
   }
 
@@ -195,6 +218,48 @@ export class HttpStripeSubscriptionGateway
       id: session.id,
       url: session.url,
     };
+  }
+
+  async createBillingPortalSession(
+    input: BillingPortalInput,
+  ): Promise<{ url: string }> {
+    const response =
+      await this.fetchFn(
+        "https://api.stripe.com/v1/billing_portal/sessions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.config.secretKey}`,
+            "Content-Type":
+              "application/x-www-form-urlencoded",
+          },
+          body: encodeForm({
+            customer: input.customerId,
+            return_url: input.returnUrl,
+          }),
+        },
+      );
+
+    const text =
+      await response.text();
+
+    if (!response.ok) {
+      throw new Error(
+        `Stripe billing portal failed (status ${response.status}).`,
+      );
+    }
+
+    const session = JSON.parse(
+      text,
+    ) as { url?: string };
+
+    if (!session.url) {
+      throw new Error(
+        "Stripe did not return a billing portal URL.",
+      );
+    }
+
+    return { url: session.url };
   }
 
   verifyWebhook(

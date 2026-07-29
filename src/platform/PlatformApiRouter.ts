@@ -2299,6 +2299,41 @@ export function createPlatformApiRouter(
           );
       },
     );
+
+    // Update payment method / manage billing (owner or admin — never members).
+    // Returns a Stripe Billing Portal URL for the tenant's customer.
+    router.post(
+      "/billing/portal",
+      requireRole("owner", "admin"),
+      (req, res, next) => {
+        const proto =
+          (req.headers[
+            "x-forwarded-proto"
+          ] as string) ||
+          req.protocol ||
+          "https";
+        const base = `${proto}://${req.get("host")}`;
+
+        billing
+          .createBillingPortalUrl({
+            returnUrl: `${base}/app`,
+          })
+          .then((url) => {
+            if (!url) {
+              badRequest(
+                res,
+                "NO_BILLING_CUSTOMER",
+                "No billing account to manage yet. Choose a paid plan first.",
+              );
+
+              return;
+            }
+
+            res.json({ url });
+          })
+          .catch(next);
+      },
+    );
   }
 
   // ---- Team members ----

@@ -8,12 +8,38 @@ import {
   type LimitKind,
   type Plan,
 } from "./Plan";
-import type { OrganizationSubscriptionRecord } from "./OrganizationSubscription";
+import type {
+  OrganizationSubscriptionRecord,
+  SubscriptionStatus,
+} from "./OrganizationSubscription";
 import { SubscriptionRepository } from "./SubscriptionRepository";
+import { ProcessedEventsRepository } from "./ProcessedEventsRepository";
 import {
   DisconnectedStripeSubscriptionGateway,
   type StripeSubscriptionGateway,
 } from "./StripeSubscriptionGateway";
+
+/**
+ * Maps a Stripe subscription status onto our smaller set. Unknown or
+ * not-yet-paid states are treated as `past_due` (retain access during the
+ * retry window) rather than as canceled — access is only removed on a
+ * definitive cancellation. See docs/17_BILLING_LIFECYCLE.md.
+ */
+export function mapStripeStatus(
+  stripeStatus: string | undefined,
+): SubscriptionStatus {
+  switch (stripeStatus) {
+    case "active":
+    case "trialing":
+      return "active";
+    case "canceled":
+    case "incomplete_expired":
+      return "canceled";
+    default:
+      // past_due, unpaid, incomplete, paused, or anything unexpected.
+      return "past_due";
+  }
+}
 
 /** The outcome of starting a plan change. */
 export type PlanChangeOutcome =
@@ -58,7 +84,52 @@ export class BillingService {
       new SubscriptionRepository(),
     private readonly gateway: StripeSubscriptionGateway =
       new DisconnectedStripeSubscriptionGateway(),
+    private readonly processedEvents =
+      new ProcessedEventsRepository(),
   ) {}
+
+  /**
+   * Idempotency gate for webhook processing. Returns `true` the first time an
+   * event id is seen (process it) and `false` for a duplicate/replay (skip).
+   */
+  async beginEvent(
+    eventId: string,
+    type: string,
+  ): Promise<boolean> {
+    return this.processedEvents.markProcessed(
+      eventId,
+      type,
+    );
+  }
+
+  /**
+   * Resolves the org that owns a Stripe customer id from the mapping we stored
+   * at checkout — the authoritative, tamper-resistant tenant binding for
+   * subscription/invoice events (we never trust the event's own metadata for
+   * this). Returns undefined when the customer isn't mapped to any tenant.
+   */
+  async findOrganizationByStripeCustomer(
+    stripeCustomerId: string,
+  ): Promise<string | undefined> {
+    const record =
+      await this.repository.findByStripeCustomerId(
+        stripeCustomerId,
+      );
+
+    return record?.organizationId;
+  }
+
+  /** As above, keyed by the Stripe subscription id (a fallback binding). */
+  async findOrganizationByStripeSubscription(
+    stripeSubscriptionId: string,
+  ): Promise<string | undefined> {
+    const record =
+      await this.repository.findByStripeSubscriptionId(
+        stripeSubscriptionId,
+      );
+
+    return record?.organizationId;
+  }
 
   /** Whether real (Stripe) billing is connected. */
   billingConnected(): boolean {
@@ -309,6 +380,175 @@ export class BillingService {
         });
       },
     );
+  }
+
+  /**
+   * Applies a `customer.subscription.updated` event: maps the Stripe status
+   * onto ours and, when Stripe reports the plan via metadata, keeps the plan
+   * in sync. A mapped `canceled` status routes to the cancel path (drop to the
+   * default plan). Otherwise the plan is retained (grace) — `past_due` never
+   * removes access. Existing Stripe ids are preserved.
+   */
+  async applySubscriptionUpdated(input: {
+    organizationId: string;
+    stripeStatus?: string;
+    planId?: string;
+    currentPeriodEnd?: string | null;
+  }): Promise<void> {
+    const status = mapStripeStatus(
+      input.stripeStatus,
+    );
+
+    if (status === "canceled") {
+      await this.applySubscriptionCanceled(
+        {
+          organizationId:
+            input.organizationId,
+        },
+      );
+
+      return;
+    }
+
+    await runWithTenant(
+      {
+        organizationId:
+          input.organizationId,
+      },
+      async () => {
+        const existing =
+          await this.repository.get();
+        // Only accept a plan change to a known plan; otherwise keep the plan
+        // we already have. Never let an event downgrade an unknown plan.
+        const nextPlan =
+          input.planId &&
+          getPlan(input.planId)
+            ? input.planId
+            : (existing?.planId ??
+              defaultPlan().id);
+
+        await this.repository.upsert({
+          planId: nextPlan,
+          status,
+          currentPeriodEnd:
+            input.currentPeriodEnd ??
+            existing?.currentPeriodEnd ??
+            null,
+          stripeCustomerId:
+            existing?.stripeCustomerId ??
+            null,
+          stripeSubscriptionId:
+            existing?.stripeSubscriptionId ??
+            null,
+          updatedAt:
+            new Date().toISOString(),
+        });
+      },
+    );
+  }
+
+  /**
+   * `invoice.payment_failed`: mark the subscription `past_due` but KEEP the
+   * plan and all access. Service is retained through Stripe's retry window;
+   * access is only removed on a definitive cancellation. Never touches data.
+   */
+  async applyPaymentFailed(input: {
+    organizationId: string;
+  }): Promise<void> {
+    await this.transitionStatus(
+      input.organizationId,
+      "past_due",
+    );
+  }
+
+  /**
+   * `invoice.paid`: payment recovered — restore `active`, keeping the plan.
+   * A definitively `canceled` subscription is left as-is.
+   */
+  async applyPaymentSucceeded(input: {
+    organizationId: string;
+  }): Promise<void> {
+    await this.transitionStatus(
+      input.organizationId,
+      "active",
+      // Don't resurrect a canceled subscription from a late invoice event.
+      (current) =>
+        current !== "canceled",
+    );
+  }
+
+  /** Shared status transition that preserves plan + Stripe ids. */
+  private async transitionStatus(
+    organizationId: string,
+    status: SubscriptionStatus,
+    when: (
+      current: SubscriptionStatus,
+    ) => boolean = () => true,
+  ): Promise<void> {
+    await runWithTenant(
+      { organizationId },
+      async () => {
+        const existing =
+          await this.repository.get();
+        const current =
+          existing?.status ?? "active";
+
+        if (!when(current)) {
+          return;
+        }
+
+        await this.repository.upsert({
+          planId:
+            existing?.planId ??
+            defaultPlan().id,
+          status,
+          currentPeriodEnd:
+            existing?.currentPeriodEnd ??
+            null,
+          stripeCustomerId:
+            existing?.stripeCustomerId ??
+            null,
+          stripeSubscriptionId:
+            existing?.stripeSubscriptionId ??
+            null,
+          updatedAt:
+            new Date().toISOString(),
+        });
+      },
+    );
+  }
+
+  /**
+   * Creates a Stripe Billing Portal URL for the acting tenant, so an
+   * owner/admin can update the payment method. Returns null when there is no
+   * Stripe customer yet or billing isn't connected.
+   */
+  async createBillingPortalUrl(input: {
+    returnUrl: string;
+  }): Promise<string | null> {
+    if (!this.gateway.isConnected()) {
+      return null;
+    }
+
+    const subscription =
+      await this.getSubscription();
+
+    if (
+      !subscription.stripeCustomerId
+    ) {
+      return null;
+    }
+
+    const { url } =
+      await this.gateway.createBillingPortalSession(
+        {
+          customerId:
+            subscription.stripeCustomerId,
+          returnUrl: input.returnUrl,
+        },
+      );
+
+    return url;
   }
 
   /**

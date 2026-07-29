@@ -73,6 +73,7 @@ Included guides:
 - Changelog
 - [WordPress Website Migration & Recovery Procedure](15_WORDPRESS_MIGRATION_SOP.md)
 - [Production Cutover Checklist — All Elite Cloud (multitenant)](16_PRODUCTION_CUTOVER_CHECKLIST.md)
+- [Billing Lifecycle & Failed-Payment Policy](17_BILLING_LIFECYCLE.md)
 
 ---
 

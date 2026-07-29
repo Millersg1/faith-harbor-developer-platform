@@ -97,7 +97,8 @@ emits `invoice.paid` on the transition into paid.
 |---|---|---|
 | GET | /f/:slug | renders the public form page |
 | POST | /api/public/forms/:slug/submit | body `{data:{…}}`; 400 invalid, 404 unknown/paused |
-| POST | /webhooks/stripe | raw body; signature verified before trust |
+| POST | /webhooks/stripe | raw body; signature verified before trust; idempotent (event-id ledger); handles checkout.session.completed, customer.subscription.updated/deleted, invoice.payment_failed, invoice.paid — see `17_BILLING_LIFECYCLE.md` |
+| POST | /api/platform/billing/portal | owner/admin; returns a Stripe Billing Portal `{url}`; 400 when no Stripe customer yet |
 
 ## Validation & errors
 
