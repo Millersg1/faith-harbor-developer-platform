@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import { PostgresDatabase } from "../persistence/PostgresDatabase";
 import { OrganizationRepository } from "../tenancy/OrganizationRepository";
+import { runWithTenant } from "../tenancy/TenantContext";
 import { OrganizationService } from "../tenancy/OrganizationService";
 import { OrganizationDomainRepository } from "../tenancy/OrganizationDomainRepository";
 import { OrganizationDomainService } from "../tenancy/OrganizationDomainService";
@@ -100,6 +101,7 @@ import { PlatformLegalService } from "./legal/PlatformLegalService";
 import { PlatformLegalDocumentRepository } from "./legal/PlatformLegalDocumentRepository";
 import { LegalAcceptanceService } from "./legal/LegalAcceptanceService";
 import { LegalAcceptanceRepository } from "./legal/LegalAcceptanceRepository";
+import { RetentionService } from "./legal/RetentionService";
 import { platformLegalSeeds } from "./legal/content/platformLegalContent";
 import { WorkflowService } from "./workflows/WorkflowService";
 import { WorkflowRepository } from "./workflows/WorkflowRepository";
@@ -461,12 +463,13 @@ async function start(): Promise<void> {
     }
   }
 
+  const fileStorage = new LocalStorageProvider(
+    process.env.FILE_STORAGE_DIR ||
+      `${process.env.HOME || "."}/aecloud/storage`,
+  );
   const files = new PlatformFileService(
     new PlatformFileRepository(db),
-    new LocalStorageProvider(
-      process.env.FILE_STORAGE_DIR ||
-        `${process.env.HOME || "."}/aecloud/storage`,
-    ),
+    fileStorage,
   );
 
   const forms = new PlatformFormService(
@@ -509,6 +512,80 @@ async function start(): Promise<void> {
     new LegalAcceptanceRepository(db),
     legal,
   );
+
+  // Data-retention purge: hard-delete files soft-deleted longer than the
+  // retention window (default 30 days), removing bytes + row, per-org,
+  // legal-hold-aware, and audited. Backs the Privacy Policy's retention claim.
+  const retention = new RetentionService({
+    listPurgeableFiles: async (cutoffIso) => {
+      const r = await db.query(
+        `SELECT id, organization_id, stored_key
+           FROM files
+          WHERE deleted_at IS NOT NULL AND deleted_at < $1`,
+        [cutoffIso],
+      );
+      return r.rows.map((row) => ({
+        id: String(row.id),
+        organizationId: String(row.organization_id),
+        storedKey: String(row.stored_key),
+      }));
+    },
+    deleteFileBytes: (key) =>
+      fileStorage.delete(key).catch(() => {
+        // A missing object is fine — the goal is that it no longer exists.
+      }),
+    deleteFileRow: async (id) => {
+      await db.query("DELETE FROM files WHERE id = $1", [id]);
+    },
+    isOrgOnLegalHold: async (organizationId) => {
+      const r = await db.query(
+        "SELECT 1 FROM legal_holds WHERE organization_id = $1 LIMIT 1",
+        [organizationId],
+      );
+      return r.rows.length > 0;
+    },
+    audit: (event) =>
+      runWithTenant(
+        { organizationId: event.organizationId },
+        () =>
+          audit.record({
+            actorType: "system",
+            action: event.action,
+            outcome: "success",
+            metadata: { count: event.count },
+          }),
+      ).then(() => {
+        // fire-and-forget; auditing never blocks a purge
+      }),
+  });
+  const RETENTION_TICK_MS = Number(
+    process.env.RETENTION_TICK_MS ?? 24 * 60 * 60 * 1000,
+  );
+  const runPurge = () => {
+    retention
+      .purgeDeletedFiles(
+        Number(process.env.RETENTION_FILE_DAYS ?? 30),
+      )
+      .then((r) => {
+        if (r.purgedFiles > 0 || r.skippedHeldOrgs > 0) {
+          console.log(
+            `[retention] purged ${r.purgedFiles} file(s) across ${r.purgedOrgs} org(s); skipped ${r.skippedHeldOrgs} on legal hold`,
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(
+          "[retention] purge failed",
+          err instanceof Error ? err.message : err,
+        );
+      });
+  };
+  const retentionTimer = setInterval(runPurge, RETENTION_TICK_MS);
+  if (typeof retentionTimer.unref === "function") {
+    retentionTimer.unref();
+  }
+  // Kick off an initial purge shortly after boot (never blocks startup).
+  setTimeout(runPurge, 30_000).unref?.();
   // Owners/admins to notify (shared by the notification dispatcher + workflows).
   const notifyRecipients = () =>
     users

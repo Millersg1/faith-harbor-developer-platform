@@ -1097,6 +1097,17 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS privacy_requests_org_idx
         ON privacy_requests (organization_id, status, created_at DESC);
     `);
+
+    // Legal holds — while a hold exists for an organization, the retention
+    // purge skips that organization entirely (nothing is purged under hold).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS legal_holds (
+        organization_id  TEXT PRIMARY KEY
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        reason           TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
   }
 
   /**
