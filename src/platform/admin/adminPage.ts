@@ -91,6 +91,18 @@ export function adminConsolePage(): string {
   </div>
 
   <div class="panel" style="margin-top:24px;">
+    <h2>Legal documents</h2>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+      <label for="legalKind">Document</label>
+      <select id="legalKind" style="width:100%;padding:11px 13px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:10px;color:var(--text);"></select>
+    </div>
+    <div id="legalVersions" style="padding:8px 20px;"></div>
+    <div id="legalEditor" style="padding:0 20px 16px;"></div>
+    <div id="legalMsg" class="msg" style="padding:0 20px;"></div>
+    <div id="legalPreview" style="padding:16px 20px;border-top:1px solid var(--border);max-height:52vh;overflow:auto;font-size:.9rem;"></div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
     <h2>Documentation</h2>
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
       <label for="docSelect">Document</label>
@@ -242,11 +254,101 @@ export function adminConsolePage(): string {
     sel.addEventListener('change',function(){loadDoc(sel.value);});
     loadDoc(docs[0]);
   }
+  // ---- Legal document management ----
+  var legalDocs={}, legalCurrentKind=null;
+  var STATUS_LABEL={draft:'Draft',legal_review:'Legal review required',published:'Published',superseded:'Superseded',archived:'Archived'};
+  function legalMsg(text,ok){var m=document.getElementById('legalMsg');m.className='msg'+(ok===true?' ok':ok===false?' err':'');m.textContent=text||'';}
+  async function loadLegal(){
+    var r=await api('/legal/documents'); if(!r.ok){return;} var d=await r.json();
+    legalDocs={};
+    (d.documents||[]).forEach(function(doc){(legalDocs[doc.kind]=legalDocs[doc.kind]||[]).push(doc);});
+    Object.keys(legalDocs).forEach(function(k){legalDocs[k].sort(function(a,b){return b.version-a.version;});});
+    var sel=document.getElementById('legalKind'); sel.innerHTML='';
+    var kinds=Object.keys(legalDocs).sort();
+    if(!kinds.length){var o=document.createElement('option');o.textContent='No documents';sel.appendChild(o);return;}
+    kinds.forEach(function(k){var o=document.createElement('option');o.value=k;var pub=legalDocs[k].filter(function(x){return x.status==='published';})[0];o.textContent=(legalDocs[k][0].title||k)+' ('+(pub?'published v'+pub.version:'draft only')+')';sel.appendChild(o);});
+    sel.onchange=function(){legalCurrentKind=sel.value;renderVersions();};
+    legalCurrentKind=kinds[0];sel.value=legalCurrentKind;renderVersions();
+  }
+  function badgeFor(status){var s=document.createElement('span');s.className='badge';var col=status==='published'?'var(--ok)':status==='legal_review'?'var(--amber)':'var(--muted)';s.style.cssText='background:rgba(148,163,184,.16);color:'+col;s.textContent=STATUS_LABEL[status]||status;return s;}
+  function renderVersions(){
+    var wrap=document.getElementById('legalVersions');wrap.textContent='';legalMsg('');
+    document.getElementById('legalEditor').textContent='';document.getElementById('legalPreview').textContent='';
+    var versions=legalDocs[legalCurrentKind]||[];
+    var head=document.createElement('div');head.style.cssText='display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px;';
+    var h=document.createElement('div');h.style.fontWeight='700';h.textContent='Versions';
+    var nv=document.createElement('button');nv.className='btn btn-ghost btn-sm';nv.textContent='New version from current';
+    nv.onclick=function(){legalAction('/legal/documents/'+encodeURIComponent(legalCurrentKind)+'/draft',{},'New draft created.');};
+    head.appendChild(h);head.appendChild(nv);wrap.appendChild(head);
+    versions.forEach(function(v){
+      var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:10px;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:.88rem;';
+      var left=document.createElement('div');left.style.cssText='display:flex;align-items:center;gap:10px;';
+      var vv=document.createElement('span');vv.style.fontWeight='600';vv.textContent='v'+v.version;left.appendChild(vv);left.appendChild(badgeFor(v.status));
+      var meta=document.createElement('span');meta.className='td-sub';meta.textContent=(v.effectiveDate?'eff '+v.effectiveDate+' · ':'')+'upd '+fmtDate(v.updatedAt)+(v.requiresReconsent?' · re-consent':'');left.appendChild(meta);
+      var view=document.createElement('button');view.className='btn btn-ghost btn-sm';view.textContent='Open';view.onclick=function(){openVersion(v.id);};
+      row.appendChild(left);row.appendChild(view);wrap.appendChild(row);
+    });
+  }
+  async function openVersion(id){
+    legalMsg('Loading…');
+    var r=await api('/legal/documents/'+encodeURIComponent(id)+'/preview');
+    if(!r.ok){legalMsg('Could not load version.',false);return;}
+    var d=await r.json();legalMsg('');
+    renderEditor(d.document);
+    document.getElementById('legalPreview').innerHTML='<div style="color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Preview</div>'+d.html;
+  }
+  function field(label,el){var w=document.createElement('div');w.style.margin='10px 0';var l=document.createElement('label');l.textContent=label;w.appendChild(l);w.appendChild(el);return w;}
+  function renderEditor(doc){
+    var box=document.getElementById('legalEditor');box.textContent='';
+    var editable=doc.status==='draft'||doc.status==='legal_review';
+    var meta=document.createElement('div');meta.className='td-sub';meta.style.margin='6px 0 4px';
+    meta.textContent='v'+doc.version+' · '+(STATUS_LABEL[doc.status]||doc.status)+(editable?' (editable)':' (immutable)');
+    box.appendChild(meta);
+    var title=document.createElement('input');title.value=doc.title;title.disabled=!editable;
+    var summary=document.createElement('input');summary.value=doc.summary;summary.disabled=!editable;
+    var bodyEl=document.createElement('textarea');bodyEl.value=doc.bodyMarkdown;bodyEl.disabled=!editable;
+    bodyEl.style.cssText='width:100%;min-height:220px;padding:11px 13px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:ui-monospace,Menlo,monospace;font-size:.82rem;';
+    var rc=document.createElement('input');rc.type='checkbox';rc.checked=!!doc.requiresReconsent;rc.disabled=!editable;
+    box.appendChild(field('Title',title));box.appendChild(field('Plain-language summary',summary));box.appendChild(field('Body (Markdown)',bodyEl));
+    var rcWrap=document.createElement('label');rcWrap.style.cssText='display:flex;gap:8px;align-items:center;font-size:.86rem;margin:8px 0;text-transform:none;letter-spacing:0;color:var(--text);';rcWrap.appendChild(rc);rcWrap.appendChild(document.createTextNode('Require existing users to re-accept this version'));box.appendChild(rcWrap);
+    var actions=document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;';
+    if(editable){
+      var save=document.createElement('button');save.className='btn btn-ghost btn-sm';save.textContent='Save draft';
+      save.onclick=function(){legalAction('/legal/documents/'+encodeURIComponent(doc.id),{method:'PUT',body:{title:title.value,summary:summary.value,bodyMarkdown:bodyEl.value,requiresReconsent:rc.checked}},'Draft saved.');};
+      actions.appendChild(save);
+      if(doc.status==='draft'){var rev=document.createElement('button');rev.className='btn btn-ghost btn-sm';rev.textContent='Mark legal review';rev.onclick=function(){legalAction('/legal/documents/'+encodeURIComponent(doc.id)+'/review',{},'Marked legal review required.');};actions.appendChild(rev);}
+      var effInput=document.createElement('input');effInput.type='date';effInput.style.cssText='padding:6px 10px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:8px;color:var(--text);width:auto;';
+      var pub=document.createElement('button');pub.className='btn btn-red btn-sm';pub.textContent='Publish';
+      pub.onclick=function(){if(!confirm('Publish v'+doc.version+' of '+doc.kind+'? This supersedes the current published version and is immutable.'))return;legalAction('/legal/documents/'+encodeURIComponent(doc.id)+'/publish',{method:'POST',body:effInput.value?{effectiveDate:effInput.value}:{}},'Published.');};
+      actions.appendChild(effInput);actions.appendChild(pub);
+    }
+    if(doc.status!=='published'){var arch=document.createElement('button');arch.className='btn btn-ghost btn-sm';arch.textContent='Archive';arch.onclick=function(){legalAction('/legal/documents/'+encodeURIComponent(doc.id)+'/archive',{},'Archived.');};actions.appendChild(arch);}
+    var cmp=document.createElement('button');cmp.className='btn btn-ghost btn-sm';cmp.textContent='Compare with previous';cmp.onclick=function(){compareVersion(doc.id);};actions.appendChild(cmp);
+    box.appendChild(actions);
+  }
+  async function compareVersion(id){
+    var r=await api('/legal/documents/'+encodeURIComponent(id)+'/compare');if(!r.ok){legalMsg('Compare failed.',false);return;}
+    var d=await r.json();var view=document.getElementById('legalPreview');view.textContent='';
+    var grid=document.createElement('div');grid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:12px;';
+    function col(label,body){var c=document.createElement('div');var h=document.createElement('div');h.style.cssText='font-size:.75rem;color:var(--muted);text-transform:uppercase;margin-bottom:6px;';h.textContent=label;var pre=document.createElement('pre');pre.style.cssText='white-space:pre-wrap;font-size:.78rem;background:rgba(0,0,0,.3);padding:10px;border-radius:8px;max-height:40vh;overflow:auto;';pre.textContent=body;c.appendChild(h);c.appendChild(pre);return c;}
+    grid.appendChild(col('Previous'+(d.previous?' v'+d.previous.version:' (none)'),d.previous?d.previous.bodyMarkdown:'(no earlier version)'));
+    grid.appendChild(col('Current v'+d.current.version,d.current.bodyMarkdown));
+    view.appendChild(grid);
+  }
+  async function legalAction(path,opts,okText){
+    opts=opts||{};var method=opts.method||'POST';
+    legalMsg('Working…');
+    var r=await api(path,{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(opts.body||{})});
+    var x=await r.json().catch(function(){return{};});
+    if(r.ok){legalMsg(okText||'Done.',true);await loadLegal();}
+    else{legalMsg((x.error&&x.error.message)||'Action failed.',false);}
+  }
+
   async function boot(){
     var me=await api('/me');
     if(me.ok){var d=await me.json();document.getElementById('who').textContent=esc(d.admin&&d.admin.email);
       show('login',false);show('console',true);document.getElementById('logout').style.display='';
-      await loadStats();await loadAnalytics();await loadHealth();await loadOrgs();await loadDocs();}
+      await loadStats();await loadAnalytics();await loadHealth();await loadOrgs();await loadLegal();await loadDocs();}
     else{show('login',true);show('console',false);}
   }
   document.getElementById('loginForm').addEventListener('submit',async function(e){

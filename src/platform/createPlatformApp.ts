@@ -655,6 +655,7 @@ export function createPlatformApp(
       analytics:
         deps.platformAnalytics,
       health: deps.platformHealth,
+      legal: deps.legal,
       secureCookie:
         deps.secureCookie,
       docsDir: deps.docsDir,

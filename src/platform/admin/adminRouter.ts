@@ -13,6 +13,9 @@ import {
 import type { OrganizationService } from "../../tenancy/OrganizationService";
 import type { PlatformAnalyticsService } from "../analytics/PlatformAnalyticsService";
 import type { PlatformHealthService } from "../health/PlatformHealthService";
+import type { PlatformLegalService } from "../legal/PlatformLegalService";
+import { isLegalKind } from "../legal/PlatformLegalDocument";
+import { renderLegalMarkdown } from "../legal/legalMarkdown";
 import { toPublicAdmin } from "./PlatformAdmin";
 import {
   AdminPasswordError,
@@ -32,6 +35,7 @@ export interface AdminRouterDependencies {
   requireAdmin: RequestHandler;
   analytics?: PlatformAnalyticsService;
   health?: PlatformHealthService;
+  legal?: PlatformLegalService;
   secureCookie?: boolean;
 
   /**
@@ -428,6 +432,243 @@ export function createAdminRouter(
               },
             }),
           );
+      },
+    );
+  }
+
+  // Platform legal-document management (owner-only, cross-tenant is N/A —
+  // these are the platform's OWN documents). Every write is audited by the
+  // service. Published versions are immutable; editing creates a new version.
+  if (deps.legal) {
+    const legal = deps.legal;
+    const actorId = (req: AdminedRequest): string | null =>
+      req.admin?.id ?? null;
+    const notFound = (res: Response): void => {
+      res.status(404).json({
+        error: {
+          code: "NOT_FOUND",
+          message: "Legal document not found.",
+        },
+      });
+    };
+    const fail = (res: Response, err: unknown): void => {
+      const message =
+        err instanceof Error ? err.message : "Request failed.";
+      res.status(400).json({
+        error: { code: "LEGAL_ERROR", message },
+      });
+    };
+
+    // All documents (every version, every kind).
+    router.get(
+      "/legal/documents",
+      deps.requireAdmin,
+      (_req, res) => {
+        legal
+          .listAll()
+          .then((docs) => res.json({ documents: docs }))
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Versions of one kind (newest first).
+    router.get(
+      "/legal/documents/:kind",
+      deps.requireAdmin,
+      (req, res) => {
+        const kind = String(req.params.kind);
+        if (!isLegalKind(kind)) {
+          notFound(res);
+          return;
+        }
+        legal
+          .listVersions(kind)
+          .then((versions) => res.json({ versions }))
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Create a new draft version. If a version already exists, the new draft
+    // is cloned from the current published/latest one; otherwise the body is
+    // required to seed the first version.
+    router.post(
+      "/legal/documents/:kind/draft",
+      deps.requireAdmin,
+      (req, res) => {
+        const kind = String(req.params.kind);
+        if (!isLegalKind(kind)) {
+          notFound(res);
+          return;
+        }
+        const body = (req.body ?? {}) as {
+          title?: unknown;
+          summary?: unknown;
+          bodyMarkdown?: unknown;
+        };
+        legal
+          .listVersions(kind)
+          .then((versions) => {
+            if (versions.length > 0) {
+              return legal.createNewVersion(
+                kind,
+                actorId(req as AdminedRequest),
+              );
+            }
+            if (
+              typeof body.title !== "string" ||
+              typeof body.summary !== "string" ||
+              typeof body.bodyMarkdown !== "string"
+            ) {
+              throw new Error(
+                "title, summary, and bodyMarkdown are required for a first version.",
+              );
+            }
+            return legal.createDraft({
+              kind,
+              title: body.title,
+              summary: body.summary,
+              bodyMarkdown: body.bodyMarkdown,
+              createdBy: actorId(req as AdminedRequest),
+            });
+          })
+          .then((doc) => res.status(201).json({ document: doc }))
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Edit a draft (immutable versions are refused by the service).
+    router.put(
+      "/legal/documents/:id",
+      deps.requireAdmin,
+      (req, res) => {
+        const body = (req.body ?? {}) as {
+          title?: unknown;
+          summary?: unknown;
+          bodyMarkdown?: unknown;
+          requiresReconsent?: unknown;
+        };
+        legal
+          .updateDraft(String(req.params.id), {
+            title:
+              typeof body.title === "string"
+                ? body.title
+                : undefined,
+            summary:
+              typeof body.summary === "string"
+                ? body.summary
+                : undefined,
+            bodyMarkdown:
+              typeof body.bodyMarkdown === "string"
+                ? body.bodyMarkdown
+                : undefined,
+            requiresReconsent:
+              typeof body.requiresReconsent === "boolean"
+                ? body.requiresReconsent
+                : undefined,
+          })
+          .then((doc) => res.json({ document: doc }))
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Sanitized HTML preview of a version's body (safe renderer).
+    router.get(
+      "/legal/documents/:id/preview",
+      deps.requireAdmin,
+      (req, res) => {
+        legal
+          .getById(String(req.params.id))
+          .then((doc) => {
+            if (!doc) {
+              notFound(res);
+              return;
+            }
+            const rendered = renderLegalMarkdown(doc.bodyMarkdown);
+            res.json({
+              document: doc,
+              html: rendered.html,
+            });
+          })
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Compare a version against another (default: the previous version of the
+    // same kind). Returns both bodies for the UI to diff.
+    router.get(
+      "/legal/documents/:id/compare",
+      deps.requireAdmin,
+      (req, res) => {
+        legal
+          .getById(String(req.params.id))
+          .then(async (doc) => {
+            if (!doc) {
+              notFound(res);
+              return;
+            }
+            const versions = await legal.listVersions(doc.kind);
+            const against =
+              typeof req.query.against === "string"
+                ? await legal.getById(req.query.against)
+                : versions.find((v) => v.version < doc.version);
+            res.json({
+              current: {
+                version: doc.version,
+                bodyMarkdown: doc.bodyMarkdown,
+              },
+              previous: against
+                ? {
+                    version: against.version,
+                    bodyMarkdown: against.bodyMarkdown,
+                  }
+                : null,
+            });
+          })
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Move a draft into "legal review required".
+    router.post(
+      "/legal/documents/:id/review",
+      deps.requireAdmin,
+      (req, res) => {
+        legal
+          .acknowledgeReview(String(req.params.id))
+          .then((doc) => res.json({ document: doc }))
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Publish (optionally scheduling the effective date).
+    router.post(
+      "/legal/documents/:id/publish",
+      deps.requireAdmin,
+      (req, res) => {
+        const body = (req.body ?? {}) as {
+          effectiveDate?: unknown;
+        };
+        legal
+          .publish(String(req.params.id), {
+            effectiveDate:
+              typeof body.effectiveDate === "string"
+                ? body.effectiveDate
+                : undefined,
+          })
+          .then((doc) => res.json({ document: doc }))
+          .catch((err) => fail(res, err));
+      },
+    );
+
+    // Archive a non-published version.
+    router.post(
+      "/legal/documents/:id/archive",
+      deps.requireAdmin,
+      (req, res) => {
+        legal
+          .archive(String(req.params.id))
+          .then((doc) => res.json({ document: doc }))
+          .catch((err) => fail(res, err));
       },
     );
   }
