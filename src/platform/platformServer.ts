@@ -98,6 +98,8 @@ import { AuditService } from "./audit/AuditService";
 import { AuditRepository } from "./audit/AuditRepository";
 import { PlatformLegalService } from "./legal/PlatformLegalService";
 import { PlatformLegalDocumentRepository } from "./legal/PlatformLegalDocumentRepository";
+import { LegalAcceptanceService } from "./legal/LegalAcceptanceService";
+import { LegalAcceptanceRepository } from "./legal/LegalAcceptanceRepository";
 import { platformLegalSeeds } from "./legal/content/platformLegalContent";
 import { WorkflowService } from "./workflows/WorkflowService";
 import { WorkflowRepository } from "./workflows/WorkflowRepository";
@@ -501,6 +503,12 @@ async function start(): Promise<void> {
   // overwrites owner edits). Documents needing owner/attorney facts seed as
   // drafts and are not served publicly until published.
   await legal.seedIfEmpty(platformLegalSeeds());
+
+  // Terms/Privacy acceptance evidence (tenant-scoped, append-only).
+  const legalAcceptance = new LegalAcceptanceService(
+    new LegalAcceptanceRepository(db),
+    legal,
+  );
   // Owners/admins to notify (shared by the notification dispatcher + workflows).
   const notifyRecipients = () =>
     users
@@ -761,6 +769,7 @@ async function start(): Promise<void> {
     preferences:
       workspacePreferences,
     legal,
+    legalAcceptance,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

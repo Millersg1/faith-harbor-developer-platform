@@ -63,6 +63,7 @@ import { PlatformInvoiceService } from "./invoices/PlatformInvoiceService";
 import { PlatformProjectService } from "./projects/PlatformProjectService";
 import { createPlatformApiRouter } from "./PlatformApiRouter";
 import type { PlatformLegalService } from "./legal/PlatformLegalService";
+import type { LegalAcceptanceService } from "./legal/LegalAcceptanceService";
 import {
   isLegalKind,
   legalKindsInOrder,
@@ -133,6 +134,7 @@ export interface PlatformAppDependencies {
   onboarding?: OnboardingService;
   preferences?: WorkspacePreferencesService;
   legal?: PlatformLegalService;
+  legalAcceptance?: LegalAcceptanceService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
   platformAnalytics?: PlatformAnalyticsService;
@@ -666,6 +668,7 @@ export function createPlatformApp(
       users: deps.users,
       sessions: deps.sessions,
       signup: deps.signup,
+      legalAcceptance: deps.legalAcceptance,
       passwordReset:
         deps.passwordReset,
       email: deps.email,

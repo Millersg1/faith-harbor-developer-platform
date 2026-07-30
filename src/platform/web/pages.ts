@@ -258,6 +258,9 @@ const STYLES = `
   .dns .k { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); min-width: 42px; }
   .dns code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; word-break: break-all; }
+  .consent { display: flex; gap: 9px; align-items: flex-start; font-weight: 400;
+    margin: 12px 0 4px; font-size: 0.9rem; line-height: 1.45; cursor: pointer; }
+  .consent input { margin-top: 3px; flex: none; width: 16px; height: 16px; }
   .legalfoot { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center;
     padding: 22px 16px; margin-top: 8px; border-top: 1px solid var(--border); }
   .legalfoot a { color: var(--muted); font-size: 0.85rem; text-decoration: none; }
@@ -359,6 +362,7 @@ export function signupPage(): string {
     <input id="email" type="email" autocomplete="email" required />
     <label for="password">Password</label>
     <input id="password" type="password" autocomplete="new-password" placeholder="At least 8 characters" required />
+    <label class="consent" for="accept"><input type="checkbox" id="accept" /> <span>I agree to the <a href="/legal/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/legal/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
     <div class="msg" id="msg"></div>
     <button class="btn" type="submit">Create organization</button>
     <div class="alt">Already have one? <a href="/login">Sign in</a></div>
@@ -371,13 +375,17 @@ export function signupPage(): string {
   var nameEl=document.getElementById('name');
   var emailEl=document.getElementById('email');
   var pwEl=document.getElementById('password');
+  var acceptEl=document.getElementById('accept');
   f.addEventListener('submit',async function(e){
-    e.preventDefault(); msg.className='msg'; msg.textContent='Creating…';
+    e.preventDefault(); msg.className='msg';
+    // Require affirmative, unchecked-by-default consent before submitting.
+    if(!acceptEl.checked){msg.className='msg err';msg.textContent='Please agree to the Terms of Service and Privacy Policy to continue.';return;}
+    msg.textContent='Creating…';
     try{
       var r=await fetch('/auth/signup',{method:'POST',credentials:'include',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({organizationName:orgEl.value.trim(),name:nameEl.value.trim(),
-          email:emailEl.value.trim(),password:pwEl.value})});
+          email:emailEl.value.trim(),password:pwEl.value,acceptTerms:acceptEl.checked})});
       var d=await r.json().catch(function(){return {};});
       if(r.ok){window.location='/app';}
       else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not create organization.';}

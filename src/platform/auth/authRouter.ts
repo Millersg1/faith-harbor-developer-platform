@@ -4,6 +4,8 @@ import {
   type RequestHandler,
 } from "express";
 
+import { runWithTenant } from "../../tenancy/TenantContext";
+import type { LegalAcceptanceService } from "../legal/LegalAcceptanceService";
 import type { OrganizationService } from "../../tenancy/OrganizationService";
 import type { PlatformEmailService } from "../email/PlatformEmailService";
 import { toPublicUser } from "../users/PlatformUser";
@@ -48,6 +50,12 @@ export interface AuthRouterDependencies {
    * Self-serve org onboarding. When provided, POST /signup is exposed.
    */
   signup?: PlatformSignupService;
+
+  /**
+   * Records Terms/Privacy acceptance evidence at signup. When provided (with
+   * published required documents), signup requires affirmative acceptance.
+   */
+  legalAcceptance?: LegalAcceptanceService;
 
   /**
    * Drives the forgot-password flow. When provided (with `email`), POST
@@ -301,6 +309,7 @@ export function createAuthRouter(
           email?: unknown;
           password?: unknown;
           name?: unknown;
+          acceptTerms?: unknown;
         };
 
         if (
@@ -322,25 +331,44 @@ export function createAuthRouter(
           return;
         }
 
-        signup
-          .signup({
-            organizationName:
-              body.organizationName,
-            slug:
-              typeof body.slug ===
-              "string"
-                ? body.slug
-                : undefined,
-            ownerEmail: body.email,
-            ownerPassword:
-              body.password,
-            ownerName:
-              typeof body.name ===
-              "string"
-                ? body.name
-                : undefined,
-          })
-          .then((result) => {
+        const legalAcceptance =
+          deps.legalAcceptance;
+
+        void (async () => {
+          try {
+            // Affirmative Terms/Privacy acceptance is required whenever the
+            // required documents are published. The checkbox must be an
+            // explicit `true` — a missing/false value fails closed.
+            if (
+              legalAcceptance &&
+              (await legalAcceptance.acceptanceRequired()) &&
+              body.acceptTerms !== true
+            ) {
+              res.status(400).json({
+                error: {
+                  code: "ACCEPTANCE_REQUIRED",
+                  message:
+                    "You must agree to the Terms of Service and Privacy Policy to continue.",
+                },
+              });
+              return;
+            }
+
+            const result = await signup.signup({
+              organizationName:
+                body.organizationName as string,
+              slug:
+                typeof body.slug === "string"
+                  ? body.slug
+                  : undefined,
+              ownerEmail: body.email as string,
+              ownerPassword: body.password as string,
+              ownerName:
+                typeof body.name === "string"
+                  ? body.name
+                  : undefined,
+            });
+
             if (result.session) {
               setSessionCookie(
                 res,
@@ -349,65 +377,76 @@ export function createAuthRouter(
               );
             }
 
+            // Record acceptance evidence for the exact published versions,
+            // inside the new tenant's context. Best-effort: a failed evidence
+            // write is logged but never blocks account creation.
+            if (legalAcceptance) {
+              await runWithTenant(
+                {
+                  organizationId:
+                    result.organization.id,
+                },
+                () =>
+                  legalAcceptance.recordAcceptance({
+                    userId: result.owner.id,
+                    source: "signup",
+                    ip: req.ip ?? null,
+                  }),
+              ).catch((err: unknown) => {
+                console.error(
+                  "legal acceptance write failed",
+                  err instanceof Error
+                    ? err.message
+                    : err,
+                );
+              });
+            }
+
             res.status(201).json({
               organization: {
-                id: result
-                  .organization.id,
-                name: result
-                  .organization
-                  .name,
-                slug: result
-                  .organization
-                  .slug,
+                id: result.organization.id,
+                name: result.organization.name,
+                slug: result.organization.slug,
               },
               user: result.owner,
             });
-          })
-          .catch(
-            (error: unknown) => {
-              const message =
-                error instanceof
-                Error
-                  ? error.message
-                  : "";
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error
+                ? error.message
+                : "";
 
-              if (
-                /already in use|already exists/i.test(
+            if (
+              /already in use|already exists/i.test(
+                message,
+              )
+            ) {
+              res.status(409).json({
+                error: {
+                  code: "CONFLICT",
                   message,
-                )
-              ) {
-                res
-                  .status(409)
-                  .json({
-                    error: {
-                      code: "CONFLICT",
-                      message,
-                    },
-                  });
+                },
+              });
+              return;
+            }
 
-                return;
-              }
-
-              if (
-                /required|valid|at least|slug|name|password|email/i.test(
+            if (
+              /required|valid|at least|slug|name|password|email/i.test(
+                message,
+              )
+            ) {
+              res.status(400).json({
+                error: {
+                  code: "INVALID_SIGNUP",
                   message,
-                )
-              ) {
-                res
-                  .status(400)
-                  .json({
-                    error: {
-                      code: "INVALID_SIGNUP",
-                      message,
-                    },
-                  });
+                },
+              });
+              return;
+            }
 
-                return;
-              }
-
-              next(error);
-            },
-          );
+            next(error);
+          }
+        })();
       },
     );
   }
