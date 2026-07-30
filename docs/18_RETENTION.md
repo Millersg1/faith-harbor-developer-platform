@@ -1,50 +1,67 @@
-# Data Retention & Purge
+# Data Retention Coverage Matrix
 
-This document records All Elite Cloud's data-retention matrix and what is
-**enforced in code** versus **operational policy** (manual or provider-level).
-It backs the retention section of the Privacy Policy. Keep this file and the
-Privacy Policy in sync — do not state a period in the Privacy Policy that is not
-either enforced here or a genuine operational commitment.
+This is the authoritative record of what retention behavior is **enforced in
+code** versus **operational/manual** for every material data class in the All
+Elite Cloud platform. The Privacy Policy must describe only what this document
+supports as actual behavior.
 
-## Enforced in code
+Legend — **Soft-delete**: does a delete mark a row recoverable? **Final purge**:
+is there code that removes it permanently? **Worker**: scheduled vs manual.
+**Cascade**: removed when the org row is deleted (`ON DELETE CASCADE`)?
+**Legal hold**: honored by an automated purge? **Backup**: see note [B].
 
-| Data | Policy | Enforcement |
-|---|---|---|
-| Deleted files (soft-deleted content) | Recoverable up to 30 days, then purged from the active DB (bytes + row) | `RetentionService.purgeDeletedFiles` runs on a schedule (`RETENTION_TICK_MS`, default 24h; window `RETENTION_FILE_DAYS`, default 30). Purges bytes via the storage provider and the metadata row, per organization, skipping any org under a legal hold, and writes a `retention.files_purged` audit event (count only). |
-| Password-reset / verification tokens | Never usable past expiry | 1-hour TTL, single-use, hash-only storage (`PasswordResetService`). |
-| Sessions | Removed per session lifecycle | Validated-and-deleted on expiry (`PlatformSessionService`). |
-| Legal holds | While a hold exists for an org, nothing is purged for it | `legal_holds` table; `RetentionService` skips held orgs entirely. |
+## Enforced by code
 
-## Operational policy (not yet a scheduled code job)
+| Data class (table) | Active rule | Soft-delete | Recoverable | Final purge mechanism | Worker | Cascade | Legal hold | Audit | Tests |
+|---|---|---|---|---|---|---|---|---|---|
+| Uploaded files (`files`) | Kept while account active | Yes (`deleted_at`) | Up to 30 days | `RetentionService.purgeDeletedFiles` deletes stored bytes + row | Scheduled (`RETENTION_TICK_MS`, default 24h; window `RETENTION_FILE_DAYS`=30) | Yes (row); bytes removed by purge | Yes — held orgs skipped | `retention.files_purged` (count only) | `RetentionService.test.ts` (3) |
+| Password-reset / verification tokens | N/A | No | No | 1-hour expiry, single-use, hash-only; unusable after expiry | On-use / on-expiry | Yes | N/A | Security audit on reset | existing auth tests |
+| Sessions (`platform_sessions`, `platform_admin_sessions`, `portal_sessions`) | Valid until expiry | No | No | Expired sessions deleted on validation | On-access | Yes | N/A | login/session tests |
+| Legal holds (`legal_holds`) | Present = org exempt from purge | No | N/A | Removed by staff to lift the hold | Manual | Yes | — | `RetentionService.test.ts` |
 
-These are the owner's committed retention periods. They are honored
-operationally and/or at the infrastructure level; a scheduled purge job for each
-is future work. Do not represent them in the Privacy Policy as automated beyond
-what is true.
+## Operational / manual (no scheduled purge job today)
 
-| Data | Policy | Status |
-|---|---|---|
-| Active account / operational data | Retained while the account is active | Inherent. |
-| Closed-account operational content | Purged within 30 days of closure | **Requires an account-closure flow** (a `closedAt` timestamp does not exist today; org delete cascades DB rows but not file bytes). Implement closure + reuse `RetentionService` before claiming this as automated. |
-| Billing / tax / accounting records | Up to 7 years | Operational; Stripe holds transaction records. |
-| Legal-acceptance records | Account relationship + up to 7 years | Append-only `legal_acceptances`; no auto-purge job yet. |
-| Security / audit logs | 12 months (longer under investigation/hold) | `audit_events` append-only; no auto-purge job yet. |
-| Support records | 24 months after closure | No auto-purge job yet. |
-| Privacy-request records | 3 years | No auto-purge job yet. |
-| Backups | Deleted data persists in backups until they age out on their normal rotation; restored only for disaster recovery | **Verify the actual backup rotation with the hosting provider (CloudSouth) and state the real schedule.** |
+These are retained while the account is active and removed on account deletion
+(DB cascade) or on a verified deletion request. There is **no per-class
+scheduled purge**; do not state specific automated periods for these in the
+Privacy Policy.
+
+| Data class (tables) | Active rule | Soft-delete | Final purge mechanism | Worker | Cascade | Notes |
+|---|---|---|---|---|---|---|
+| Account & team (`organizations`, `platform_users`) | While active | No | Org delete removes rows | Manual | Root/Yes | Org delete cascades all tenant rows |
+| Branding (`organization_branding`) | While active | No | Cascade on org delete | Manual | Yes | |
+| CRM & work (`clients`, `leads`, `projects`, `invoices`, `proposals`, `products`, `books`, `programs`, `support_tickets`, `websites`, `campaigns`, `reviews`, `brands`) | While active | Mixed | Cascade on org delete | Manual | Yes | Bytes for `websites` are DB `html` (no separate store) |
+| Files metadata (`files`) | see enforced table | Yes | 30-day purge (enforced) | Scheduled | Yes | Only class with an automated purge |
+| AI data (`organization_ai_settings`, `ai_usage_events`, `ai_conversations`, `ai_conversation_messages`) | While active | No | Cascade on org delete | Manual | Yes | BYO key stored write-only/masked |
+| Knowledge base (`knowledge_*`), forms (`forms`), calendar, notifications, drip (`drip_*`), portal (`portal_users`) | While active | No | Cascade on org delete | Manual | Yes | |
+| Custom domains (`organization_domains`) | While connected | No | Cascade on org delete | Manual | Yes | |
+| Audit & activity logs (`audit_events`, `activity_events`) | While active | No (append-only) | Cascade on org delete | Manual | Yes | Owner target 12 months — **not yet an automated job** |
+| Support records (tickets) | While active | No | Cascade on org delete | Manual | Yes | Owner target 24 months — **not yet automated** |
+| Billing (`organization_subscriptions`, `stripe_processed_events`) | While active | No | Cascade on org delete; Stripe holds txn records | Manual | Yes | Owner target 7 years for tax — held by Stripe + accounting |
+| Legal acceptance (`legal_acceptances`) | Account relationship | No (append-only) | Cascade on org delete | Manual | Yes | Owner target ≤7 years — **not yet automated** |
+| Privacy requests (`privacy_requests`) | Fulfillment evidence | No | Manual | Manual | Nullable org | Owner target 3 years — **not yet automated** |
+| Platform legal docs (`platform_legal_documents`) | Retained (versioned, immutable) | No | Kept as legal record | Manual | Global | Not tenant data |
+
+## Gaps to close before broader retention claims
+
+1. **Closed-account 30-day purge** — needs an account-closure flow. Today there
+   is no `closedAt` (org status: `active`/`suspended`/`cancelled`), and org
+   *delete* cascades DB rows but does **not** delete stored file bytes. To claim
+   "purged within 30 days of closure," add a closure timestamp and route closed
+   orgs' files through `RetentionService`.
+2. **Per-class scheduled purges** (audit 12mo, support 24mo, privacy-request
+   3y, acceptance ≤7y) — not implemented. Either implement + test, or keep the
+   Privacy Policy's general "retained while active / as required by law /
+   deletion on request" language (current wording).
+3. **Backup rotation [B]** — the actual backup schedule, access controls, and
+   whether backups are encrypted at rest are **not verifiable from the
+   codebase**. The Privacy Policy therefore says only that deleted data may
+   remain in *access-restricted* backups until they expire on the normal
+   schedule (no "encrypted" claim). Verify the real schedule with the hosting
+   provider before making any stronger statement.
 
 ## Legal holds
 
-Insert a row into `legal_holds (organization_id, reason, created_at)` to place an
-organization under hold; the retention purge will skip it entirely until the row
-is removed. (A management UI for holds is future work; today it is a direct DB
-operation for staff.)
-
-## Verify before publishing the Privacy Policy
-
-- Confirm the deleted-file purge is running in production (check `[retention]`
-  logs / audit events).
-- Confirm the real backup rotation and update the Privacy Policy's backup line.
-- Decide whether the closed-account and per-class purge jobs are required before
-  publication, or whether the operational commitments above are acceptable to
-  counsel.
+Insert a row into `legal_holds (organization_id, reason, created_at)` to exempt
+an organization from automated purges; remove it to lift the hold. A management
+UI is future work; today it is a staff DB operation.

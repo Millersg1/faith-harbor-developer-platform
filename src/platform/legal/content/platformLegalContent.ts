@@ -11,10 +11,12 @@ import type { LegalSeed } from "../PlatformLegalService";
  * DELETED before publishing. Drafts are never served on the public routes, so
  * these internal notes are never shown publicly.
  *
- * Owner-confirmed facts baked in: operator Faith Harbor LLC (an Ohio LLC —
- * verify the registration before publishing that phrase); product All Elite
- * Cloud; Ohio governing law, no arbitration/class waiver; 18+ business users;
- * contact legal@allelitecloud.com.
+ * Verified facts baked in: operator Faith Harbor LLC, an Ohio LLC (Ohio SoS
+ * Articles of Organization, effective 2024-10-09); product All Elite Cloud;
+ * Ohio governing law, no arbitration/class waiver; 18+ business users; contact
+ * legal@allelitecloud.com (owner-confirmed as receiving mail). Retention text
+ * states only what is enforced; subprocessor hosting vendor is described
+ * generically pending name/location verification.
  */
 
 const CONTACT = "legal@allelitecloud.com";
@@ -138,14 +140,15 @@ Customers are responsible for the accessibility of the websites they generate an
 If you encounter an accessibility barrier, or need information in a different format, contact [${CONTACT}](mailto:${CONTACT}) and describe the problem and the page. We will do our best to help and to prioritize fixes.`;
 
 // ---------------------------------------------------------------------------
-// DRAFT — completed with owner decisions (2026-07-29), pending attorney review
-// and factual verification. Each draft body opens with a single INTERNAL block
-// listing the review/verify items; that block must be DELETED before the
-// document is published. Drafts are never served publicly, so these notes are
-// never shown to the public.
+// DRAFT — completed with owner decisions and verifications (2026-07-30),
+// pending attorney review. Each draft body opens with a single INTERNAL block
+// listing the remaining attorney-review and verification items; that block
+// must be DELETED before publishing, and a server-side guard refuses to publish
+// any body still containing it. Drafts are never served publicly, so these
+// notes are never shown to the public.
 // ---------------------------------------------------------------------------
 
-const TERMS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the governing-law/venue, warranty-disclaimer, limitation-of-liability, and dispute provisions below. VERIFY Faith Harbor LLC's Ohio LLC registration against the Ohio Secretary of State record before publishing the phrase "an Ohio limited liability company." Confirm the legal@allelitecloud.com mailbox is live.
+const TERMS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the governing-law/venue, warranty-disclaimer, limitation-of-liability, and dispute provisions below. No customer-indemnification clause is included; adding one is a separate attorney-review decision. (Faith Harbor LLC's Ohio LLC registration is verified — Ohio Secretary of State Articles of Organization, effective 2024-10-09. The legal@allelitecloud.com mailbox is owner-confirmed as receiving mail.)
 
 ## About these terms
 
@@ -153,7 +156,7 @@ These Terms of Service ("Terms") are an agreement between you and Faith Harbor L
 
 ## Eligibility
 
-All Elite Cloud is intended for business use. You must be at least 18 years old and able to enter into a binding contract to use the Service. Do not create an account on behalf of a minor, and do not allow a minor to create or operate a paid account independently.
+All Elite Cloud accounts are intended for business use. You must be at least 18 years old and able to enter into a binding contract to use the Service. You may not create or independently operate an account if you are under 18.
 
 ## Your account
 
@@ -169,7 +172,11 @@ Paid plans are billed through Stripe. Billing, renewal, cancellation, refunds, a
 
 ## Your content
 
-You retain ownership of the content you upload, generate, and publish. You grant us the limited license needed to host, process, and display that content to operate the Service for you — for example, storing your files, rendering your website, and sending content you direct us to send. You are responsible for your content and for having the rights necessary to use it.
+You retain ownership of the content you upload, generate, and publish ("your content"). You grant us the limited license needed to host, process, and display your content to operate the Service for you — for example, storing your files, rendering your website, and sending content you direct us to send. You are responsible for your content and for having the rights necessary to use it.
+
+## Our intellectual property
+
+Faith Harbor and its licensors own and retain all rights in the All Elite Cloud software, platform design, platform branding, documentation, templates and other platform-provided materials, and the underlying technology and intellectual property (collectively, the "Platform Materials"). Your subscription grants you a limited, non-exclusive, non-transferable right to use the Service during your subscription — it does not transfer ownership of the Platform Materials to you. Your ownership of your content is separate from, and does not include, the Platform Materials, platform-provided templates, or the software and generated service components used to operate the Service.
 
 ## AI-assisted features
 
@@ -211,7 +218,7 @@ We may update these Terms. Material changes will be posted here with a new effec
 
 Questions: [${CONTACT}](mailto:${CONTACT}).`;
 
-const PRIVACY = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the controller/processor characterization, the rights framework, and the "do not sell / do not share" statements under applicable law. VERIFY the retention matrix matches enforced behavior before publishing: deleted-file purge after 30 days is enforced by the retention worker; the closed-account purge depends on an account-closure flow; confirm the actual backup rotation with the hosting provider (CloudSouth). Confirm the legal@allelitecloud.com mailbox is live.
+const PRIVACY = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the controller/processor characterization, the rights framework, and the "do not sell / do not share" statements, and for the children's-data section (tenants such as ministries, coaching organizations, and publishers may lawfully process information about minors). The retention section below states ONLY what is enforced or genuinely operational — do not add specific automated periods that are not enforced. VERIFY the actual backup schedule and access controls with the hosting provider before relying on the backup wording. (Entity and legal@allelitecloud.com mailbox are verified.)
 
 ## Introduction
 
@@ -223,10 +230,17 @@ For account registration, authentication, billing, security, support, and platfo
 
 ## Information we collect
 
-- **Account information** you provide: organization name, your name, and email address.
-- **Content** you upload, generate, and publish, including files, CRM records, projects, invoices, and website content.
-- **Authentication and security data**, including session cookies (see the [Cookie Policy](/legal/cookies)) and limited request information used to rate-limit and secure the Service.
-- **Billing information** is handled by Stripe. We store Stripe identifiers (customer and subscription IDs) and your plan and status; we do **not** receive or store your full card number.
+- **Account and team information:** organization name, your name, email address, and team invitations.
+- **Authentication and security data:** session cookies (see the [Cookie Policy](/legal/cookies)), IP address, and authentication and security log entries used to operate and protect the Service and to rate-limit abuse.
+- **Support communications** you send us.
+- **Tenant business content** you create in the workspace: CRM clients, contacts, and leads; projects; support tickets; invoices; websites; uploaded files; marketing campaigns; and knowledge-base content.
+- **Custom domain and hosting information** for domains you connect.
+- **AI data:** the prompts and content you submit to AI features, AI responses, conversation history, your chosen AI provider, and usage metering.
+- **Billing information:** handled by Stripe. We store Stripe identifiers (customer and subscription IDs) and your plan and status; we do **not** receive or store your full card number.
+- **Email data:** transactional messages and, where you configure them, tenant-directed marketing messages.
+- **Compliance evidence:** privacy-request records and legal-acceptance records.
+
+Tenant-directed marketing communications are sent on the tenant's instructions. Tenants are responsible for lawful recipient consent, message content, honoring unsubscribe requests, and complying with applicable marketing laws.
 
 ## How we use information
 
@@ -240,17 +254,11 @@ All Elite Cloud does **not** sell personal information, and does **not** share p
 
 We keep information only as long as needed for the purposes above:
 
-- **Active account and operational data:** retained while your account is active.
-- **Deleted content:** recoverable for up to 30 days, then purged from the active production database.
-- **Closed accounts:** operational content is purged within 30 days after account closure, subject to lawful holds and specifically retained records.
-- **Password-reset and verification tokens:** short expiration enforced by the system; expired tokens are never usable.
+- **Deleted files:** when you delete a file it is recoverable for up to 30 days and is then purged from the active production database, including its stored contents.
+- **Password-reset and verification tokens:** expire on a short timer and are never usable after expiry.
 - **Sessions:** expire and are removed according to the session lifecycle.
-- **Billing, tax, and accounting records:** retained up to 7 years where needed for legal and accounting obligations.
-- **Legal-acceptance records:** retained for the account relationship and afterward as reasonably necessary to establish the agreement, up to 7 years.
-- **Security and audit logs:** retained 12 months, unless a longer period is required for an active investigation or legal hold.
-- **Support records:** retained 24 months after closure, unless tied to an ongoing contractual, security, or legal matter.
-- **Privacy-request records:** the evidence needed to show fulfillment, retained up to 3 years.
-- **Backups:** deleted data may persist in encrypted, restricted backups until those backups age out on their normal rotation, and is not restored into ordinary use except for disaster recovery.
+- **Other account and operational data** (including your workspace content, security and audit logs, support records, billing records, and legal-acceptance evidence) is retained while your account is active and for as long as reasonably necessary for the purposes described above and to meet our legal, tax, accounting, security, and fraud-prevention obligations. You may request deletion of your personal information at any time (see "Your choices and rights"); we will honor the request except where we are required or permitted by law to retain specific records.
+- **Backups:** deleted information may remain in access-restricted backups until those backups expire under our normal backup schedule. Backup data is used only for security, continuity, and disaster recovery, and is not restored into ordinary use except for disaster recovery.
 
 ## AI features
 
@@ -262,7 +270,7 @@ You may request access to, correction of, or deletion of your personal informati
 
 ## Children
 
-The Service is intended for business users who are at least 18 years old. It is not directed to children, and we do not knowingly collect personal information from children. This age restriction alone is not a claim of COPPA compliance.
+All Elite Cloud accounts are intended for business users who are at least 18 years old. The Service is not directed to children, and children may not create or independently operate accounts. Tenant organizations are responsible for ensuring that information they enter about other individuals, including minors, is collected and processed lawfully. This age restriction alone is not a claim of COPPA compliance.
 
 ## Changes
 
@@ -272,7 +280,7 @@ We may update this policy and will post changes here with a new effective date.
 
 [${CONTACT}](mailto:${CONTACT}).`;
 
-const SUBSCRIPTIONS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the refund, cancellation, automatic-renewal, and failed-payment provisions. VERIFY the Stripe Billing Portal is configured to cancel at period end (a Stripe Dashboard setting) so the "access continues to the end of the paid period" statement holds in practice.
+const SUBSCRIPTIONS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the refund, cancellation, automatic-renewal, and failed-payment provisions. VERIFY the Stripe Billing Portal cancellation setting: the live account currently has no custom Billing Portal configuration, so generated sessions use Stripe's default. Configure the portal (Stripe Dashboard) to cancel at the end of the billing period so the "access continues to the end of the paid period" statement is guaranteed; the wording below is already written to remain accurate for either an end-of-period or a customer-selected immediate cancellation.
 
 ## Plans and billing
 
@@ -306,7 +314,7 @@ We do not offer a free trial, refund window, money-back guarantee, or guaranteed
 
 Billing questions: [${CONTACT}](mailto:${CONTACT}).`;
 
-const SUBPROCESSORS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** VERIFY vendor identities and locations before publishing: confirm CloudSouth is the hosting/infrastructure and PostgreSQL database provider, and that outbound email is sent through SMTP on that same hosting infrastructure (not a separate email vendor). Add processing locations and official privacy-policy links where verified. Update "Last reviewed" on each change.
+const SUBPROCESSORS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** VERIFY the hosting/infrastructure provider's correct business identity and processing locations before naming it publicly — it is not derivable from the codebase, so it is described generically below until confirmed. Verified in code: PostgreSQL, file storage, and outbound SMTP email all run on the same hosting infrastructure (not a separate email vendor). Add the provider's name, processing location, and official privacy/data-processing link once verified, and update "Last reviewed" on each change.
 
 ## About this list
 
@@ -317,11 +325,11 @@ Last reviewed: see the effective date above.
 ## Subprocessors
 
 - **Stripe** — Purpose: payment processing, subscription billing, and the billing portal. Data: billing and payment information you enter on Stripe's hosted pages, plus billing identifiers and status. Reference: [https://stripe.com/privacy](https://stripe.com/privacy).
-- **OpenAI** — Purpose: AI processing for AI-assisted features when selected or used. Data: the task content you submit to those features. Reference: [https://openai.com/policies/privacy-policy](https://openai.com/policies/privacy-policy).
-- **OpenRouter** — Purpose: AI routing and processing for AI-assisted features when selected or used. Data: the task content you submit to those features. Reference: [https://openrouter.ai/privacy](https://openrouter.ai/privacy).
-- **CloudSouth** — Purpose: hosting and infrastructure and the PostgreSQL database environment that stores platform data. Data: the platform data needed to operate the Service. Outbound email is sent through SMTP on this same hosting infrastructure rather than a separate email vendor.
+- **OpenAI** — Purpose: AI processing for AI-assisted features, when those features are used and OpenAI is the selected provider. Data: the task content you submit to those features. Reference: [https://openai.com/policies/privacy-policy](https://openai.com/policies/privacy-policy).
+- **OpenRouter** — Purpose: AI routing and processing for AI-assisted features, when those features are used and OpenRouter is the selected provider. Data: the task content you submit to those features. Reference: [https://openrouter.ai/privacy](https://openrouter.ai/privacy).
+- **Our hosting and infrastructure provider** — Purpose: hosting and infrastructure, the PostgreSQL database that stores platform data, and outbound email delivered through SMTP on that same infrastructure. Data: the platform data needed to operate and email the Service.
 
-Where you configure your own AI provider key, that provider is engaged under your own account and terms.
+Where you configure your own AI provider key, that AI provider is engaged under your own account and terms rather than as our subprocessor.
 
 ## Updates
 

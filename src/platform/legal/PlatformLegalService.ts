@@ -25,6 +25,46 @@ export class LegalDocumentNotFoundError extends Error {
 
 export class LegalStateError extends Error {}
 
+/** Raised when a document still contains internal markers at publish time. */
+export class LegalMarkerError extends Error {
+  constructor(marker: string) {
+    super(
+      `Cannot publish: the document still contains the internal marker "${marker}". Remove all internal review notes before publishing.`,
+    );
+    this.name = "LegalMarkerError";
+  }
+}
+
+/**
+ * Phrases that must never appear in a PUBLISHED legal document. These mark
+ * internal review notes, verification instructions, or unfinished placeholders.
+ * The publish path fails closed if any is present — a server-side guard, not a
+ * UI convenience — so an internal block can never reach a public page.
+ */
+const FORBIDDEN_PUBLISH_MARKERS = [
+  "INTERNAL —",
+  "INTERNAL -",
+  "DELETE THIS BLOCK",
+  "DELETE BEFORE PUBLISHING",
+  "LEGAL REVIEW REQUIRED",
+  "OWNER DECISION REQUIRED",
+  "TODO",
+  "PLACEHOLDER",
+];
+
+/** The first forbidden marker found in the text, or null if clean. */
+export function findPublishBlocker(
+  text: string,
+): string | null {
+  const upper = text.toUpperCase();
+  for (const marker of FORBIDDEN_PUBLISH_MARKERS) {
+    if (upper.includes(marker.toUpperCase())) {
+      return marker;
+    }
+  }
+  return null;
+}
+
 /**
  * Audit event emitted for every lifecycle action. Metadata is intentionally
  * limited to identifiers and enums — never the document body or any personal
@@ -221,6 +261,17 @@ export class PlatformLegalService {
     options: { effectiveDate?: string } = {},
   ): Promise<PlatformLegalDocumentRecord> {
     const doc = await this.mustGet(id);
+    // Server-side publication guard (fail closed): a document that still
+    // contains an internal review note, verification instruction, or
+    // placeholder can never be published to a public page — regardless of what
+    // any UI allows.
+    const blocker =
+      findPublishBlocker(doc.bodyMarkdown) ??
+      findPublishBlocker(doc.title) ??
+      findPublishBlocker(doc.summary);
+    if (blocker) {
+      throw new LegalMarkerError(blocker);
+    }
     if (
       doc.status !== "draft" &&
       doc.status !== "legal_review"

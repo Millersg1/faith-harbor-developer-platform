@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   ImmutableLegalDocumentError,
+  LegalMarkerError,
   PlatformLegalService,
+  findPublishBlocker,
   type LegalAuditEvent,
 } from "./PlatformLegalService";
 import { platformLegalSeeds } from "./content/platformLegalContent";
@@ -87,6 +89,65 @@ describe("PlatformLegalService — versioning & immutability", () => {
     ]);
     for (const e of events) {
       expect(JSON.stringify(e)).not.toContain("secret body text");
+    }
+  });
+});
+
+describe("PlatformLegalService — publication guard", () => {
+  it("refuses to publish a body that still contains an internal marker", async () => {
+    const svc = service();
+    const d = await svc.createDraft({
+      kind: "terms",
+      title: "Terms",
+      summary: "s",
+      bodyMarkdown:
+        "> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** notes\n\n## Terms\n\nBody.",
+    });
+    await expect(svc.publish(d.id)).rejects.toBeInstanceOf(
+      LegalMarkerError,
+    );
+  });
+
+  it("detects the common blocking markers", () => {
+    expect(findPublishBlocker("clean text")).toBeNull();
+    expect(
+      findPublishBlocker("... LEGAL REVIEW REQUIRED ..."),
+    ).toBe("LEGAL REVIEW REQUIRED");
+    expect(findPublishBlocker("has a TODO here")).toBe("TODO");
+    expect(
+      findPublishBlocker("OWNER DECISION REQUIRED: x"),
+    ).toBe("OWNER DECISION REQUIRED");
+  });
+
+  it("publishes once the internal block is removed", async () => {
+    const svc = service();
+    const d = await svc.createDraft({
+      kind: "terms",
+      title: "Terms",
+      summary: "s",
+      bodyMarkdown:
+        "> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** notes\n\n## Terms\n\nBody.",
+    });
+    await svc.updateDraft(d.id, {
+      bodyMarkdown: "## Terms\n\nClean body.",
+    });
+    const published = await svc.publish(d.id);
+    expect(published.status).toBe("published");
+  });
+
+  it("all four completed drafts are blocked from publishing until cleaned", async () => {
+    const svc = service();
+    await svc.seedIfEmpty(platformLegalSeeds());
+    for (const kind of [
+      "terms",
+      "privacy",
+      "subscriptions",
+      "subprocessors",
+    ] as const) {
+      const versions = await svc.listVersions(kind);
+      await expect(
+        svc.publish(versions[0].id),
+      ).rejects.toBeInstanceOf(LegalMarkerError);
     }
   });
 });
