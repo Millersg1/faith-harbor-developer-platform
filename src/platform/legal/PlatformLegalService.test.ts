@@ -135,25 +135,23 @@ describe("PlatformLegalService — publication guard", () => {
     expect(published.status).toBe("published");
   });
 
-  it("all four completed drafts are blocked from publishing until cleaned", async () => {
+  it("every seeded Version 1.0 document is marker-free and publishable", async () => {
+    // Regression guard: no internal marker may ever ship in a seeded document.
+    for (const seed of platformLegalSeeds()) {
+      expect(findPublishBlocker(seed.bodyMarkdown)).toBeNull();
+      expect(findPublishBlocker(seed.title)).toBeNull();
+      expect(findPublishBlocker(seed.summary)).toBeNull();
+      expect(seed.publish).toBe(true);
+    }
+    // And seeding actually publishes them (guard does not block clean text).
     const svc = service();
     await svc.seedIfEmpty(platformLegalSeeds());
-    for (const kind of [
-      "terms",
-      "privacy",
-      "subscriptions",
-      "subprocessors",
-    ] as const) {
-      const versions = await svc.listVersions(kind);
-      await expect(
-        svc.publish(versions[0].id),
-      ).rejects.toBeInstanceOf(LegalMarkerError);
-    }
+    expect((await svc.getPublished("terms"))?.status).toBe("published");
   });
 });
 
 describe("PlatformLegalService — seeding", () => {
-  it("seeds each kind once and is idempotent", async () => {
+  it("seeds all eight documents as published Version 1.0, idempotently", async () => {
     const svc = service();
     await svc.seedIfEmpty(platformLegalSeeds());
     await svc.seedIfEmpty(platformLegalSeeds()); // second run must be a no-op
@@ -162,12 +160,21 @@ describe("PlatformLegalService — seeding", () => {
     const privacy = await svc.listVersions("privacy");
     expect(privacy).toHaveLength(1);
 
-    // Safe docs are published; owner-dependent docs remain drafts.
-    expect((await svc.getPublished("cookies"))?.version).toBe(1);
-    expect((await svc.getPublished("ai-policy"))?.version).toBe(1);
-    expect(await svc.getPublished("terms")).toBeUndefined();
-    expect(await svc.getPublished("privacy")).toBeUndefined();
-    expect(await svc.getPublished("subprocessors")).toBeUndefined();
+    // Every kind is published at version 1 (owner-reviewed Version 1.0).
+    for (const kind of [
+      "terms",
+      "privacy",
+      "acceptable-use",
+      "cookies",
+      "subscriptions",
+      "ai-policy",
+      "subprocessors",
+      "accessibility",
+    ] as const) {
+      const doc = await svc.getPublished(kind);
+      expect(doc?.version).toBe(1);
+      expect(doc?.status).toBe("published");
+    }
   });
 
   it("does not overwrite an existing draft on reseed", async () => {

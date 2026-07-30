@@ -62,30 +62,54 @@ describe("legal routes — published vs draft visibility", () => {
     app = await buildApp(legal);
   });
 
-  it("serves the /legal index listing all policies", async () => {
+  it("serves the /legal index listing all published Version 1.0 policies", async () => {
     const res = await request(app).get("/legal");
     expect(res.status).toBe(200);
     expect(res.text).toContain("Cookie Policy");
     expect(res.text).toContain("Terms of Service");
-    // Unpublished ones are marked, not linked to draft content.
-    expect(res.text).toContain("being finalized");
+    // All eight are published — none is a "being finalized" placeholder.
+    expect(res.text).not.toContain("being finalized");
   });
 
-  it("serves a published document with metadata", async () => {
-    const res = await request(app).get("/legal/cookies");
-    expect(res.status).toBe(200);
-    expect(res.headers["content-type"]).toContain("html");
-    expect(res.text).toContain("Cookie Policy");
-    expect(res.text).toContain("Version 1");
-    expect(res.text).toContain("strictly-necessary");
+  it("serves each published document with metadata and no internal markers", async () => {
+    for (const [slug, needle] of [
+      ["cookies", "strictly-necessary"],
+      ["terms", "Faith Harbor LLC"],
+      ["privacy", "Selling and sharing"],
+      ["subscriptions", "generally non-refundable"],
+      ["subprocessors", "Cloud South"],
+    ] as const) {
+      const res = await request(app).get(`/legal/${slug}`);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("html");
+      expect(res.text).toContain("Version 1");
+      expect(res.text).toContain(needle);
+      // No internal markers may ever appear on a public page.
+      for (const marker of [
+        "INTERNAL",
+        "LEGAL REVIEW REQUIRED",
+        "OWNER DECISION REQUIRED",
+        "being finalized",
+      ]) {
+        expect(res.text).not.toContain(marker);
+      }
+    }
   });
 
-  it("never exposes a draft body on a public route", async () => {
-    const res = await request(app).get("/legal/terms");
+  it("shows an honest placeholder for a kind that is NOT published", async () => {
+    // A separate app whose Terms was drafted but never published.
+    const legal = new PlatformLegalService();
+    await legal.createDraft({
+      kind: "terms",
+      title: "Terms of Service",
+      summary: "s",
+      bodyMarkdown: "## Terms\n\nUnpublished body.",
+    });
+    const draftApp = await buildApp(legal);
+    const res = await request(draftApp).get("/legal/terms");
     expect(res.status).toBe(200);
     expect(res.text).toContain("being finalized");
-    // The draft body carries owner-only notes that must never render publicly.
-    expect(res.text).not.toContain("OWNER DECISION REQUIRED");
+    expect(res.text).not.toContain("Unpublished body");
   });
 
   it("falls through to 404 for an unknown legal slug", async () => {

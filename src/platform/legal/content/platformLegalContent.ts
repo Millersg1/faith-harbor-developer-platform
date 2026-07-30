@@ -1,22 +1,27 @@
 import type { LegalSeed } from "../PlatformLegalService";
 
 /**
- * Seed content for All Elite Cloud's platform legal documents.
+ * Seed content for All Elite Cloud's platform legal documents (Version 1.0).
  *
- * Published documents here are written ONLY from behavior verified in the
- * codebase. Documents that also depend on owner/attorney decisions (Terms,
- * Privacy, Subscriptions, Subprocessors) are completed with the owner's
- * confirmed decisions but seeded as DRAFT; each opens with a single INTERNAL
- * block listing the attorney-review and verification items, which must be
- * DELETED before publishing. Drafts are never served on the public routes, so
- * these internal notes are never shown publicly.
+ * This is the owner-reviewed Version 1.0 release. Every document is clean,
+ * complete, public text — no internal review blocks, no "draft"/"interim"
+ * markers, no owner-decision notes (a server-side publication guard also
+ * refuses any body containing such markers). All eight seed with publish:true
+ * and are served at /legal/*.
+ *
+ * Owner-reviewed, NOT attorney-approved. Attorney review remains scheduled;
+ * when received, material changes create a NEW immutable version (Version 1.0
+ * is never overwritten) and trigger re-consent where appropriate.
  *
  * Verified facts baked in: operator Faith Harbor LLC, an Ohio LLC (Ohio SoS
  * Articles of Organization, effective 2024-10-09); product All Elite Cloud;
- * Ohio governing law, no arbitration/class waiver; 18+ business users; contact
- * legal@allelitecloud.com (owner-confirmed as receiving mail). Retention text
- * states only what is enforced; subprocessor hosting vendor is described
- * generically pending name/location verification.
+ * Ohio governing law, no mandatory arbitration, no class-action waiver, no
+ * customer indemnification in v1.0, 12-month aggregate liability cap; 18+
+ * business users; generally non-refundable; cancellation at period end (Stripe
+ * portal mode at_period_end verified); contact legal@allelitecloud.com
+ * (owner-confirmed as receiving mail); infrastructure provider Cloud South
+ * (West Palm Beach, FL). Retention/backup text states only conservative,
+ * enforced, or genuinely operational behavior.
  */
 
 const CONTACT = "legal@allelitecloud.com";
@@ -140,17 +145,14 @@ Customers are responsible for the accessibility of the websites they generate an
 If you encounter an accessibility barrier, or need information in a different format, contact [${CONTACT}](mailto:${CONTACT}) and describe the problem and the page. We will do our best to help and to prioritize fixes.`;
 
 // ---------------------------------------------------------------------------
-// DRAFT — completed with owner decisions and verifications (2026-07-30),
-// pending attorney review. Each draft body opens with a single INTERNAL block
-// listing the remaining attorney-review and verification items; that block
-// must be DELETED before publishing, and a server-side guard refuses to publish
-// any body still containing it. Drafts are never served publicly, so these
-// notes are never shown to the public.
+// OWNER-REVIEWED (Version 1.0) — completed with the owner's confirmed positions
+// and code/record verifications (entity, contact mailbox, Stripe at_period_end,
+// Cloud South). Clean public text only; the server-side publication guard
+// refuses any body containing internal markers. Owner-reviewed, not attorney-
+// approved; attorney review creates a new version when received.
 // ---------------------------------------------------------------------------
 
-const TERMS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the governing-law/venue, warranty-disclaimer, limitation-of-liability, and dispute provisions below. No customer-indemnification clause is included; adding one is a separate attorney-review decision. (Faith Harbor LLC's Ohio LLC registration is verified — Ohio Secretary of State Articles of Organization, effective 2024-10-09. The legal@allelitecloud.com mailbox is owner-confirmed as receiving mail.)
-
-## About these terms
+const TERMS = `## About these terms
 
 These Terms of Service ("Terms") are an agreement between you and Faith Harbor LLC ("Faith Harbor," "we," "us," "our"), the company that operates the All Elite Cloud platform ("All Elite Cloud," the "Service") at [https://allelitecloud.com](https://allelitecloud.com). All Elite Cloud is a software product operated by Faith Harbor LLC, an Ohio limited liability company. By creating an account or using the Service, you agree to these Terms.
 
@@ -218,9 +220,7 @@ We may update these Terms. Material changes will be posted here with a new effec
 
 Questions: [${CONTACT}](mailto:${CONTACT}).`;
 
-const PRIVACY = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the controller/processor characterization, the rights framework, and the "do not sell / do not share" statements, and for the children's-data section (tenants such as ministries, coaching organizations, and publishers may lawfully process information about minors). The retention section below states ONLY what is enforced or genuinely operational — do not add specific automated periods that are not enforced. VERIFY the actual backup schedule and access controls with the hosting provider before relying on the backup wording. (Entity and legal@allelitecloud.com mailbox are verified.)
-
-## Introduction
+const PRIVACY = `## Introduction
 
 Faith Harbor LLC ("Faith Harbor," "we," "us," "our") operates the All Elite Cloud platform. This Privacy Policy explains what information we collect, why, who we share it with, and the choices you have.
 
@@ -258,7 +258,7 @@ We keep information only as long as needed for the purposes above:
 - **Password-reset and verification tokens:** expire on a short timer and are never usable after expiry.
 - **Sessions:** expire and are removed according to the session lifecycle.
 - **Other account and operational data** (including your workspace content, security and audit logs, support records, billing records, and legal-acceptance evidence) is retained while your account is active and for as long as reasonably necessary for the purposes described above and to meet our legal, tax, accounting, security, and fraud-prevention obligations. You may request deletion of your personal information at any time (see "Your choices and rights"); we will honor the request except where we are required or permitted by law to retain specific records.
-- **Backups:** deleted information may remain in access-restricted backups until those backups expire under our normal backup schedule. Backup data is used only for security, continuity, and disaster recovery, and is not restored into ordinary use except for disaster recovery.
+- **Backups:** deleted information may remain temporarily in operational backups maintained for security, continuity, and disaster recovery. Backup copies are not returned to ordinary production use except when reasonably necessary for recovery, and they are removed or overwritten through the normal backup lifecycle.
 
 ## AI features
 
@@ -280,9 +280,7 @@ We may update this policy and will post changes here with a new effective date.
 
 [${CONTACT}](mailto:${CONTACT}).`;
 
-const SUBSCRIPTIONS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** LEGAL REVIEW REQUIRED for the refund, cancellation, automatic-renewal, and failed-payment provisions. VERIFY the Stripe Billing Portal cancellation setting: the live account currently has no custom Billing Portal configuration, so generated sessions use Stripe's default. Configure the portal (Stripe Dashboard) to cancel at the end of the billing period so the "access continues to the end of the paid period" statement is guaranteed; the wording below is already written to remain accurate for either an end-of-period or a customer-selected immediate cancellation.
-
-## Plans and billing
+const SUBSCRIPTIONS = `## Plans and billing
 
 Paid plans are billed through **Stripe**. When you choose a paid plan, checkout and card entry happen on Stripe's hosted pages. We store only Stripe identifiers and your plan and status — we never receive or store your full card number.
 
@@ -296,7 +294,7 @@ Subscriptions renew automatically each billing period through Stripe until cance
 
 ## Cancellation
 
-You may cancel through the Stripe Billing Portal in your workspace or another comparably easy online method. Cancellation prevents future renewal. Paid access continues through the end of the current paid billing period, unless the subscription is terminated for cause or Stripe records a different customer-selected effective date.
+You may cancel through the Stripe Billing Portal in your workspace. Cancellation prevents future renewal. Your paid plan access continues through the end of the current paid billing period, unless the subscription is terminated for cause.
 
 ## Refunds
 
@@ -314,9 +312,7 @@ We do not offer a free trial, refund window, money-back guarantee, or guaranteed
 
 Billing questions: [${CONTACT}](mailto:${CONTACT}).`;
 
-const SUBPROCESSORS = `> **INTERNAL — DELETE THIS BLOCK BEFORE PUBLISHING.** VERIFY the hosting/infrastructure provider's correct business identity and processing locations before naming it publicly — it is not derivable from the codebase, so it is described generically below until confirmed. Verified in code: PostgreSQL, file storage, and outbound SMTP email all run on the same hosting infrastructure (not a separate email vendor). Add the provider's name, processing location, and official privacy/data-processing link once verified, and update "Last reviewed" on each change.
-
-## About this list
+const SUBPROCESSORS = `## About this list
 
 To operate All Elite Cloud, Faith Harbor LLC uses a small number of third-party service providers ("subprocessors") that may process customer or account data on our behalf. This page lists the providers our software actually integrates with.
 
@@ -327,9 +323,11 @@ Last reviewed: see the effective date above.
 - **Stripe** — Purpose: payment processing, subscription billing, and the billing portal. Data: billing and payment information you enter on Stripe's hosted pages, plus billing identifiers and status. Reference: [https://stripe.com/privacy](https://stripe.com/privacy).
 - **OpenAI** — Purpose: AI processing for AI-assisted features, when those features are used and OpenAI is the selected provider. Data: the task content you submit to those features. Reference: [https://openai.com/policies/privacy-policy](https://openai.com/policies/privacy-policy).
 - **OpenRouter** — Purpose: AI routing and processing for AI-assisted features, when those features are used and OpenRouter is the selected provider. Data: the task content you submit to those features. Reference: [https://openrouter.ai/privacy](https://openrouter.ai/privacy).
-- **Our hosting and infrastructure provider** — Purpose: hosting and infrastructure, the PostgreSQL database that stores platform data, and outbound email delivered through SMTP on that same infrastructure. Data: the platform data needed to operate and email the Service.
+- **[Cloud South](https://www.cloudsouth.com/)** — Purpose: provides the underlying server hosting, cloud infrastructure, network connectivity, and data-center services used by All Elite Hosting to operate All Elite Cloud, including the production application server, the PostgreSQL database, and the outbound SMTP service. Data processed: account information, tenant workspace content, application data, databases, files, logs, and transactional email data stored or processed through the hosted infrastructure. Primary processing location: West Palm Beach, Florida, United States.
 
 Where you configure your own AI provider key, that AI provider is engaged under your own account and terms rather than as our subprocessor.
+
+All Elite Hosting is the customer-facing hosting service operated by Faith Harbor LLC and is not a separate third-party subprocessor.
 
 ## Updates
 
@@ -379,7 +377,7 @@ export function platformLegalSeeds(): LegalSeed[] {
       summary:
         "The agreement that governs your use of All Elite Cloud.",
       bodyMarkdown: TERMS,
-      publish: false,
+      publish: true,
     },
     {
       kind: "privacy",
@@ -387,7 +385,7 @@ export function platformLegalSeeds(): LegalSeed[] {
       summary:
         "What information we collect, why, who we share it with, and your choices.",
       bodyMarkdown: PRIVACY,
-      publish: false,
+      publish: true,
     },
     {
       kind: "subscriptions",
@@ -395,7 +393,7 @@ export function platformLegalSeeds(): LegalSeed[] {
       summary:
         "How paid plans, renewals, cancellation, failed payments, and refunds work.",
       bodyMarkdown: SUBSCRIPTIONS,
-      publish: false,
+      publish: true,
     },
     {
       kind: "subprocessors",
@@ -403,7 +401,7 @@ export function platformLegalSeeds(): LegalSeed[] {
       summary:
         "The third-party providers that may process data on our behalf.",
       bodyMarkdown: SUBPROCESSORS,
-      publish: false,
+      publish: true,
     },
   ];
 }

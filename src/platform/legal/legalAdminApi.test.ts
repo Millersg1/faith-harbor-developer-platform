@@ -98,40 +98,12 @@ describe("admin legal management API", () => {
       .set("Cookie", cookie);
     expect(terms.status).toBe(200);
     expect(terms.body.versions).toHaveLength(1);
-    expect(terms.body.versions[0].status).toBe("draft");
+    // Version 1.0 is seeded already published.
+    expect(terms.body.versions[0].status).toBe("published");
   });
 
-  it("edits a draft, then refuses to edit it once published (immutable)", async () => {
-    const list = await request(app)
-      .get(`${A}/legal/documents/terms`)
-      .set("Cookie", cookie);
-    const draftId = list.body.versions[0].id as string;
-
-    const edit = await request(app)
-      .put(`${A}/legal/documents/${draftId}`)
-      .set("Cookie", cookie)
-      .send({ bodyMarkdown: "## Terms\n\nEdited draft body." });
-    expect(edit.status).toBe(200);
-
-    const pub = await request(app)
-      .post(`${A}/legal/documents/${draftId}/publish`)
-      .set("Cookie", cookie)
-      .send({ effectiveDate: "2026-08-01" });
-    expect(pub.status).toBe(200);
-    expect(pub.body.document.status).toBe("published");
-    expect(pub.body.document.effectiveDate).toBe("2026-08-01");
-
-    // Editing the published version is refused.
-    const badEdit = await request(app)
-      .put(`${A}/legal/documents/${draftId}`)
-      .set("Cookie", cookie)
-      .send({ bodyMarkdown: "tampered" });
-    expect(badEdit.status).toBe(400);
-    expect(badEdit.body.error.code).toBe("LEGAL_ERROR");
-  });
-
-  it("creates a new version and supersedes the prior published one", async () => {
-    // terms now has a published v1 (from the previous test).
+  it("new version supersedes v1, then the published version is immutable", async () => {
+    // Terms is published at v1. Create a new draft version from it.
     const draft = await request(app)
       .post(`${A}/legal/documents/terms/draft`)
       .set("Cookie", cookie)
@@ -139,12 +111,23 @@ describe("admin legal management API", () => {
     expect(draft.status).toBe(201);
     expect(draft.body.document.version).toBe(2);
     expect(draft.body.document.status).toBe("draft");
+    const v2Id = draft.body.document.id as string;
 
-    const pub = await request(app)
-      .post(`${A}/legal/documents/${draft.body.document.id}/publish`)
+    // Edit the draft (allowed).
+    const edit = await request(app)
+      .put(`${A}/legal/documents/${v2Id}`)
       .set("Cookie", cookie)
-      .send({});
+      .send({ bodyMarkdown: "## Terms\n\nRevised body." });
+    expect(edit.status).toBe(200);
+
+    // Publish v2 with a scheduled effective date; it supersedes v1.
+    const pub = await request(app)
+      .post(`${A}/legal/documents/${v2Id}/publish`)
+      .set("Cookie", cookie)
+      .send({ effectiveDate: "2026-09-01" });
     expect(pub.status).toBe(200);
+    expect(pub.body.document.status).toBe("published");
+    expect(pub.body.document.effectiveDate).toBe("2026-09-01");
 
     const versions = await request(app)
       .get(`${A}/legal/documents/terms`)
@@ -157,6 +140,32 @@ describe("admin legal management API", () => {
     );
     expect(v1.status).toBe("superseded");
     expect(v2.status).toBe("published");
+
+    // Editing the now-published v2 is refused (immutable).
+    const badEdit = await request(app)
+      .put(`${A}/legal/documents/${v2Id}`)
+      .set("Cookie", cookie)
+      .send({ bodyMarkdown: "tampered" });
+    expect(badEdit.status).toBe(400);
+    expect(badEdit.body.error.code).toBe("LEGAL_ERROR");
+  });
+
+  it("refuses to publish a draft that reintroduces an internal marker", async () => {
+    const draft = await request(app)
+      .post(`${A}/legal/documents/privacy/draft`)
+      .set("Cookie", cookie)
+      .send({});
+    const id = draft.body.document.id as string;
+    await request(app)
+      .put(`${A}/legal/documents/${id}`)
+      .set("Cookie", cookie)
+      .send({ bodyMarkdown: "## Privacy\n\nLEGAL REVIEW REQUIRED here." });
+    const pub = await request(app)
+      .post(`${A}/legal/documents/${id}/publish`)
+      .set("Cookie", cookie)
+      .send({});
+    expect(pub.status).toBe(400);
+    expect(pub.body.error.code).toBe("LEGAL_ERROR");
   });
 
   it("returns a sanitized preview and a compare payload", async () => {

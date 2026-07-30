@@ -172,7 +172,7 @@ export function legalIndexPage(
   const main = `
     <div class="doc">
       <h1>Legal &amp; Policies</h1>
-      <p class="intro">All Elite Cloud's platform legal documents. Policies still being finalized are marked; they are not yet published.</p>
+      <p class="intro">All Elite Cloud's platform legal documents. Each policy shows its version and effective date; any policy not yet published is marked.</p>
       <ul class="body">${items}</ul>
     </div>`;
   return shell("Legal", main);
