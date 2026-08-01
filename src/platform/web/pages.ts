@@ -1052,6 +1052,22 @@ export function dashboardPage(): string {
         <p class="hint">Sign-ins, password changes, and role changes across your workspace.</p>
         <div class="list" id="auditLog"><div class="empty">Loading…</div></div>
       </div>
+      <div class="panel" id="legalPanel" style="display:none;">
+        <h2>Legal &amp; Compliance</h2>
+        <div class="dns" style="border-style:solid;border-color:var(--accent);">
+          <strong>Templates, not legal advice.</strong> Documents generated here are general, customizable starting points for your own website — not legal advice and not attorney-approved. Review them carefully and consult a qualified attorney when appropriate.
+        </div>
+        <div class="msg" id="legalMsg"></div>
+        <div class="sub" style="margin:16px 0 4px;font-weight:800;">Business questionnaire</div>
+        <p class="hint">Your answers are the only facts used to generate documents — nothing is invented. Leave items blank if they do not apply.</p>
+        <div id="legalQ"><div class="empty">Loading…</div></div>
+        <button class="btn" id="legalSaveQ" style="width:auto;margin-top:12px;display:none;">Save questionnaire</button>
+        <div class="sub" style="margin:22px 0 4px;font-weight:800;">Your website legal documents</div>
+        <p class="hint">Generate, review, and publish each document. Published documents appear on your site (e.g. <code>/privacy</code>). Members can view; owners and admins manage.</p>
+        <div id="legalDocs"><div class="empty">Loading…</div></div>
+        <div id="legalEditor"></div>
+        <div id="legalPreview" style="margin-top:12px;"></div>
+      </div>
       <div class="panel">
         <h2>Account</h2>
         <p class="hint">Change your password.</p>
@@ -2870,6 +2886,98 @@ export function dashboardPage(): string {
   // Billing now comes from the aggregate dashboard summary; refreshing billing
   // means refreshing the dashboard (metrics + billing card).
   async function loadBilling(){ await loadDashboard(); if(document.getElementById('planPicker')){document.getElementById('planPicker').dataset.loaded='';await loadPlans();} }
+
+  // ---- Legal & Compliance workspace (tenant's own website legal documents) ----
+  var LEGAL='/api/platform/legal-workspace';
+  var legalFields=[], legalAnswers={}, legalDocs=[], legalKinds=[];
+  function legalMsg(t,ok){var m=document.getElementById('legalMsg');if(!m)return;m.className='msg'+(ok===true?' ok':ok===false?' err':'');m.textContent=t||'';}
+  function canWriteLegal(){return myRole==='owner'||myRole==='admin';}
+  async function loadLegalWorkspace(){
+    try{
+      var qr=await api(LEGAL+'/questionnaire'); if(!qr.ok)return; var q=await qr.json();
+      legalFields=q.fields||[]; legalAnswers=q.answers||{}; renderLegalQuestionnaire();
+      var dr=await api(LEGAL+'/documents'); if(dr.ok){var d=await dr.json();legalDocs=d.documents||[];legalKinds=d.kinds||[];renderLegalDocs();}
+    }catch(_){/* noop */}
+  }
+  function renderLegalQuestionnaire(){
+    var host=document.getElementById('legalQ'); if(!host)return; clear(host);
+    var write=canWriteLegal(), cats={};
+    legalFields.forEach(function(f){(cats[f.category]=cats[f.category]||[]).push(f);});
+    Object.keys(cats).forEach(function(cat){
+      var h=document.createElement('div');h.className='sub';h.style.cssText='margin:12px 0 6px;font-weight:700;color:var(--muted);';h.textContent=cat;host.appendChild(h);
+      cats[cat].forEach(function(f){
+        var lab=document.createElement('label');lab.setAttribute('for','lq_'+f.key);lab.textContent=f.label;host.appendChild(lab);
+        var input=f.multiline?document.createElement('textarea'):document.createElement('input');
+        input.id='lq_'+f.key;input.value=legalAnswers[f.key]||'';input.disabled=!write;input.title=f.help;
+        if(f.multiline)input.style.minHeight='68px';
+        host.appendChild(input);
+      });
+    });
+    var save=document.getElementById('legalSaveQ'); if(save){save.style.display=write?'':'none';save.onclick=saveLegalQuestionnaire;}
+  }
+  async function saveLegalQuestionnaire(){
+    var answers={};legalFields.forEach(function(f){var v=document.getElementById('lq_'+f.key);if(v&&v.value.trim())answers[f.key]=v.value.trim();});
+    legalMsg('Saving…');
+    var r=await api(LEGAL+'/questionnaire',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({answers:answers})});
+    if(r.ok){var d=await r.json();legalAnswers=d.answers||{};legalMsg('Questionnaire saved.',true);}
+    else{var x=await r.json().catch(function(){return{};});legalMsg((x.error&&x.error.message)||'Could not save.',false);}
+  }
+  function renderLegalDocs(){
+    var host=document.getElementById('legalDocs'); if(!host)return; clear(host);
+    var write=canWriteLegal(), byKind={};
+    legalDocs.forEach(function(d){(byKind[d.kind]=byKind[d.kind]||[]).push(d);});
+    legalKinds.forEach(function(k){
+      var versions=(byKind[k.kind]||[]).slice().sort(function(a,b){return b.version-a.version;});
+      var pub=versions.filter(function(v){return v.status==='published';})[0];
+      var row=document.createElement('div');row.style.cssText='padding:12px 0;border-bottom:1px solid var(--border);';
+      var head=document.createElement('div');head.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;';
+      var title=document.createElement('div');title.style.fontWeight='700';title.textContent=k.title+'  /'+k.slug;
+      var status=document.createElement('span');status.className='td-sub';status.textContent=pub?('Published v'+pub.version):(versions.length?'Draft':'Not created');
+      head.appendChild(title);head.appendChild(status);row.appendChild(head);
+      if(write){
+        var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;';
+        var gen=document.createElement('button');gen.className='btn ghost';gen.style.width='auto';gen.textContent=versions.length?'Regenerate draft':'Generate draft';
+        gen.onclick=function(){legalGenerate(k.kind);};actions.appendChild(gen);
+        if(pub){var nv=document.createElement('button');nv.className='btn ghost';nv.style.width='auto';nv.textContent='New version';nv.onclick=function(){legalNewVersion(k.kind);};actions.appendChild(nv);}
+        row.appendChild(actions);
+      }
+      versions.forEach(function(v){
+        var vr=document.createElement('div');vr.style.cssText='display:flex;align-items:center;gap:8px;justify-content:space-between;margin-top:6px;font-size:.85rem;';
+        var left=document.createElement('span');left.textContent='v'+v.version+' · '+v.status+(v.humanReviewed?' · reviewed':'')+(v.effectiveDate?' · eff '+v.effectiveDate:'');
+        var open=document.createElement('button');open.className='btn ghost';open.style.width='auto';open.textContent='Open';open.onclick=function(){legalOpen(v.id);};
+        vr.appendChild(left);vr.appendChild(open);row.appendChild(vr);
+      });
+      host.appendChild(row);
+    });
+    if(!legalKinds.length){host.innerHTML='<div class="empty">No document types.</div>';}
+  }
+  async function legalGenerate(kind){legalMsg('Generating…');var r=await api(LEGAL+'/documents/'+encodeURIComponent(kind)+'/generate',{method:'POST'});var x=await r.json().catch(function(){return{};});if(r.ok){legalMsg(x.missingFacts&&x.missingFacts.length?('Draft created — '+x.missingFacts.length+' material field(s) still needed before publishing.'):'Draft created — review, then publish.',true);await loadLegalWorkspace();legalOpen(x.document.id);}else legalMsg((x.error&&x.error.message)||'Generate failed.',false);}
+  async function legalNewVersion(kind){var r=await api(LEGAL+'/documents/'+encodeURIComponent(kind)+'/new-version',{method:'POST'});var x=await r.json().catch(function(){return{};});if(r.ok){await loadLegalWorkspace();legalOpen(x.document.id);}else legalMsg((x.error&&x.error.message)||'Failed.',false);}
+  async function legalOpen(id){var r=await api(LEGAL+'/documents/'+encodeURIComponent(id)+'/preview');if(!r.ok){legalMsg('Could not open.',false);return;}var d=await r.json();renderLegalEditor(d.document);var pv=document.getElementById('legalPreview');if(pv)pv.innerHTML='<div class="sub" style="font-weight:700;margin-bottom:6px;">Preview</div>'+d.html;}
+  function renderLegalEditor(doc){
+    var box=document.getElementById('legalEditor');if(!box)return;clear(box);
+    var write=canWriteLegal(), editable=write&&doc.status==='draft';
+    var wrap=document.createElement('div');wrap.style.cssText='margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:12px;';
+    var meta=document.createElement('div');meta.className='td-sub';meta.textContent=doc.title+' · v'+doc.version+' · '+doc.status+(editable?' (editable)':' (read-only)');wrap.appendChild(meta);
+    var title=document.createElement('input');title.value=doc.title;title.disabled=!editable;title.style.marginTop='8px';
+    var body=document.createElement('textarea');body.value=doc.bodyMarkdown;body.disabled=!editable;body.style.cssText='min-height:220px;font-family:ui-monospace,Menlo,monospace;font-size:.82rem;margin-top:8px;';
+    wrap.appendChild(title);wrap.appendChild(body);
+    if(write){
+      var actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;';
+      function btn(txt,cls,fn){var b=document.createElement('button');b.className='btn '+(cls||'ghost');b.style.width='auto';b.textContent=txt;b.onclick=fn;return b;}
+      if(editable){
+        actions.appendChild(btn('Save draft','ghost',function(){legalDocAction('/documents/'+doc.id,{method:'PUT',body:{title:title.value,bodyMarkdown:body.value}},'Saved.');}));
+        actions.appendChild(btn(doc.humanReviewed?'Reviewed ✓':'Mark reviewed','ghost',function(){legalDocAction('/documents/'+doc.id+'/review',{method:'POST'},'Marked reviewed.');}));
+        var eff=document.createElement('input');eff.type='date';eff.style.width='auto';actions.appendChild(eff);
+        actions.appendChild(btn('Publish','',function(){if(!confirm('Publish '+doc.title+' v'+doc.version+' to your public site?'))return;legalDocAction('/documents/'+doc.id+'/publish',{method:'POST',body:eff.value?{effectiveDate:eff.value}:{}},'Published.');}));
+      }
+      if(doc.status==='published'){actions.appendChild(btn('Unpublish','',function(){legalDocAction('/documents/'+doc.id+'/unpublish',{method:'POST'},'Unpublished.');}));}
+      if(doc.status!=='draft'){actions.appendChild(btn('Restore as new draft','ghost',function(){legalDocAction('/documents/'+doc.id+'/restore',{method:'POST'},'Restored as draft.');}));}
+      wrap.appendChild(actions);
+    }
+    box.appendChild(wrap);
+  }
+  async function legalDocAction(path,opts,okText){opts=opts||{};legalMsg('Working…');var r=await api(LEGAL+path,{method:opts.method||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(opts.body||{})});var x=await r.json().catch(function(){return{};});if(r.ok){legalMsg(okText||'Done.',true);await loadLegalWorkspace();if(x.document)legalOpen(x.document.id);}else legalMsg((x.error&&x.error.message)||'Action failed.',false);}
   // The dashboard is organized into a few sections shown one at a time, so the
   // owner lands on a clean page instead of every panel at once. A panel's
   // section is decided by its id, else by its heading text.
@@ -2881,6 +2989,7 @@ export function dashboardPage(): string {
     ['marketing','Marketing'],
     ['ai','AI'],
     ['catalog','Catalog'],
+    ['legal','Legal & Compliance'],
     ['settings','Settings']
   ];
   var SEC_BY_ID={
@@ -2889,6 +2998,7 @@ export function dashboardPage(): string {
     calendarPanel:'work',filesPanel:'work',
     formsPanel:'marketing',dripPanel:'marketing',emailPanel:'marketing',workflowsPanel:'marketing',
     aiConsolePanel:'ai',aiToolsPanel:'ai',aiEmployeesPanel:'ai',knowledgePanel:'ai',aiPanel:'ai',
+    legalPanel:'legal',
     teamPanel:'settings',portalPanel:'settings',auditPanel:'settings'
   };
   var SEC_BY_LABEL={
@@ -3097,6 +3207,10 @@ export function dashboardPage(): string {
     if(u.role==='owner'){
       document.getElementById('aisub-usage').style.display='';
     }
+    // Legal & Compliance is visible to all authenticated users; owners/admins
+    // manage, members view. Write controls are gated by role inside the panel.
+    document.getElementById('legalPanel').style.display='';
+    loadLegalWorkspace();
     // Website + AI sub-sections load lazily when their tab is first opened
     // (see loadWebSub / loadAiSub) — so the AI section isn't fetched up front.
     await loadDashboard(); await loadBranding(); await loadClients(); await loadProjects(); await loadInvoices(); await loadTickets(); await loadLeads(); await loadProposals(); await loadCampaigns(); await loadReviews(); await loadProducts(); await loadBooks(); await loadPrograms();

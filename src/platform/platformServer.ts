@@ -103,6 +103,9 @@ import { LegalAcceptanceService } from "./legal/LegalAcceptanceService";
 import { LegalAcceptanceRepository } from "./legal/LegalAcceptanceRepository";
 import { RetentionService } from "./legal/RetentionService";
 import { platformLegalSeeds } from "./legal/content/platformLegalContent";
+import { TenantLegalService } from "./tenantlegal/TenantLegalService";
+import { TenantLegalDocumentRepository } from "./tenantlegal/TenantLegalDocumentRepository";
+import { TenantQuestionnaireRepository } from "./tenantlegal/TenantQuestionnaireRepository";
 import { WorkflowService } from "./workflows/WorkflowService";
 import { WorkflowRepository } from "./workflows/WorkflowRepository";
 import { AiToolRegistry } from "./ai/tools/AiToolRegistry";
@@ -513,6 +516,12 @@ async function start(): Promise<void> {
     legal,
   );
 
+  // Tenant Legal & Compliance workspace (each org's own website legal docs).
+  const tenantLegal = new TenantLegalService(
+    new TenantLegalDocumentRepository(db),
+    new TenantQuestionnaireRepository(db),
+  );
+
   // Data-retention purge: hard-delete files soft-deleted longer than the
   // retention window (default 30 days), removing bytes + row, per-org,
   // legal-hold-aware, and audited. Backs the Privacy Policy's retention claim.
@@ -847,6 +856,7 @@ async function start(): Promise<void> {
       workspacePreferences,
     legal,
     legalAcceptance,
+    tenantLegal,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

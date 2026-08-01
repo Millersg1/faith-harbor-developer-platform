@@ -73,6 +73,13 @@ import {
   legalIndexPage,
   legalNotPublishedPage,
 } from "./legal/legalPages";
+import type { TenantLegalService } from "./tenantlegal/TenantLegalService";
+import { createTenantLegalRouter } from "./tenantlegal/tenantLegalRouter";
+import { tenantLegalPage } from "./tenantlegal/tenantLegalPages";
+import {
+  kindForSlug,
+  tenantLegalKindsInOrder,
+} from "./tenantlegal/TenantLegalDocument";
 import { createCsrfGuard } from "./security/CsrfGuard";
 import type { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
 import type { PlatformHealthService } from "./health/PlatformHealthService";
@@ -135,6 +142,7 @@ export interface PlatformAppDependencies {
   preferences?: WorkspacePreferencesService;
   legal?: PlatformLegalService;
   legalAcceptance?: LegalAcceptanceService;
+  tenantLegal?: TenantLegalService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
   platformAnalytics?: PlatformAnalyticsService;
@@ -467,6 +475,76 @@ export function createPlatformApp(
       });
   });
 
+  // Public TENANT legal pages — a tenant's OWN published documents, served on
+  // that tenant's host at stable slugs (/privacy, /terms, /cookies,
+  // /refund-policy, /accessibility, /ai-disclosure, /acceptable-use,
+  // /subprocessors). Resolves the tenant from the host (verified custom domain
+  // or subdomain slug); only PUBLISHED documents render, never a draft, never
+  // cross-tenant. On the apex host or an unknown/not-published kind it falls
+  // through to the 404 handler.
+  if (deps.tenantLegal) {
+    const tenantLegal = deps.tenantLegal;
+    for (const meta of tenantLegalKindsInOrder()) {
+      app.get(`/${meta.slug}`, (req, res, next) => {
+        const kind = kindForSlug(meta.slug);
+        if (!kind) {
+          next();
+          return;
+        }
+        resolveTenantByHost(req.headers.host, deps)
+          .then((resolved) => {
+            if (!resolved) {
+              next();
+              return;
+            }
+            return runWithTenant(
+              { organizationId: resolved.organizationId },
+              async () => {
+                const doc =
+                  await tenantLegal.getPublished(kind);
+                if (!doc) {
+                  return null;
+                }
+                const q =
+                  await tenantLegal.getQuestionnaire();
+                const brand = deps.branding
+                  ? await deps.branding
+                      .get()
+                      .catch(() => undefined)
+                  : undefined;
+                const businessName =
+                  q.answers.publicName ||
+                  q.answers.legalName ||
+                  resolved.orgName ||
+                  "";
+                return { doc, businessName, brand };
+              },
+            ).then((result) => {
+              if (!result) {
+                next();
+                return;
+              }
+              res.setHeader(
+                "X-Content-Type-Options",
+                "nosniff",
+              );
+              res.type("html").send(
+                tenantLegalPage(
+                  {
+                    businessName: result.businessName,
+                    primaryColor:
+                      result.brand?.primaryColor,
+                  },
+                  result.doc,
+                ),
+              );
+            });
+          })
+          .catch(() => next());
+      });
+    }
+  }
+
   // Public form share page + submit endpoint (NO auth — resolves the tenant
   // from the form's globally-unique slug).
   if (deps.forms) {
@@ -695,6 +773,21 @@ export function createPlatformApp(
     }),
   );
 
+  // Tenant Legal & Compliance workspace API (authenticated; reads open to
+  // members, writes owner/admin). Mounted before the general tenant API so its
+  // /legal-workspace/* paths match; other paths fall through.
+  if (deps.tenantLegal) {
+    app.use(
+      "/api/platform",
+      csrfGuard,
+      createTenantLegalRouter({
+        legal: deps.tenantLegal,
+        requireUser,
+        audit: deps.audit,
+      }),
+    );
+  }
+
   // Authenticated tenant-scoped API (falls through here after the
   // branding routes above have had their chance).
   app.use(
@@ -779,6 +872,62 @@ export function createPlatformApp(
  * website, returns that site's HTML — otherwise null. This is how a
  * published AI site serves live on its own domain.
  */
+/**
+ * Resolves the tenant that owns a public host: a verified custom domain first,
+ * then a subdomain label under the platform base domain. Returns the
+ * organization id + display name, or null on the apex/unknown host. Used to
+ * serve a tenant's own published legal pages without ever crossing tenants.
+ */
+async function resolveTenantByHost(
+  host: string | undefined,
+  deps: PlatformAppDependencies,
+): Promise<{ organizationId: string; orgName: string } | null> {
+  if (!host) {
+    return null;
+  }
+  const domain = normalizeDomain(host);
+  if (!domain) {
+    return null;
+  }
+  // 1) Verified custom domain.
+  if (deps.domains) {
+    const orgId = await deps.domains
+      .resolve(host)
+      .catch(() => undefined);
+    if (orgId) {
+      const org = await deps.organizations
+        .get(orgId)
+        .catch(() => undefined);
+      return {
+        organizationId: orgId,
+        orgName: org?.name ?? "",
+      };
+    }
+  }
+  // 2) Subdomain slug under the platform base domain.
+  const base = deps.baseDomain
+    ? deps.baseDomain.toLowerCase()
+    : undefined;
+  if (base && domain !== base && domain.endsWith(`.${base}`)) {
+    const label = domain
+      .slice(0, domain.length - base.length - 1)
+      .split(".")
+      .pop();
+    if (
+      label &&
+      !["www", "app", "staging", "portal"].includes(label)
+    ) {
+      const org = await deps.organizations
+        .getBySlug(label)
+        .catch(() => undefined);
+      if (org && org.status === "active") {
+        return { organizationId: org.id, orgName: org.name };
+      }
+    }
+  }
+  return null;
+}
+
 async function resolvePublishedHtml(
   host: string | undefined,
   deps: PlatformAppDependencies,

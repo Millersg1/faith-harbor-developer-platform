@@ -25,6 +25,22 @@ describe("dashboardPage — site icons", () => {
   });
 });
 
+describe("dashboardPage — Legal & Compliance workspace", () => {
+  it("has a Legal & Compliance section, panel, and template disclaimer", () => {
+    expect(html).toContain("Legal &amp; Compliance");
+    expect(html).toContain('id="legalPanel"');
+    expect(html).toContain('id="legalQ"');
+    expect(html).toContain('id="legalDocs"');
+    // The "templates, not legal advice" notice must be present.
+    expect(html).toMatch(/Templates, not legal advice/i);
+    // Section is registered and mapped.
+    expect(html).toContain("['legal','Legal & Compliance']");
+    expect(html).toContain("legalPanel:'legal'");
+    // Uses the tenant workspace API, not the platform legal admin API.
+    expect(html).toContain("/api/platform/legal-workspace");
+  });
+});
+
 describe("dashboardPage — theme tokens", () => {
   it("defines --card and --line in :root (no undefined-token regression)", () => {
     expect(html).toMatch(/:root[^}]*--card:/);
