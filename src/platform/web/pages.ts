@@ -166,6 +166,12 @@ const STYLES = `
   .qa button:hover { border-color: var(--accent); background: var(--surface-3); }
   .progress { height: 10px; background: var(--surface-3); border: 1px solid var(--border); border-radius: 99px; overflow: hidden; }
   .progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-strong), var(--accent)); border-radius: 99px; transition: width .35s ease; }
+  .legal-progress-wrap { margin: 10px 0 14px; }
+  .legal-progress-wrap .hint { margin: 0 0 6px; }
+  .legal-field-help { margin: 5px 0 0 !important; }
+  .legal-required { color: #fcd34d; font-size: 0.78rem; font-weight: 700; margin-top: 4px; }
+  .legal-required.answered { color: var(--ok); }
+  #legalQ .unanswered { border-color: #fbbf24; }
   .badge { display: inline-block; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 999px; }
   .badge.ok { background: rgba(74,222,128,0.18); color: #9df0b8; }
   .badge.warn { background: rgba(251,191,36,0.18); color: #fcd34d; }
@@ -619,8 +625,8 @@ export function dashboardPage(): string {
       <div id="journeyBody" style="max-height:64vh;overflow:auto;padding:6px 6px 10px;"><div class="empty" style="padding:16px;">Loading…</div></div>
     </div>
   </div>
-  <div class="wrap">
-    <div class="secnav" id="secnav"></div>
+  <main class="wrap" id="mainContent">
+    <nav class="secnav" id="secnav" aria-label="Workspace sections"></nav>
     <div class="panel" id="dashHero" style="margin-bottom:18px;">
       <div class="dash-hero">
         <h1 id="greeting">Welcome</h1>
@@ -1057,9 +1063,15 @@ export function dashboardPage(): string {
         <div class="dns" style="border-style:solid;border-color:var(--accent);">
           <strong>Templates, not legal advice.</strong> Documents generated here are general, customizable starting points for your own website — not legal advice and not attorney-approved. Review them carefully and consult a qualified attorney when appropriate.
         </div>
-        <div class="msg" id="legalMsg"></div>
+        <div class="msg" id="legalMsg" role="status" aria-live="polite"></div>
         <div class="sub" style="margin:16px 0 4px;font-weight:800;">Business questionnaire</div>
         <p class="hint">Your answers are the only facts used to generate documents — nothing is invented. Leave items blank if they do not apply.</p>
+        <div class="legal-progress-wrap">
+          <div class="hint" id="legalProgressText">Questionnaire progress: 0 of 0 answered</div>
+          <div class="progress" id="legalProgress" role="progressbar" aria-label="Questionnaire progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-describedby="legalProgressText">
+            <span id="legalProgressBar" style="width:0;"></span>
+          </div>
+        </div>
         <div id="legalQ"><div class="empty">Loading…</div></div>
         <button class="btn" id="legalSaveQ" style="width:auto;margin-top:12px;display:none;">Save questionnaire</button>
         <div class="sub" style="margin:22px 0 4px;font-weight:800;">Your website legal documents</div>
@@ -1125,7 +1137,7 @@ export function dashboardPage(): string {
       </div>
     </div>
     <div id="dlgHost"></div>
-  </div>`;
+  </main>`;
   const script = `
   ${DASHBOARD_HELPERS_JS}
   var slug='', clientsCache=[], myRole='', DEFAULT_ACCENT='#2dd4bf';
@@ -2890,14 +2902,32 @@ export function dashboardPage(): string {
   // ---- Legal & Compliance workspace (tenant's own website legal documents) ----
   var LEGAL='/api/platform/legal-workspace';
   var legalFields=[], legalAnswers={}, legalDocs=[], legalKinds=[];
+  var LEGAL_REQUIRED={legalName:1,infoCollected:1,infoUse:1,privacyContact:1,jurisdiction:1,services:1,cookiesUsed:1,paymentModel:1,refund:1,cancellation:1,contactEmail:1,aiFeatures:1,providers:1};
   function legalMsg(t,ok){var m=document.getElementById('legalMsg');if(!m)return;m.className='msg'+(ok===true?' ok':ok===false?' err':'');m.textContent=t||'';}
   function canWriteLegal(){return myRole==='owner'||myRole==='admin';}
   async function loadLegalWorkspace(){
     try{
-      var qr=await api(LEGAL+'/questionnaire'); if(!qr.ok)return; var q=await qr.json();
+      var qr=await api(LEGAL+'/questionnaire');
+      if(!qr.ok){legalMsg('Could not load the questionnaire. Try again.',false);var qh=document.getElementById('legalQ');if(qh){clear(qh);qh.appendChild(emptyMsg('Questionnaire unavailable.'));}return;}
+      var q=await qr.json();
       legalFields=q.fields||[]; legalAnswers=q.answers||{}; renderLegalQuestionnaire();
-      var dr=await api(LEGAL+'/documents'); if(dr.ok){var d=await dr.json();legalDocs=d.documents||[];legalKinds=d.kinds||[];renderLegalDocs();}
-    }catch(_){/* noop */}
+      var dr=await api(LEGAL+'/documents');
+      if(dr.ok){var d=await dr.json();legalDocs=d.documents||[];legalKinds=d.kinds||[];renderLegalDocs();}
+      else{legalMsg('Questionnaire loaded, but legal documents could not be loaded. Try again.',false);var dh=document.getElementById('legalDocs');if(dh){clear(dh);dh.appendChild(emptyMsg('Documents unavailable.'));}}
+    }catch(_){legalMsg('Could not load the legal workspace. Check your connection and try again.',false);}
+  }
+  function updateLegalQuestionnaireState(){
+    var answered=0,requiredMissing=0;
+    legalFields.forEach(function(f){
+      var input=document.getElementById('lq_'+f.key);if(!input)return;
+      var has=!!input.value.trim(),required=!!LEGAL_REQUIRED[f.key];if(has)answered++;
+      input.classList.toggle('unanswered',required&&!has);
+      if(required){input.setAttribute('aria-invalid',has?'false':'true');if(!has)requiredMissing++;var state=document.getElementById('lq_state_'+f.key);if(state){state.className='legal-required'+(has?' answered':'');state.textContent=has?'Required — answered':'Required — unanswered';}}
+    });
+    var total=legalFields.length,pct=total?Math.round(answered*100/total):0;
+    var text=document.getElementById('legalProgressText');if(text)text.textContent='Questionnaire progress: '+answered+' of '+total+' answered'+(requiredMissing?' · '+requiredMissing+' required unanswered':' · all required fields answered');
+    var progress=document.getElementById('legalProgress');if(progress)progress.setAttribute('aria-valuenow',String(pct));
+    var bar=document.getElementById('legalProgressBar');if(bar)bar.style.width=pct+'%';
   }
   function renderLegalQuestionnaire(){
     var host=document.getElementById('legalQ'); if(!host)return; clear(host);
@@ -2906,20 +2936,26 @@ export function dashboardPage(): string {
     Object.keys(cats).forEach(function(cat){
       var h=document.createElement('div');h.className='sub';h.style.cssText='margin:12px 0 6px;font-weight:700;color:var(--muted);';h.textContent=cat;host.appendChild(h);
       cats[cat].forEach(function(f){
-        var lab=document.createElement('label');lab.setAttribute('for','lq_'+f.key);lab.textContent=f.label;host.appendChild(lab);
+        var required=!!LEGAL_REQUIRED[f.key],helpId='lq_help_'+f.key,stateId='lq_state_'+f.key;
+        var lab=document.createElement('label');lab.setAttribute('for','lq_'+f.key);lab.textContent=f.label+(required?' *':'');host.appendChild(lab);
         var input=f.multiline?document.createElement('textarea'):document.createElement('input');
-        input.id='lq_'+f.key;input.value=legalAnswers[f.key]||'';input.disabled=!write;input.title=f.help;
+        input.id='lq_'+f.key;input.value=legalAnswers[f.key]||'';input.disabled=!write;input.title=f.help||'';input.setAttribute('aria-describedby',helpId+(required?' '+stateId:''));
+        if(required){input.required=true;input.setAttribute('aria-required','true');}
+        input.addEventListener('input',updateLegalQuestionnaireState);
         if(f.multiline)input.style.minHeight='68px';
         host.appendChild(input);
+        var help=document.createElement('div');help.className='hint legal-field-help';help.id=helpId;help.textContent=f.help||'';host.appendChild(help);
+        if(required){var state=document.createElement('div');state.id=stateId;state.className='legal-required';host.appendChild(state);}
       });
     });
     var save=document.getElementById('legalSaveQ'); if(save){save.style.display=write?'':'none';save.onclick=saveLegalQuestionnaire;}
+    updateLegalQuestionnaireState();
   }
   async function saveLegalQuestionnaire(){
     var answers={};legalFields.forEach(function(f){var v=document.getElementById('lq_'+f.key);if(v&&v.value.trim())answers[f.key]=v.value.trim();});
     legalMsg('Saving…');
     var r=await api(LEGAL+'/questionnaire',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({answers:answers})});
-    if(r.ok){var d=await r.json();legalAnswers=d.answers||{};legalMsg('Questionnaire saved.',true);}
+    if(r.ok){var d=await r.json();legalAnswers=d.answers||{};legalMsg('Questionnaire saved.',true);updateLegalQuestionnaireState();}
     else{var x=await r.json().catch(function(){return{};});legalMsg((x.error&&x.error.message)||'Could not save.',false);}
   }
   function renderLegalDocs(){

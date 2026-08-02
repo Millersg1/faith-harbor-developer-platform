@@ -39,6 +39,17 @@ describe("dashboardPage — Legal & Compliance workspace", () => {
     // Uses the tenant workspace API, not the platform legal admin API.
     expect(html).toContain("/api/platform/legal-workspace");
   });
+
+  it("exposes questionnaire progress, visible help, required states, and load errors", () => {
+    expect(html).toContain('id="legalProgress" role="progressbar"');
+    expect(html).toContain('aria-label="Questionnaire progress"');
+    expect(html).toContain("legal-field-help");
+    expect(html).toContain("aria-describedby");
+    expect(html).toContain("aria-required");
+    expect(html).toContain("Required — unanswered");
+    expect(html).toContain("Could not load the questionnaire. Try again.");
+    expect(html).toContain("Could not load the legal workspace.");
+  });
 });
 
 describe("dashboardPage — theme tokens", () => {
@@ -253,6 +264,14 @@ describe("dashboardPage — accent badge contrast & responsive metrics", () => {
 });
 
 describe("dashboardPage — accessibility & structure", () => {
+  it("uses a main landmark for the dashboard content", () => {
+    expect(html).toContain('<main class="wrap" id="mainContent">');
+    expect(html).toContain(
+      '<nav class="secnav" id="secnav" aria-label="Workspace sections"></nav>',
+    );
+    expect(html).toContain("</main>");
+  });
+
   it("renders the onboarding progress with progressbar semantics", () => {
     expect(html).toContain('role="progressbar"');
     expect(html).toContain('aria-valuemin="0"');
