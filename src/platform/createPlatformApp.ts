@@ -589,29 +589,38 @@ export function createPlatformApp(
       destination: "platform" | "tenant";
       organizationId: string | null;
       brandName: string;
+      linkHost: string;
     }> => {
       const resolved = await resolveTenantByHost(host, deps);
       if (resolved) {
+        // The host RESOLVED to a tenant, so it is a validated canonical host
+        // (a verified custom domain or a <slug>.<baseDomain> subdomain). It is
+        // therefore safe to use for the emailed verification link.
         return {
           destination: "tenant",
           organizationId: resolved.organizationId,
           brandName: resolved.orgName || "This business",
+          linkHost: normalizeDomain(host ?? "") || String(host ?? ""),
         };
       }
+      // Platform (apex or an unknown/spoofed host): NEVER trust the request
+      // Host header for the token-bearing link — use the configured platform
+      // base domain, so a forged Host cannot redirect the verification link
+      // (host-header injection / token exfiltration).
       return {
         destination: "platform",
         organizationId: null,
         brandName: "All Elite Cloud",
+        linkHost:
+          deps.baseDomain ||
+          normalizeDomain(host ?? "") ||
+          String(host ?? ""),
       };
     };
 
-    const linkBase = (req: {
-      headers: Record<string, unknown>;
-      protocol?: string;
-    }): string => {
-      const host = String(req.headers.host ?? "");
+    const linkBase = (ctx: { linkHost: string }): string => {
       const proto = deps.secureCookie ? "https" : "http";
-      return `${proto}://${host}`;
+      return `${proto}://${ctx.linkHost}`;
     };
 
     app.get("/privacy-request", (req, res) => {
@@ -666,7 +675,7 @@ export function createPlatformApp(
                 : await run();
             // Best-effort, honest verification email. The raw token appears
             // ONLY in the email — never in the response or logs.
-            const verifyUrl = `${linkBase(req)}/privacy-request/verify?token=${created.verifyToken}`;
+            const verifyUrl = `${linkBase(ctx)}/privacy-request/verify?token=${created.verifyToken}`;
             if (deps.email) {
               const email = deps.email;
               const send = () =>
@@ -721,7 +730,7 @@ export function createPlatformApp(
       ])
         .then(([ctx, result]) => {
           if ("record" in result) {
-            const statusUrl = `${linkBase(req)}/privacy-request/status?token=${result.statusToken}`;
+            const statusUrl = `${linkBase(ctx)}/privacy-request/status?token=${result.statusToken}`;
             res.type("html").send(
               privacyVerifyResultPage(
                 {

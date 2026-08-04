@@ -20,6 +20,7 @@ import { PlatformSessionService } from "../sessions/PlatformSessionService";
 import { PlatformSignupService } from "../signup/PlatformSignupService";
 import { PlatformUserRepository } from "../users/PlatformUserRepository";
 import { PlatformUserService } from "../users/PlatformUserService";
+import type { PlatformEmailService } from "../email/PlatformEmailService";
 import { PrivacyRequestService } from "./PrivacyRequestService";
 
 const M = "/api/platform/privacy-requests/manage";
@@ -133,6 +134,60 @@ describe("privacy public intake — destination & abuse protection", () => {
       .set("Sec-Fetch-Site", "cross-site")
       .send(form);
     expect(r.status).toBe(403);
+  });
+
+  it("a spoofed Host cannot poison the emailed verification link", async () => {
+    const sent: { to: string; subject: string; body: string }[] = [];
+    const emailStub = {
+      sendQuietly: async (r: {
+        to: string;
+        subject: string;
+        body: string;
+      }) => {
+        sent.push(r);
+      },
+    } as unknown as PlatformEmailService;
+    const organizations = new OrganizationService();
+    const users = new PlatformUserService(new PlatformUserRepository());
+    const sessions = new PlatformSessionService(
+      new PlatformSessionRepository(),
+    );
+    const clients = new PlatformClientService(
+      new PlatformClientRepository(),
+    );
+    const app = createPlatformApp({
+      organizations,
+      users,
+      sessions,
+      branding: new BrandingService(new BrandingRepository()),
+      clients,
+      projects: new PlatformProjectService(
+        new PlatformProjectRepository(),
+        clients,
+      ),
+      invoices: new PlatformInvoiceService(
+        new PlatformInvoiceRepository(),
+        clients,
+      ),
+      signup: new PlatformSignupService(organizations, users, sessions),
+      domains: new OrganizationDomainService(),
+      admins: new PlatformAdminService(),
+      adminSessions: new PlatformAdminSessionService(),
+      privacy: new PrivacyRequestService(),
+      email: emailStub,
+      baseDomain: "allelitecloud.com",
+    });
+    // Attacker submits a platform request with a forged Host header.
+    await request(app)
+      .post("/privacy-requests")
+      .set("Host", "evil.example.com")
+      .send({ ...form, email: "victim@example.com" });
+    expect(sent).toHaveLength(1);
+    // The token-bearing link uses the configured base domain, never evil.com.
+    expect(sent[0].body).toContain(
+      "allelitecloud.com/privacy-request/verify?token=",
+    );
+    expect(sent[0].body).not.toContain("evil.example.com");
   });
 
   it("a forged X-Forwarded-Host cannot select a tenant (app uses Host)", async () => {
