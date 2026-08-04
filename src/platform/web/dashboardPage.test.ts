@@ -52,6 +52,20 @@ describe("dashboardPage — Legal & Compliance workspace", () => {
   });
 });
 
+describe("dashboardPage — Privacy Requests (tenant)", () => {
+  it("has a privacy-requests area, owner/admin-gated, using the tenant API", () => {
+    expect(html).toContain('id="privReqSection"');
+    expect(html).toContain('id="privReqList"');
+    expect(html).toContain("Privacy requests");
+    // Uses the tenant management API and loads only for owner/admin.
+    expect(html).toContain("/api/platform/privacy-requests/manage");
+    expect(html).toContain("function loadPrivacyRequests");
+    expect(html).toMatch(/myRole!=='owner'&&myRole!=='admin'/);
+    // Substantive decisions require an explanation in the UI.
+    expect(html).toMatch(/An explanation is required/i);
+  });
+});
+
 describe("dashboardPage — theme tokens", () => {
   it("defines --card and --line in :root (no undefined-token regression)", () => {
     expect(html).toMatch(/:root[^}]*--card:/);

@@ -419,3 +419,79 @@ describe("privacy management API — roles & isolation", () => {
     expect((await request(app).get(M)).status).toBe(401);
   });
 });
+
+describe("privacy PLATFORM-admin management", () => {
+  const A = "/platform/admin/api";
+  it("admin manages platform requests; requires admin session; tenant hidden", async () => {
+    const organizations = new OrganizationService();
+    const users = new PlatformUserService(new PlatformUserRepository());
+    const sessions = new PlatformSessionService(
+      new PlatformSessionRepository(),
+    );
+    const clients = new PlatformClientService(
+      new PlatformClientRepository(),
+    );
+    const admins = new PlatformAdminService();
+    await admins.create({
+      email: "root@allelitecloud.com",
+      password: "password123",
+    });
+    const privacy = new PrivacyRequestService();
+    const app = createPlatformApp({
+      organizations,
+      users,
+      sessions,
+      branding: new BrandingService(new BrandingRepository()),
+      clients,
+      projects: new PlatformProjectService(
+        new PlatformProjectRepository(),
+        clients,
+      ),
+      invoices: new PlatformInvoiceService(
+        new PlatformInvoiceRepository(),
+        clients,
+      ),
+      signup: new PlatformSignupService(organizations, users, sessions),
+      domains: new OrganizationDomainService(),
+      admins,
+      adminSessions: new PlatformAdminSessionService(),
+      privacy,
+      baseDomain: "allelitecloud.com",
+    });
+    // A VERIFIED platform request (via service to obtain the token) + a tenant
+    // request (subdomain).
+    const owner = await request(app)
+      .post("/auth/signup")
+      .send({ organizationName: "Acme", email: "o@acme.com", password: "password123" });
+    const { verifyToken } = await privacy.create({
+      destination: "platform",
+      organizationId: null,
+      ...form,
+      email: "p@example.com",
+    });
+    await request(app).get(`/privacy-request/verify?token=${verifyToken}`); // -> received
+    await request(app).post("/privacy-requests").set("Host", `${owner.body.organization.slug}.allelitecloud.com`).send({ ...form, email: "t@example.com" });
+
+    // Requires an admin session.
+    expect((await request(app).get(`${A}/privacy-requests`)).status).toBe(401);
+    const login = await request(app)
+      .post(`${A}/login`)
+      .send({ email: "root@allelitecloud.com", password: "password123" });
+    const cookie = login.headers["set-cookie"] as unknown as string[];
+
+    // Admin sees ONLY the platform request (tenant request excluded).
+    const list = await request(app).get(`${A}/privacy-requests`).set("Cookie", cookie);
+    expect(list.status).toBe(200);
+    expect(list.body.requests).toHaveLength(1);
+    expect(list.body.requests[0].organizationId).toBeNull();
+
+    // Admin can transition it.
+    const id = list.body.requests[0].id as string;
+    const t = await request(app)
+      .post(`${A}/privacy-requests/${id}/transition`)
+      .set("Cookie", cookie)
+      .send({ to: "in_review" });
+    expect(t.status).toBe(200);
+    expect(t.body.request.status).toBe("in_review");
+  });
+});

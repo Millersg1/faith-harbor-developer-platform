@@ -6,6 +6,7 @@ import {
 } from "express";
 
 import type { AuditService } from "../audit/AuditService";
+import type { PlatformEmailService } from "../email/PlatformEmailService";
 import { requireRole } from "../auth/requireRole";
 import type { AuthedRequest } from "../auth/requireUser";
 import { isPrivacyStatus } from "./PrivacyRequest";
@@ -21,7 +22,16 @@ export interface PrivacyManagementDeps {
   privacy: PrivacyRequestService;
   requireUser: RequestHandler;
   audit?: AuditService;
+  email?: PlatformEmailService;
 }
+
+/** Lifecycle statuses that notify the requester (no sensitive body). */
+const NOTIFY_STATUSES = new Set([
+  "awaiting_requester",
+  "fulfilled",
+  "partially_fulfilled",
+  "denied",
+]);
 
 function tenantScope(req: Request): Scope {
   const auth = (req as AuthedRequest).auth;
@@ -150,6 +160,18 @@ export function createPrivacyManagementRouter(
             category: rec.category,
             newStatus: rec.status,
           });
+          if (deps.email && NOTIFY_STATUSES.has(rec.status)) {
+            void deps.email.sendQuietly({
+              to: rec.email,
+              subject: `Update on your privacy request (ref ${rec.id
+                .slice(0, 8)
+                .toUpperCase()})`,
+              body: `There is an update on your privacy request. Its status is now: ${rec.status.replace(
+                /_/g,
+                " ",
+              )}. If you saved your private status link, you can view the latest there.`,
+            });
+          }
           res.json({ request: rec });
         })
         .catch((e) => fail(res, e));

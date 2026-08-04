@@ -991,6 +991,7 @@ export function createPlatformApp(
         deps.platformAnalytics,
       health: deps.platformHealth,
       legal: deps.legal,
+      privacy: deps.privacy,
       secureCookie:
         deps.secureCookie,
       docsDir: deps.docsDir,
@@ -1056,6 +1057,7 @@ export function createPlatformApp(
         privacy: deps.privacy,
         requireUser,
         audit: deps.audit,
+        email: deps.email,
       }),
     );
   }

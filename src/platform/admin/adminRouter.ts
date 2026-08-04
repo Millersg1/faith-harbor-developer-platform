@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 
 import {
   Router,
+  type Request,
   type RequestHandler,
   type Response,
 } from "express";
@@ -16,6 +17,13 @@ import type { PlatformHealthService } from "../health/PlatformHealthService";
 import type { PlatformLegalService } from "../legal/PlatformLegalService";
 import { isLegalKind } from "../legal/PlatformLegalDocument";
 import { renderLegalMarkdown } from "../legal/legalMarkdown";
+import { isPrivacyStatus } from "../privacy/PrivacyRequest";
+import {
+  PrivacyNotFoundError,
+  PrivacyStateError,
+  PrivacyValidationError,
+} from "../privacy/PrivacyRequestService";
+import type { PrivacyRequestService } from "../privacy/PrivacyRequestService";
 import { toPublicAdmin } from "./PlatformAdmin";
 import {
   AdminPasswordError,
@@ -36,6 +44,7 @@ export interface AdminRouterDependencies {
   analytics?: PlatformAnalyticsService;
   health?: PlatformHealthService;
   legal?: PlatformLegalService;
+  privacy?: PrivacyRequestService;
   secureCookie?: boolean;
 
   /**
@@ -669,6 +678,136 @@ export function createAdminRouter(
           .archive(String(req.params.id))
           .then((doc) => res.json({ document: doc }))
           .catch((err) => fail(res, err));
+      },
+    );
+  }
+
+  // Platform privacy requests (about All Elite Cloud itself). Only authorized
+  // platform admins; scope is always {kind:'platform'} — tenant requests are
+  // never reachable here. Audited via structured logs (ids/enums only).
+  if (deps.privacy) {
+    const privacy = deps.privacy;
+    const scope = { kind: "platform" as const };
+    const pfail = (res: Response, err: unknown): void => {
+      if (err instanceof PrivacyNotFoundError) {
+        res.status(404).json({
+          error: { code: "NOT_FOUND", message: err.message },
+        });
+        return;
+      }
+      if (
+        err instanceof PrivacyStateError ||
+        err instanceof PrivacyValidationError
+      ) {
+        res.status(400).json({
+          error: { code: "PRIVACY_ERROR", message: err.message },
+        });
+        return;
+      }
+      res.status(400).json({
+        error: {
+          code: "PRIVACY_ERROR",
+          message:
+            err instanceof Error ? err.message : "Request failed.",
+        },
+      });
+    };
+    const plog = (
+      req: Request,
+      action: string,
+      meta: Record<string, unknown>,
+    ) => {
+      const adminId = (req as AdminedRequest).admin?.id ?? "?";
+      console.log(
+        `[privacy-audit] ${action} ${Object.entries(meta)
+          .map(([k, v]) => `${k}=${String(v)}`)
+          .join(" ")} admin=${adminId}`,
+      );
+    };
+
+    router.get(
+      "/privacy-requests",
+      deps.requireAdmin,
+      (req, res) => {
+        const status =
+          typeof req.query.status === "string" &&
+          isPrivacyStatus(req.query.status)
+            ? req.query.status
+            : undefined;
+        privacy
+          .list(scope, { status })
+          .then((requests) => res.json({ requests }))
+          .catch((e) => pfail(res, e));
+      },
+    );
+    router.get(
+      "/privacy-requests/:id",
+      deps.requireAdmin,
+      (req, res) => {
+        privacy
+          .get(scope, String(req.params.id))
+          .then((r) => res.json(r))
+          .catch((e) => pfail(res, e));
+      },
+    );
+    router.post(
+      "/privacy-requests/:id/transition",
+      deps.requireAdmin,
+      (req, res) => {
+        const body = (req.body ?? {}) as {
+          to?: unknown;
+          resolutionSummary?: unknown;
+        };
+        if (typeof body.to !== "string" || !isPrivacyStatus(body.to)) {
+          pfail(res, new PrivacyStateError("Unknown target status."));
+          return;
+        }
+        const to = body.to;
+        privacy
+          .transition(scope, String(req.params.id), to, {
+            resolutionSummary:
+              typeof body.resolutionSummary === "string"
+                ? body.resolutionSummary
+                : undefined,
+          })
+          .then((rec) => {
+            plog(req, "privacy_request.status_changed", {
+              requestId: rec.id,
+              destination: "platform",
+              category: rec.category,
+              newStatus: rec.status,
+            });
+            res.json({ request: rec });
+          })
+          .catch((e) => pfail(res, e));
+      },
+    );
+    router.post(
+      "/privacy-requests/:id/note",
+      deps.requireAdmin,
+      (req, res) => {
+        const body = (req.body ?? {}) as {
+          body?: unknown;
+          visibility?: unknown;
+        };
+        const visibility =
+          body.visibility === "requester" ? "requester" : "internal";
+        privacy
+          .addNote(scope, String(req.params.id), {
+            body: typeof body.body === "string" ? body.body : "",
+            visibility,
+            authorId: (req as AdminedRequest).admin?.id ?? null,
+          })
+          .then((note) =>
+            res.json({
+              note: {
+                id: note.id,
+                visibility: note.visibility,
+                createdAt: note.createdAt,
+              },
+            }),
+          )
+          .catch((e) => pfail(res, e));
       },
     );
   }
