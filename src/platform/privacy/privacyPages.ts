@@ -101,11 +101,12 @@ export function privacyIntakePage(ctx: IntakePageContext): string {
   </div>
   <script>
   var f=document.getElementById('f'),msg=document.getElementById('msg');
+  var val=function(id){return (document.getElementById(id).value||'').trim();};
   f.addEventListener('submit',async function(e){
     e.preventDefault();msg.className='msg';
     if(!document.getElementById('ack').checked){msg.className='msg err';msg.textContent='Please acknowledge the verification notice.';return;}
     msg.textContent='Submitting…';
-    var body={name:name.value.trim(),email:email.value.trim(),category:category.value,relationship:relationship.value.trim(),description:description.value.trim(),acknowledge:true};
+    var body={name:val('name'),email:val('email'),category:val('category'),relationship:val('relationship'),description:val('description'),acknowledge:true};
     try{
       var r=await fetch('/privacy-requests',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       var d=await r.json().catch(function(){return{};});
