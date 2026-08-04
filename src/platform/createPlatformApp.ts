@@ -80,6 +80,18 @@ import {
   kindForSlug,
   tenantLegalKindsInOrder,
 } from "./tenantlegal/TenantLegalDocument";
+import type { PrivacyRequestService } from "./privacy/PrivacyRequestService";
+import { PrivacyValidationError } from "./privacy/PrivacyRequestService";
+import { createPrivacyManagementRouter } from "./privacy/privacyManagementRouter";
+import {
+  privacyIntakePage,
+  privacyStatusPage,
+  privacyVerifyResultPage,
+} from "./privacy/privacyPages";
+import {
+  RateLimiter,
+  rateLimit,
+} from "./security/RateLimiter";
 import { createCsrfGuard } from "./security/CsrfGuard";
 import type { PlatformAnalyticsService } from "./analytics/PlatformAnalyticsService";
 import type { PlatformHealthService } from "./health/PlatformHealthService";
@@ -143,6 +155,7 @@ export interface PlatformAppDependencies {
   legal?: PlatformLegalService;
   legalAcceptance?: LegalAcceptanceService;
   tenantLegal?: TenantLegalService;
+  privacy?: PrivacyRequestService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
   platformAnalytics?: PlatformAnalyticsService;
@@ -545,6 +558,217 @@ export function createPlatformApp(
     }
   }
 
+  // Public PRIVACY-REQUEST intake, verification, and requester status. The
+  // SERVER decides the destination from the trusted resolved host: the apex
+  // platform host → a "platform" request (about All Elite Cloud itself); a
+  // resolved tenant host → a "tenant" request scoped to that organization. A
+  // client-supplied organization id is never trusted.
+  if (deps.privacy) {
+    const privacy = deps.privacy;
+    // Per-IP + per-email limiter for public submissions (independent of the
+    // auth limiters). 5 submissions / 10 min / (ip,email).
+    const privacyLimiter = new RateLimiter({
+      max: 5,
+      windowMs: 10 * 60 * 1000,
+    });
+    const submitRateLimit = rateLimit({
+      limiter: privacyLimiter,
+      scope: "privacy-submit",
+      keyPart: (req) =>
+        String(
+          (req.body as { email?: unknown })?.email ?? "",
+        )
+          .trim()
+          .toLowerCase()
+          .slice(0, 254),
+    });
+
+    const resolveIntake = async (
+      host: string | undefined,
+    ): Promise<{
+      destination: "platform" | "tenant";
+      organizationId: string | null;
+      brandName: string;
+    }> => {
+      const resolved = await resolveTenantByHost(host, deps);
+      if (resolved) {
+        return {
+          destination: "tenant",
+          organizationId: resolved.organizationId,
+          brandName: resolved.orgName || "This business",
+        };
+      }
+      return {
+        destination: "platform",
+        organizationId: null,
+        brandName: "All Elite Cloud",
+      };
+    };
+
+    const linkBase = (req: {
+      headers: Record<string, unknown>;
+      protocol?: string;
+    }): string => {
+      const host = String(req.headers.host ?? "");
+      const proto = deps.secureCookie ? "https" : "http";
+      return `${proto}://${host}`;
+    };
+
+    app.get("/privacy-request", (req, res) => {
+      resolveIntake(req.headers.host)
+        .then((ctx) => {
+          res.type("html").send(
+            privacyIntakePage({
+              brandName: ctx.brandName,
+              destinationLabel: ctx.destination,
+            }),
+          );
+        })
+        .catch(() =>
+          res
+            .type("html")
+            .send(
+              privacyIntakePage({
+                brandName: "All Elite Cloud",
+                destinationLabel: "platform",
+              }),
+            ),
+        );
+    });
+
+    app.post(
+      "/privacy-requests",
+      csrfGuard,
+      submitRateLimit,
+      (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        resolveIntake(req.headers.host)
+          .then(async (ctx) => {
+            const run = () =>
+              privacy.create({
+                destination: ctx.destination,
+                organizationId: ctx.organizationId,
+                category: String(body.category ?? ""),
+                name: String(body.name ?? ""),
+                email: String(body.email ?? ""),
+                description: String(body.description ?? ""),
+                relationship:
+                  typeof body.relationship === "string"
+                    ? body.relationship
+                    : undefined,
+              });
+            const created =
+              ctx.destination === "tenant" && ctx.organizationId
+                ? await runWithTenant(
+                    { organizationId: ctx.organizationId },
+                    run,
+                  )
+                : await run();
+            // Best-effort, honest verification email. The raw token appears
+            // ONLY in the email — never in the response or logs.
+            const verifyUrl = `${linkBase(req)}/privacy-request/verify?token=${created.verifyToken}`;
+            if (deps.email) {
+              const email = deps.email;
+              const send = () =>
+                email.sendQuietly({
+                  to: created.record.email,
+                  subject: `Verify your privacy request to ${ctx.brandName}`,
+                  body: `We received a privacy request. Please verify your email by opening:\n\n${verifyUrl}\n\nIf you did not make this request, you can ignore this message.`,
+                });
+              // Best-effort (sendQuietly never throws). Tenant emails record to
+              // the tenant outbox; platform emails send without a tenant scope.
+              if (ctx.organizationId) {
+                await runWithTenant(
+                  { organizationId: ctx.organizationId },
+                  () => send(),
+                ).catch(() => undefined);
+              } else {
+                await send().catch(() => undefined);
+              }
+            }
+            res.json({
+              message:
+                "Thank you. If the details are valid, a verification email is on its way. Check your inbox to confirm your address.",
+            });
+          })
+          .catch((e) => {
+            if (e instanceof PrivacyValidationError) {
+              res.status(400).json({
+                error: {
+                  code: "INVALID_REQUEST",
+                  message: e.message,
+                },
+              });
+              return;
+            }
+            // Enumeration-resistant: never reveal internal details.
+            res.status(400).json({
+              error: {
+                code: "INVALID_REQUEST",
+                message: "Could not submit the request.",
+              },
+            });
+          });
+      },
+    );
+
+    app.get("/privacy-request/verify", (req, res) => {
+      const token =
+        typeof req.query.token === "string" ? req.query.token : "";
+      Promise.all([
+        resolveIntake(req.headers.host),
+        privacy.verifyEmail(token),
+      ])
+        .then(([ctx, result]) => {
+          if ("record" in result) {
+            const statusUrl = `${linkBase(req)}/privacy-request/status?token=${result.statusToken}`;
+            res.type("html").send(
+              privacyVerifyResultPage(
+                {
+                  brandName: ctx.brandName,
+                  destinationLabel: ctx.destination,
+                },
+                "ok",
+                statusUrl,
+              ),
+            );
+            return;
+          }
+          res.type("html").send(
+            privacyVerifyResultPage(
+              {
+                brandName: ctx.brandName,
+                destinationLabel: ctx.destination,
+              },
+              result.error,
+            ),
+          );
+        })
+        .catch(() => res.status(400).type("html").send("Bad request"));
+    });
+
+    app.get("/privacy-request/status", (req, res) => {
+      const token =
+        typeof req.query.token === "string" ? req.query.token : "";
+      Promise.all([
+        resolveIntake(req.headers.host),
+        privacy.requesterStatus(token),
+      ])
+        .then(([ctx, view]) => {
+          res.type("html").send(
+            privacyStatusPage(
+              {
+                brandName: ctx.brandName,
+                destinationLabel: ctx.destination,
+              },
+              view,
+            ),
+          );
+        })
+        .catch(() => res.status(400).type("html").send("Bad request"));
+    });
+  }
+
   // Public form share page + submit endpoint (NO auth — resolves the tenant
   // from the form's globally-unique slug).
   if (deps.forms) {
@@ -782,6 +1006,21 @@ export function createPlatformApp(
       csrfGuard,
       createTenantLegalRouter({
         legal: deps.tenantLegal,
+        requireUser,
+        audit: deps.audit,
+      }),
+    );
+  }
+
+  // Tenant Privacy Requests management API (owner/admin; members denied). The
+  // tenant organization comes from the authenticated session, never client
+  // input. Mounted before the general tenant API so its paths match.
+  if (deps.privacy) {
+    app.use(
+      "/api/platform",
+      csrfGuard,
+      createPrivacyManagementRouter({
+        privacy: deps.privacy,
         requireUser,
         audit: deps.audit,
       }),

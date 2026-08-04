@@ -106,6 +106,8 @@ import { platformLegalSeeds } from "./legal/content/platformLegalContent";
 import { TenantLegalService } from "./tenantlegal/TenantLegalService";
 import { TenantLegalDocumentRepository } from "./tenantlegal/TenantLegalDocumentRepository";
 import { TenantQuestionnaireRepository } from "./tenantlegal/TenantQuestionnaireRepository";
+import { PrivacyRequestService } from "./privacy/PrivacyRequestService";
+import { PrivacyRequestRepository } from "./privacy/PrivacyRequestRepository";
 import { WorkflowService } from "./workflows/WorkflowService";
 import { WorkflowRepository } from "./workflows/WorkflowRepository";
 import { AiToolRegistry } from "./ai/tools/AiToolRegistry";
@@ -522,6 +524,11 @@ async function start(): Promise<void> {
     new TenantQuestionnaireRepository(db),
   );
 
+  // Privacy-request intake & management (platform + tenant destinations).
+  const privacy = new PrivacyRequestService(
+    new PrivacyRequestRepository(db),
+  );
+
   // Data-retention purge: hard-delete files soft-deleted longer than the
   // retention window (default 30 days), removing bytes + row, per-org,
   // legal-hold-aware, and audited. Backs the Privacy Policy's retention claim.
@@ -857,6 +864,7 @@ async function start(): Promise<void> {
     legal,
     legalAcceptance,
     tenantLegal,
+    privacy,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

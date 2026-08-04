@@ -148,7 +148,7 @@ ${main}
   </main>
   <footer class="legal">
     <nav aria-label="Legal documents">${links}</nav>
-    <div>Questions? <a href="mailto:legal@allelitecloud.com">legal@allelitecloud.com</a> · <a href="/">Back to All Elite Cloud</a></div>
+    <div>Questions? <a href="mailto:legal@allelitecloud.com">legal@allelitecloud.com</a> · <a href="/privacy-request">Submit a privacy request</a> · <a href="/">Back to All Elite Cloud</a></div>
   </footer>
 </body>
 </html>`;
