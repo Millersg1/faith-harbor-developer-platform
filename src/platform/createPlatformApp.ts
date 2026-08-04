@@ -583,39 +583,61 @@ export function createPlatformApp(
           .slice(0, 254),
     });
 
-    const resolveIntake = async (
-      host: string | undefined,
-    ): Promise<{
+    interface IntakeCtx {
       destination: "platform" | "tenant";
       organizationId: string | null;
       brandName: string;
       linkHost: string;
-    }> => {
+    }
+
+    // FAIL-CLOSED host classification for intake creation. Returns null (→ 404)
+    // for any host that is neither the configured apex NOR a resolved tenant.
+    // An unknown/forged/malformed host is NEVER silently accepted as a platform
+    // request. (The baseDomain fallback below is only for safe LINK generation,
+    // not authorization to accept an invalid host.)
+    const classifyIntake = async (
+      host: string | undefined,
+    ): Promise<IntakeCtx | null> => {
+      const domain = normalizeDomain(host ?? "");
+      if (!domain) {
+        return null;
+      }
+      const base = deps.baseDomain
+        ? deps.baseDomain.toLowerCase()
+        : "";
+      if (base && (domain === base || domain === `www.${base}`)) {
+        return {
+          destination: "platform",
+          organizationId: null,
+          brandName: "All Elite Cloud",
+          linkHost: base,
+        };
+      }
       const resolved = await resolveTenantByHost(host, deps);
       if (resolved) {
-        // The host RESOLVED to a tenant, so it is a validated canonical host
-        // (a verified custom domain or a <slug>.<baseDomain> subdomain). It is
-        // therefore safe to use for the emailed verification link.
         return {
           destination: "tenant",
           organizationId: resolved.organizationId,
           brandName: resolved.orgName || "This business",
-          linkHost: normalizeDomain(host ?? "") || String(host ?? ""),
+          linkHost: domain,
         };
       }
-      // Platform (apex or an unknown/spoofed host): NEVER trust the request
-      // Host header for the token-bearing link — use the configured platform
-      // base domain, so a forged Host cannot redirect the verification link
-      // (host-header injection / token exfiltration).
-      return {
-        destination: "platform",
-        organizationId: null,
-        brandName: "All Elite Cloud",
-        linkHost:
-          deps.baseDomain ||
-          normalizeDomain(host ?? "") ||
-          String(host ?? ""),
-      };
+      return null;
+    };
+
+    // Non-authorizing brand context for the token-gated verify/status pages
+    // (the token is the capability; the host only affects branding).
+    const brandCtx = async (
+      host: string | undefined,
+    ): Promise<IntakeCtx> => {
+      return (
+        (await classifyIntake(host)) ?? {
+          destination: "platform",
+          organizationId: null,
+          brandName: "All Elite Cloud",
+          linkHost: deps.baseDomain || normalizeDomain(host ?? "") || "",
+        }
+      );
     };
 
     const linkBase = (ctx: { linkHost: string }): string => {
@@ -623,9 +645,13 @@ export function createPlatformApp(
       return `${proto}://${ctx.linkHost}`;
     };
 
-    app.get("/privacy-request", (req, res) => {
-      resolveIntake(req.headers.host)
+    app.get("/privacy-request", (req, res, next) => {
+      classifyIntake(req.headers.host)
         .then((ctx) => {
+          if (!ctx) {
+            next();
+            return;
+          }
           res.type("html").send(
             privacyIntakePage({
               brandName: ctx.brandName,
@@ -633,26 +659,24 @@ export function createPlatformApp(
             }),
           );
         })
-        .catch(() =>
-          res
-            .type("html")
-            .send(
-              privacyIntakePage({
-                brandName: "All Elite Cloud",
-                destinationLabel: "platform",
-              }),
-            ),
-        );
+        .catch(() => next());
     });
 
     app.post(
       "/privacy-requests",
       csrfGuard,
       submitRateLimit,
-      (req, res) => {
+      (req, res, next) => {
         const body = (req.body ?? {}) as Record<string, unknown>;
-        resolveIntake(req.headers.host)
+        classifyIntake(req.headers.host)
           .then(async (ctx) => {
+            if (!ctx) {
+              // Unknown/forged/malformed host — fail closed. The destination is
+              // derived ONLY from the trusted host; any client-supplied
+              // organizationId/destination in the body is ignored entirely.
+              next();
+              return;
+            }
             const run = () =>
               privacy.create({
                 destination: ctx.destination,
@@ -725,7 +749,7 @@ export function createPlatformApp(
       const token =
         typeof req.query.token === "string" ? req.query.token : "";
       Promise.all([
-        resolveIntake(req.headers.host),
+        brandCtx(req.headers.host),
         privacy.verifyEmail(token),
       ])
         .then(([ctx, result]) => {
@@ -760,7 +784,7 @@ export function createPlatformApp(
       const token =
         typeof req.query.token === "string" ? req.query.token : "";
       Promise.all([
-        resolveIntake(req.headers.host),
+        brandCtx(req.headers.host),
         privacy.requesterStatus(token),
       ])
         .then(([ctx, view]) => {

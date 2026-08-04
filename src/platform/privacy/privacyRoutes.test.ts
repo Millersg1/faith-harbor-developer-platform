@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 import { runWithTenant } from "../../tenancy/TenantContext";
 import { OrganizationService } from "../../tenancy/OrganizationService";
 import { OrganizationDomainService } from "../../tenancy/OrganizationDomainService";
+import { OrganizationDomainRepository } from "../../tenancy/OrganizationDomainRepository";
+import {
+  verificationHost,
+  verificationValue,
+} from "../../tenancy/OrganizationDomain";
 import { PlatformAdminService } from "../admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "../admin/PlatformAdminSessionService";
 import { BrandingRepository } from "../branding/BrandingRepository";
@@ -177,13 +182,20 @@ describe("privacy public intake — destination & abuse protection", () => {
       email: emailStub,
       baseDomain: "allelitecloud.com",
     });
-    // Attacker submits a platform request with a forged Host header.
-    await request(app)
+    // Forged host -> fail closed (404); no request created, no email sent.
+    const forged = await request(app)
       .post("/privacy-requests")
       .set("Host", "evil.example.com")
       .send({ ...form, email: "victim@example.com" });
+    expect(forged.status).toBe(404);
+    expect(sent).toHaveLength(0);
+    // Apex -> platform; the token-bearing link uses the configured base domain.
+    const apex = await request(app)
+      .post("/privacy-requests")
+      .set("Host", "allelitecloud.com")
+      .send({ ...form, email: "p@example.com" });
+    expect(apex.status).toBe(200);
     expect(sent).toHaveLength(1);
-    // The token-bearing link uses the configured base domain, never evil.com.
     expect(sent[0].body).toContain(
       "allelitecloud.com/privacy-request/verify?token=",
     );
@@ -210,6 +222,117 @@ describe("privacy public intake — destination & abuse protection", () => {
         organizationId: owner.body.organization.id,
       }),
     ).toHaveLength(0);
+  });
+});
+
+describe("privacy intake host boundary (fail-closed)", () => {
+  it("rejects unknown, forged, and malformed hosts with 404", async () => {
+    const { app } = build();
+    for (const host of [
+      "evil.example.com", // unknown
+      "allelitecloud.com.evil.com", // look-alike / forged
+      "notarealtenant.allelitecloud.com", // subdomain of a non-existent org
+      "", // empty/malformed
+      "@@bad@@", // malformed
+    ]) {
+      const r = await request(app)
+        .post("/privacy-requests")
+        .set("Host", host)
+        .send(form);
+      expect(r.status, `host=${host}`).toBe(404);
+      const g = await request(app)
+        .get("/privacy-request")
+        .set("Host", host);
+      expect(g.status, `GET host=${host}`).toBe(404);
+    }
+  });
+
+  it("accepts the apex (platform) and a valid tenant subdomain; ignores a client destination/org", async () => {
+    const b = build();
+    const owner = await request(b.app)
+      .post("/auth/signup")
+      .send({ organizationName: "Acme", email: "o@acme.com", password: "password123" });
+    const slug = owner.body.organization.slug as string;
+    const orgId = owner.body.organization.id as string;
+
+    // Apex -> platform, even if the body tries to force a tenant org/destination.
+    const apex = await request(b.app)
+      .post("/privacy-requests")
+      .set("Host", "allelitecloud.com")
+      .send({ ...form, organizationId: orgId, destination: "tenant" });
+    expect(apex.status).toBe(200);
+    const plat = await b.privacy.list({ kind: "platform" });
+    expect(plat).toHaveLength(1);
+    expect(plat[0].organizationId).toBeNull();
+
+    // Tenant subdomain -> tenant, even if the body forges destination=platform.
+    const ten = await request(b.app)
+      .post("/privacy-requests")
+      .set("Host", `${slug}.allelitecloud.com`)
+      .send({ ...form, email: "t@example.com", destination: "platform", organizationId: "someone-else" });
+    expect(ten.status).toBe(200);
+    const tenants = await b.privacy.list({ kind: "tenant", organizationId: orgId });
+    expect(tenants).toHaveLength(1);
+    expect(tenants[0].organizationId).toBe(orgId);
+    // The forged fields did not create a second platform request.
+    expect(await b.privacy.list({ kind: "platform" })).toHaveLength(1);
+  });
+
+  it("accepts a VERIFIED custom domain as a tenant intake", async () => {
+    // Build with a domains service whose DNS check we control.
+    const txt: Record<string, string[][]> = {};
+    const domains = new OrganizationDomainService(
+      new OrganizationDomainRepository(),
+      { txtResolver: async (h: string) => txt[h] ?? [] },
+    );
+    const organizations = new OrganizationService();
+    const users = new PlatformUserService(new PlatformUserRepository());
+    const sessions = new PlatformSessionService(new PlatformSessionRepository());
+    const clients = new PlatformClientService(new PlatformClientRepository());
+    const privacy = new PrivacyRequestService();
+    const app = createPlatformApp({
+      organizations, users, sessions,
+      branding: new BrandingService(new BrandingRepository()),
+      clients,
+      projects: new PlatformProjectService(new PlatformProjectRepository(), clients),
+      invoices: new PlatformInvoiceService(new PlatformInvoiceRepository(), clients),
+      signup: new PlatformSignupService(organizations, users, sessions),
+      domains,
+      admins: new PlatformAdminService(),
+      adminSessions: new PlatformAdminSessionService(),
+      privacy,
+      baseDomain: "allelitecloud.com",
+    });
+    const owner = await request(app)
+      .post("/auth/signup")
+      .send({ organizationName: "Acme", email: "o@acme.com", password: "password123" });
+    const orgId = owner.body.organization.id as string;
+
+    // Add + verify a custom domain for the org (DNS TXT stubbed).
+    const domain = "legal.acmebrand.test";
+    const rec = await runWithTenant({ organizationId: orgId }, async () => {
+      const added = await domains.add(domain);
+      txt[verificationHost(added.domain)] = [
+        [verificationValue(added.verificationToken)],
+      ];
+      return domains.verify(added.id);
+    });
+    expect(rec.verified).toBe(true);
+
+    // Intake on the verified custom domain -> tenant request for that org.
+    const r = await request(app)
+      .post("/privacy-requests")
+      .set("Host", domain)
+      .send({ ...form, email: "cd@example.com" });
+    expect(r.status).toBe(200);
+    const tenants = await privacy.list({ kind: "tenant", organizationId: orgId });
+    expect(tenants).toHaveLength(1);
+    // An UNVERIFIED look-alike domain is rejected.
+    const bad = await request(app)
+      .post("/privacy-requests")
+      .set("Host", "legal.notmine.test")
+      .send(form);
+    expect(bad.status).toBe(404);
   });
 });
 
