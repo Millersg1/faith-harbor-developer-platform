@@ -575,7 +575,19 @@ export function formPublicPage(form: {
     try{
       var r=await fetch('/api/public/forms/'+encodeURIComponent(SLUG)+'/submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:data})});
       var d=await r.json().catch(function(){return {};});
-      if(r.ok){f.innerHTML='<h1>Thank you</h1><p>'+((d.confirmationMessage)||'Your submission was received.').replace(/</g,'&lt;')+'</p>';}
+      if(r.ok){
+        // Remotely-supplied copy is rendered as TEXT only — never innerHTML —
+        // so a malicious confirmation message can't execute.
+        var h=document.createElement('h1');h.textContent='Thank you';
+        var p=document.createElement('p');p.textContent=(d.confirmationMessage)||'Your submission was received.';
+        f.replaceChildren(h,p);
+        // Lead-magnet redirect (transactional): only ever to an absolute http(s)
+        // URL the server already validated and returned. Never eval/innerHTML.
+        if(typeof d.redirectUrl==='string'&&/^https?:\/\//i.test(d.redirectUrl)){
+          var a=document.createElement('a');a.href=d.redirectUrl;a.textContent='Continue';a.rel='noopener noreferrer';
+          p.after(document.createElement('br'),a);
+        }
+      }
       else{msg.className='msg err';msg.textContent=(d.error&&d.error.message)||'Could not submit.';}
     }catch(_){msg.className='msg err';msg.textContent='Network error.';}
   });`;
