@@ -550,6 +550,59 @@ export function createPlatformApp(
   if (deps.forms) {
     const forms = deps.forms;
 
+    // CORS for the PUBLIC form endpoints so a tenant's clients can embed a
+    // lead form on their OWN external website and post to us cross-origin.
+    // These endpoints take no cookies and carry no credentials, so an open
+    // origin ("*") is safe — there is no ambient authority to abuse, and the
+    // form is addressed by its unguessable global slug. Never set
+    // Allow-Credentials here (it must not be combined with "*").
+    const publicFormCors: express.RequestHandler = (req, res, next) => {
+      res.set("Access-Control-Allow-Origin", "*");
+      res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.set("Access-Control-Allow-Headers", "Content-Type");
+      res.set("Access-Control-Max-Age", "600");
+      res.set("Vary", "Origin");
+      if (req.method === "OPTIONS") {
+        res.status(204).end();
+        return;
+      }
+      next();
+    };
+    app.options("/api/public/forms/:slug", publicFormCors);
+    app.options("/api/public/forms/:slug/submit", publicFormCors);
+
+    // Public form CONFIG (JSON) — lets an external page render the form's
+    // fields dynamically. Returns only public, non-sensitive fields (never the
+    // owner notify email, organization id, or lead settings).
+    app.get(
+      "/api/public/forms/:slug",
+      publicFormCors,
+      (req, res, next) => {
+        forms
+          .getPublicBySlug(String(req.params.slug))
+          .then((form) => {
+            if (!form) {
+              res.status(404).json({
+                error: {
+                  code: "FORM_NOT_FOUND",
+                  message: "This form is not available.",
+                },
+              });
+              return;
+            }
+            res.json({
+              form: {
+                name: form.name,
+                slug: form.slug,
+                fields: form.fields,
+                confirmationMessage: form.confirmationMessage,
+              },
+            });
+          })
+          .catch(() => next());
+      },
+    );
+
     app.get("/f/:slug", (req, res) => {
       forms
         .getPublicBySlug(
@@ -591,6 +644,7 @@ export function createPlatformApp(
 
     app.post(
       "/api/public/forms/:slug/submit",
+      publicFormCors,
       (req, res, next) => {
         const body =
           req.body &&
