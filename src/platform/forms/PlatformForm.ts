@@ -73,6 +73,49 @@ export interface FormSettings {
    * page and cooperating embeds include it); best-effort otherwise.
    */
   minSubmitSeconds?: number;
+  /** Marketing-consent config for this form (see {@link FormConsentConfig}). */
+  consent?: FormConsentConfig;
+  /** Lead-magnet delivery config (see {@link FormLeadMagnet}). */
+  leadMagnet?: FormLeadMagnet;
+}
+
+/**
+ * Marketing-consent configuration. When enabled, the form carries a specific
+ * consent checkbox (`fieldKey`, a `consent`-type field) that must be
+ * affirmatively checked — never pre-checked — for marketing consent to be
+ * recorded. Lead creation and lead-magnet delivery do NOT require this.
+ */
+export interface FormConsentConfig {
+  enabled: boolean;
+  /** The form field key that carries the marketing-consent checkbox. */
+  fieldKey: string;
+  /** Exact consent copy shown to the visitor (recorded as evidence). */
+  wording: string;
+  /** Consent-copy version identifier (recorded as evidence). */
+  version: string;
+  /** Optional link to the privacy/marketing policy. */
+  policyUrl?: string;
+  /**
+   * Require double opt-in (a confirmation click) before marketing starts.
+   * Defaults to true for public forms; a tenant may disable it deliberately.
+   */
+  doubleOptIn?: boolean;
+}
+
+export type LeadMagnetMode = "email" | "redirect" | "download";
+
+/** How the promised lead magnet is delivered (transactional, not marketing). */
+export interface FormLeadMagnet {
+  id: string;
+  title: string;
+  mode: LeadMagnetMode;
+  /** email mode: subject/body of the transactional delivery email. */
+  emailSubject?: string;
+  emailBody?: string;
+  /** redirect mode: an approved absolute http(s) URL to send the visitor to. */
+  redirectUrl?: string;
+  /** download mode: a tenant-owned file id served via a time-limited token. */
+  fileId?: string;
 }
 
 export interface FormRecord {

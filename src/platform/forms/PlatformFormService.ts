@@ -15,6 +15,7 @@ import {
   type FormSubmissionRecord,
 } from "./PlatformForm";
 import type { PlatformLeadRecord } from "../crm/PlatformLead";
+import type { MarketingConsentService } from "../marketing/MarketingConsentService";
 import { PlatformFormRepository } from "./PlatformFormRepository";
 
 export class FormValidationError extends Error {}
@@ -24,6 +25,8 @@ export interface FormServiceOptions {
   leads?: PlatformLeadService;
   email?: PlatformEmailService;
   activity?: ActivityService;
+  /** Records affirmative marketing consent (when a form enables it). */
+  consent?: MarketingConsentService;
   now?: () => number;
 }
 
@@ -42,6 +45,8 @@ export class PlatformFormService {
 
   private readonly activity?: ActivityService;
 
+  private readonly consent?: MarketingConsentService;
+
   private readonly now: () => number;
 
   constructor(
@@ -52,6 +57,7 @@ export class PlatformFormService {
     this.leads = options.leads;
     this.email = options.email;
     this.activity = options.activity;
+    this.consent = options.consent;
     this.now =
       options.now ??
       (() => Date.now());
@@ -267,6 +273,35 @@ export class PlatformFormService {
           this.now(),
         ).toISOString();
 
+        // Evaluate MARKETING consent (separate from lead creation and magnet
+        // delivery). Consent is granted only if the form enables it AND its
+        // specific consent checkbox is affirmatively true (never pre-checked).
+        const consentCfg = form.settings.consent;
+        const consentGranted = Boolean(
+          consentCfg?.enabled &&
+            consentCfg.fieldKey &&
+            clean[consentCfg.fieldKey] === true,
+        );
+        const consentEvidence =
+          consentGranted && consentCfg
+            ? {
+                granted: true,
+                wording: consentCfg.wording,
+                version: consentCfg.version,
+                source: "public_form",
+                at: nowIso,
+              }
+            : undefined;
+
+        const mergedAttribution =
+          attribution || consentEvidence
+            ? {
+                ...attribution,
+                submittedAt: nowIso,
+                ...(consentEvidence ? { consent: consentEvidence } : {}),
+              }
+            : undefined;
+
         await this.repository.createSubmission(
           {
             id: randomUUID(),
@@ -274,13 +309,40 @@ export class PlatformFormService {
               form.organizationId,
             formId: form.id,
             data: clean,
-            ...(attribution
-              ? { attribution: { ...attribution, submittedAt: nowIso } }
+            ...(mergedAttribution
+              ? { attribution: mergedAttribution }
               : {}),
             status: "new",
             createdAt: nowIso,
           },
         );
+
+        // Record the affirmative consent durably — de-duplicated so repeat
+        // submissions never create duplicate consent. Lead-magnet delivery and
+        // lead creation do NOT depend on this. Best-effort.
+        if (consentGranted && consentCfg && this.consent) {
+          const email = extractLead(form, clean)?.email;
+          if (email) {
+            try {
+              const existing =
+                await this.consent.latestForEmail(email);
+              if (!existing || !existing.granted) {
+                await this.consent.record({
+                  email,
+                  formId: form.id,
+                  wording: consentCfg.wording,
+                  version: consentCfg.version,
+                  source: "public_form",
+                  ipHash: attribution?.ipHash,
+                  doubleOptIn: consentCfg.doubleOptIn !== false,
+                  now: nowIso,
+                });
+              }
+            } catch {
+              // A consent-log hiccup must not fail the submission.
+            }
+          }
+        }
 
         // Optionally create OR safely merge a lead from the submission.
         if (
@@ -558,6 +620,46 @@ function sanitizeSettings(
     s.minSubmitSeconds > 0
   ) {
     out.minSubmitSeconds = Math.min(Math.floor(s.minSubmitSeconds), 3600);
+  }
+  if (s?.consent && s.consent.enabled && s.consent.fieldKey) {
+    const clip = (v: unknown, n: number): string =>
+      typeof v === "string" ? v.trim().slice(0, n) : "";
+    out.consent = {
+      enabled: true,
+      fieldKey: clip(s.consent.fieldKey, 40).replace(/[^a-zA-Z0-9_]/g, ""),
+      wording: clip(s.consent.wording, 2000),
+      version: clip(s.consent.version, 40) || "1",
+      // Double opt-in defaults ON for public forms; a tenant must explicitly
+      // set it false to disable.
+      doubleOptIn: s.consent.doubleOptIn !== false,
+      ...(clip(s.consent.policyUrl, 512)
+        ? { policyUrl: clip(s.consent.policyUrl, 512) }
+        : {}),
+    };
+  }
+  if (s?.leadMagnet && s.leadMagnet.mode && s.leadMagnet.title) {
+    const clip = (v: unknown, n: number): string =>
+      typeof v === "string" ? v.trim().slice(0, n) : "";
+    const mode = s.leadMagnet.mode;
+    if (mode === "email" || mode === "redirect" || mode === "download") {
+      out.leadMagnet = {
+        id: clip(s.leadMagnet.id, 40) || "magnet",
+        title: clip(s.leadMagnet.title, 200),
+        mode,
+        ...(clip(s.leadMagnet.emailSubject, 200)
+          ? { emailSubject: clip(s.leadMagnet.emailSubject, 200) }
+          : {}),
+        ...(clip(s.leadMagnet.emailBody, 5000)
+          ? { emailBody: clip(s.leadMagnet.emailBody, 5000) }
+          : {}),
+        ...(clip(s.leadMagnet.redirectUrl, 512)
+          ? { redirectUrl: clip(s.leadMagnet.redirectUrl, 512) }
+          : {}),
+        ...(clip(s.leadMagnet.fileId, 64)
+          ? { fileId: clip(s.leadMagnet.fileId, 64) }
+          : {}),
+      };
+    }
   }
   return out;
 }

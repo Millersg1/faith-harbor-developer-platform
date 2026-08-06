@@ -7,13 +7,25 @@
  * through its steps, sending via the tenant's live email transport.
  */
 
-/** What causes a recipient to be enrolled into a sequence. */
+/**
+ * What causes a recipient to be enrolled into a sequence.
+ * - `manual` — a person adds them.
+ * - `lead_created` — CRM lead creation (internal/authenticated). NOT fired by
+ *   public forms, which are consent-gated.
+ * - `lead_magnet_requested` — a transactional trigger for delivering a requested
+ *   asset; NOT marketing and NOT consent-gated.
+ * - `marketing_opted_in` — ongoing marketing; fired ONLY after explicit
+ *   affirmative consent (and, when configured, double-opt-in confirmation), and
+ *   only for a non-suppressed recipient.
+ */
 export type DripTrigger =
   | "manual"
-  | "lead_created";
+  | "lead_created"
+  | "lead_magnet_requested"
+  | "marketing_opted_in";
 
 export const DRIP_TRIGGERS: readonly DripTrigger[] =
-  ["manual", "lead_created"];
+  ["manual", "lead_created", "lead_magnet_requested", "marketing_opted_in"];
 
 export function isDripTrigger(
   value: unknown,

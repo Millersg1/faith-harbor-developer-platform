@@ -90,6 +90,10 @@ import { PlatformFileService } from "./files/PlatformFileService";
 import { PlatformFileRepository } from "./files/PlatformFileRepository";
 import { LocalStorageProvider } from "./files/StorageProvider";
 import { PlatformFormService } from "./forms/PlatformFormService";
+import {
+  MarketingConsentService,
+  MarketingConsentRepository,
+} from "./marketing/MarketingConsentService";
 import { PlatformFormRepository } from "./forms/PlatformFormRepository";
 import { CalendarService } from "./calendar/CalendarService";
 import { CalendarEventRepository } from "./calendar/CalendarEventRepository";
@@ -475,9 +479,12 @@ async function start(): Promise<void> {
     fileStorage,
   );
 
+  const marketingConsent = new MarketingConsentService(
+    new MarketingConsentRepository(db),
+  );
   const forms = new PlatformFormService(
     new PlatformFormRepository(db),
-    { leads, email, activity },
+    { leads, email, activity, consent: marketingConsent },
   );
 
   const calendar = new CalendarService(

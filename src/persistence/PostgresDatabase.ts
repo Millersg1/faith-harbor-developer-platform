@@ -538,11 +538,35 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS form_submissions_idx
         ON form_submissions (organization_id, form_id, created_at DESC);
     `);
-    // Attribution for a public submission (IP/UA/referrer/landing + UTMs +
+    // Attribution for a public submission (IP hash/referrer/landing + UTMs +
     // consent evidence). Additive; compact JSON, no separate PII surface.
     await this.pool.query(`
       ALTER TABLE form_submissions
         ADD COLUMN IF NOT EXISTS attribution JSONB;
+    `);
+    // Durable marketing-consent audit log (tenant-scoped). Records affirmative
+    // consent events with the exact wording/version + evidence. No raw IP
+    // (ip_hash only) and no tokens.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_consents (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        email            TEXT NOT NULL,
+        form_id          TEXT,
+        granted          BOOLEAN NOT NULL DEFAULT TRUE,
+        wording          TEXT,
+        version          TEXT,
+        source           TEXT,
+        ip_hash          TEXT,
+        double_opt_in    BOOLEAN NOT NULL DEFAULT FALSE,
+        confirmed_at     TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS marketing_consents_lookup_idx
+        ON marketing_consents (organization_id, LOWER(email), created_at DESC);
     `);
 
     // Workflows — tenant automations, and their runs (advanced by the worker).
