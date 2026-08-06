@@ -4,7 +4,6 @@ import { runWithTenant } from "../../tenancy/TenantContext";
 import type { ActivityService } from "../events/ActivityService";
 import type { PlatformEmailService } from "../email/PlatformEmailService";
 import type { PlatformLeadService } from "../crm/PlatformLeadService";
-import type { DripService } from "../drip/DripService";
 import {
   FORM_FIELD_TYPES,
   type CreateFormRequest,
@@ -22,12 +21,6 @@ export interface FormServiceOptions {
   leads?: PlatformLeadService;
   email?: PlatformEmailService;
   activity?: ActivityService;
-  /**
-   * Autoresponder. When present, a lead created from a public submission
-   * enrolls into any active "lead_created" drip sequence — the same trigger the
-   * CRM leads route fires — so external forms start the autoresponder too.
-   */
-  drip?: DripService;
   now?: () => number;
 }
 
@@ -46,8 +39,6 @@ export class PlatformFormService {
 
   private readonly activity?: ActivityService;
 
-  private readonly drip?: DripService;
-
   private readonly now: () => number;
 
   constructor(
@@ -58,7 +49,6 @@ export class PlatformFormService {
     this.leads = options.leads;
     this.email = options.email;
     this.activity = options.activity;
-    this.drip = options.drip;
     this.now =
       options.now ??
       (() => Date.now());
@@ -295,18 +285,13 @@ export class PlatformFormService {
               await this.leads.create(
                 lead,
               );
-              // Fire any "lead_created" drip sequence — the same trigger the
-              // CRM leads route uses — so a public/external form starts the
-              // autoresponder. enrollByTrigger is internally best-effort (it
-              // never throws), so awaiting it here guarantees the enrollment
-              // is recorded before we confirm, without risking the submission.
-              // Already inside the form's tenant scope → enrollment stays
-              // tenant-correct.
-              await this.drip?.enrollByTrigger(
-                "lead_created",
-                lead.email,
-                lead.name,
-              );
+              // NOTE: a public form submission deliberately does NOT start any
+              // marketing autoresponder here. Marketing enrollment is gated on
+              // explicit affirmative consent AND on the platform having a
+              // consent/unsubscribe/suppression core (which does not yet
+              // exist) — so it is fail-closed for now. See
+              // docs/20_PUBLIC_LEAD_FORMS.md. Creating the CRM lead is a
+              // separate outcome from marketing and is safe on its own.
             } catch {
               // A lead hiccup must not fail the submission.
             }

@@ -58,9 +58,12 @@ function captureEmail() {
   return { sent, email };
 }
 
-describe("public form → autoresponder", () => {
-  it("a public form submission auto-enrolls the lead into a lead_created drip", async () => {
+describe("public form → CRM lead, but NOT marketing (fail-closed)", () => {
+  it("creates the CRM lead but does NOT start any marketing drip (no consent core yet)", async () => {
     const { sent, email } = captureEmail();
+    // A live "lead_created" sequence exists — a public submission must STILL
+    // NOT enroll into it, because marketing enrollment is consent-gated and the
+    // consent/unsubscribe/suppression core does not exist yet (fail-closed).
     const drip = new DripService(new DripRepository(), email, {
       now: () => 1_000,
     });
@@ -68,7 +71,6 @@ describe("public form → autoresponder", () => {
     const leads = new PlatformLeadService(new PlatformLeadRepository(), clients);
     const forms = new PlatformFormService(new PlatformFormRepository(), {
       leads,
-      drip,
     });
 
     let slug = "";
@@ -86,7 +88,6 @@ describe("public form → autoresponder", () => {
         .slug;
     });
 
-    // Public submission (as an external page would send it).
     await forms.submitPublic(slug, {
       name: "Dana Lee",
       email: "dana@example.com",
@@ -94,46 +95,15 @@ describe("public form → autoresponder", () => {
     });
 
     await runWithTenant({ organizationId: "orgA" }, async () => {
-      const enrollments = await drip.listEnrollments();
-      expect(enrollments).toHaveLength(1);
-      // Due step fires to exactly the submitter.
-      expect(await drip.runDue()).toBe(1);
-    });
-    expect(sent).toHaveLength(1);
-    expect(sent[0].to).toBe("dana@example.com");
-  });
-
-  it("does not enroll when there is no matching active sequence", async () => {
-    const { email } = captureEmail();
-    const drip = new DripService(new DripRepository(), email, {
-      now: () => 1_000,
-    });
-    const clients = new PlatformClientService(new PlatformClientRepository());
-    const leads = new PlatformLeadService(new PlatformLeadRepository(), clients);
-    const forms = new PlatformFormService(new PlatformFormRepository(), {
-      leads,
-      drip,
-    });
-
-    let slug = "";
-    await runWithTenant({ organizationId: "orgB" }, async () => {
-      // Only a MANUAL sequence exists — must not auto-enroll.
-      const seq = await drip.createSequence({ name: "Manual only" });
-      await drip.addStep(seq.id, {
-        delayHours: 0,
-        subject: "x",
-        body: "y",
-      });
-      slug = (await forms.create({ name: "Enroll", fields: CONTACT_FIELDS }))
-        .slug;
-    });
-    await forms.submitPublic(slug, {
-      name: "No Match",
-      email: "nomatch@example.com",
-    });
-    await runWithTenant({ organizationId: "orgB" }, async () => {
+      // The CRM lead was created…
+      const allLeads = await leads.list();
+      expect(allLeads).toHaveLength(1);
+      expect(allLeads[0].email).toBe("dana@example.com");
+      // …but NO marketing enrollment happened, and nothing was sent.
       expect(await drip.listEnrollments()).toHaveLength(0);
+      expect(await drip.runDue()).toBe(0);
     });
+    expect(sent).toHaveLength(0);
   });
 });
 

@@ -477,7 +477,7 @@ async function start(): Promise<void> {
 
   const forms = new PlatformFormService(
     new PlatformFormRepository(db),
-    { leads, email, activity, drip },
+    { leads, email, activity },
   );
 
   const calendar = new CalendarService(

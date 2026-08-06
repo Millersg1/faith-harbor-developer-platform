@@ -552,10 +552,13 @@ export function createPlatformApp(
 
     // CORS for the PUBLIC form endpoints so a tenant's clients can embed a
     // lead form on their OWN external website and post to us cross-origin.
-    // These endpoints take no cookies and carry no credentials, so an open
-    // origin ("*") is safe — there is no ambient authority to abuse, and the
-    // form is addressed by its unguessable global slug. Never set
-    // Allow-Credentials here (it must not be combined with "*").
+    // IMPORTANT: CORS is a browser access policy — it is NOT authentication and
+    // NOT spam/abuse protection, and the form slug is PUBLIC (it appears in the
+    // embedding page's source), never a secret or an authorization token. Abuse
+    // protection (rate limiting, honeypot, timing, size limits, idempotency,
+    // fail-closed tenant validation) is enforced separately, independent of
+    // CORS. This "*" default is a KNOWN GAP being replaced by a per-form
+    // allowed-origins policy (deny-by-default). Never set Allow-Credentials.
     const publicFormCors: express.RequestHandler = (req, res, next) => {
       res.set("Access-Control-Allow-Origin", "*");
       res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
