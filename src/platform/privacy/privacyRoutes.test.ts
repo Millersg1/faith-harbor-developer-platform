@@ -26,11 +26,13 @@ import { PlatformSignupService } from "../signup/PlatformSignupService";
 import { PlatformUserRepository } from "../users/PlatformUserRepository";
 import { PlatformUserService } from "../users/PlatformUserService";
 import type { PlatformEmailService } from "../email/PlatformEmailService";
+import { PlatformAuditService } from "../audit/PlatformAuditService";
+import { PlatformAuditRepository } from "../audit/PlatformAuditRepository";
 import { PrivacyRequestService } from "./PrivacyRequestService";
 
 const M = "/api/platform/privacy-requests/manage";
 
-function build() {
+function build(email?: PlatformEmailService) {
   const organizations = new OrganizationService();
   const users = new PlatformUserService(new PlatformUserRepository());
   const sessions = new PlatformSessionService(
@@ -59,6 +61,7 @@ function build() {
     admins: new PlatformAdminService(),
     adminSessions: new PlatformAdminSessionService(),
     privacy,
+    ...(email ? { email } : {}),
     baseDomain: "allelitecloud.com",
   });
   return { app, organizations, users, sessions, privacy };
@@ -144,6 +147,11 @@ describe("privacy public intake — destination & abuse protection", () => {
   it("a spoofed Host cannot poison the emailed verification link", async () => {
     const sent: { to: string; subject: string; body: string }[] = [];
     const emailStub = {
+      connected: () => true,
+      send: async (r: { to: string; subject: string; body: string }) => {
+        sent.push(r);
+        return { status: "sent" };
+      },
       sendQuietly: async (r: {
         to: string;
         subject: string;
@@ -196,9 +204,12 @@ describe("privacy public intake — destination & abuse protection", () => {
       .send({ ...form, email: "p@example.com" });
     expect(apex.status).toBe(200);
     expect(sent).toHaveLength(1);
+    // Token travels in the URL FRAGMENT (never a query string), so it can't
+    // reach an access log or Referer. The link uses the trusted base domain.
     expect(sent[0].body).toContain(
-      "allelitecloud.com/privacy-request/verify?token=",
+      "allelitecloud.com/privacy-request/verify#v=",
     );
+    expect(sent[0].body).not.toContain("verify?token=");
     expect(sent[0].body).not.toContain("evil.example.com");
   });
 
@@ -336,34 +347,98 @@ describe("privacy intake host boundary (fail-closed)", () => {
   });
 });
 
-describe("privacy verify + status pages", () => {
-  it("verifies via the emailed token and serves a redacted status page", async () => {
+describe("privacy verify + status pages (fragment-exchange, no token in URL)", () => {
+  it("GET verify is a neutral exchange page that consumes no token", async () => {
     const b = build();
-    // Create through the service to obtain the raw token (as the email would).
     const { verifyToken } = await b.privacy.create({
       destination: "platform",
       organizationId: null,
       ...form,
     });
-    const verify = await request(b.app).get(
-      `/privacy-request/verify?token=${verifyToken}`,
-    );
-    expect(verify.status).toBe(200);
-    expect(verify.text).toMatch(/Email verified/i);
-    const m = verify.text.match(/status\?token=([a-f0-9]{64})/);
-    expect(m).toBeTruthy();
-    const statusToken = m![1];
+    const page = await request(b.app).get("/privacy-request/verify");
+    expect(page.status).toBe(200);
+    // Neutral page: never contains a token; sets the anti-leak headers.
+    expect(page.text).not.toContain(verifyToken);
+    expect(page.headers["referrer-policy"]).toBe("no-referrer");
+    expect(page.headers["cache-control"]).toMatch(/no-store/);
+    expect(page.headers["x-robots-tag"]).toMatch(/noindex/);
+    // The token is still single-use afterwards (the GET did not consume it).
+    const ok = await b.privacy.verifyEmail(verifyToken);
+    expect("record" in ok).toBe(true);
+  });
 
-    const status = await request(b.app).get(
-      `/privacy-request/status?token=${statusToken}`,
-    );
+  it("POST verify exchanges the token for a status cookie and a clean redirect", async () => {
+    const b = build();
+    const { verifyToken } = await b.privacy.create({
+      destination: "platform",
+      organizationId: null,
+      ...form,
+    });
+    const verify = await request(b.app)
+      .post("/privacy-request/verify")
+      .set("Host", "allelitecloud.com")
+      .send({ token: verifyToken });
+    expect(verify.status).toBe(200);
+    expect(verify.body.ok).toBe(true);
+    expect(verify.body.redirect).toBe("/privacy-request/status");
+    // The response body NEVER echoes the raw status token, and the redirect
+    // target carries no token.
+    expect(JSON.stringify(verify.body)).not.toContain(verifyToken);
+    // An HttpOnly, SameSite=Strict status-session cookie was set.
+    const setCookie = (verify.headers["set-cookie"] as unknown as string[]) ?? [];
+    const cookie = setCookie.find((c) => c.startsWith("pr_status="));
+    expect(cookie).toBeTruthy();
+    expect(cookie).toMatch(/HttpOnly/i);
+    expect(cookie).toMatch(/SameSite=Strict/i);
+
+    // Loading the clean status URL with that cookie renders the redacted view.
+    const status = await request(b.app)
+      .get("/privacy-request/status")
+      .set("Cookie", cookie!.split(";")[0]);
     expect(status.status).toBe(200);
     expect(status.text).toMatch(/Privacy request status/i);
-    // A bad status token yields the "not valid" page, not data.
-    const bad = await request(b.app).get(
-      "/privacy-request/status?token=" + "0".repeat(64),
-    );
-    expect(bad.text).toMatch(/not valid/i);
+    expect(status.headers["cache-control"]).toMatch(/no-store/);
+
+    // Re-using the verification token fails (single-use). The hash is cleared
+    // on first use, so a replay is simply "invalid" (even stronger than a
+    // recognized "already_used").
+    const again = await request(b.app)
+      .post("/privacy-request/verify")
+      .send({ token: verifyToken });
+    expect(again.body.ok).toBe(false);
+    expect(["invalid", "already_used"]).toContain(again.body.reason);
+  });
+
+  it("status exchange trades a #s= token for the cookie; bad token reveals nothing", async () => {
+    const b = build();
+    const created = await b.privacy.create({
+      destination: "platform",
+      organizationId: null,
+      ...form,
+    });
+    const verified = await b.privacy.verifyEmail(created.verifyToken);
+    const statusToken = "statusToken" in verified ? verified.statusToken : "";
+
+    // Exchange endpoint sets the cookie without returning any requester data.
+    const ex = await request(b.app)
+      .post("/privacy-request/status/exchange")
+      .set("Host", "allelitecloud.com")
+      .send({ token: statusToken });
+    expect(ex.status).toBe(200);
+    expect(ex.body.ok).toBe(true);
+    expect(JSON.stringify(ex.body)).not.toMatch(/dana|delete|Dana/i);
+
+    // No cookie + no fragment -> neutral placeholder (no data, not an error).
+    const placeholder = await request(b.app).get("/privacy-request/status");
+    expect(placeholder.status).toBe(200);
+    expect(placeholder.text).toMatch(/Looking up your request|status link/i);
+    expect(placeholder.text).not.toContain(statusToken);
+
+    // A bad status token in the exchange is rejected, no data leaked.
+    const bad = await request(b.app)
+      .post("/privacy-request/status/exchange")
+      .send({ token: "0".repeat(64) });
+    expect(bad.body.ok).toBe(false);
   });
 });
 
@@ -437,6 +512,9 @@ describe("privacy PLATFORM-admin management", () => {
       password: "password123",
     });
     const privacy = new PrivacyRequestService();
+    const platformAudit = new PlatformAuditService(
+      new PlatformAuditRepository(),
+    );
     const app = createPlatformApp({
       organizations,
       users,
@@ -456,10 +534,11 @@ describe("privacy PLATFORM-admin management", () => {
       admins,
       adminSessions: new PlatformAdminSessionService(),
       privacy,
+      platformAudit,
       baseDomain: "allelitecloud.com",
     });
-    // A VERIFIED platform request (via service to obtain the token) + a tenant
-    // request (subdomain).
+    // A VERIFIED platform request (verified via the service to reach 'received')
+    // + a tenant request (subdomain).
     const owner = await request(app)
       .post("/auth/signup")
       .send({ organizationName: "Acme", email: "o@acme.com", password: "password123" });
@@ -469,7 +548,7 @@ describe("privacy PLATFORM-admin management", () => {
       ...form,
       email: "p@example.com",
     });
-    await request(app).get(`/privacy-request/verify?token=${verifyToken}`); // -> received
+    await privacy.verifyEmail(verifyToken); // -> received
     await request(app).post("/privacy-requests").set("Host", `${owner.body.organization.slug}.allelitecloud.com`).send({ ...form, email: "t@example.com" });
 
     // Requires an admin session.
@@ -493,5 +572,170 @@ describe("privacy PLATFORM-admin management", () => {
       .send({ to: "in_review" });
     expect(t.status).toBe(200);
     expect(t.body.request.status).toBe("in_review");
+
+    // The action is recorded in the DURABLE, queryable platform audit trail
+    // (not just a console line), with compact metadata and NO PII.
+    const audit = await request(app)
+      .get(`${A}/privacy-requests/${id}/audit`)
+      .set("Cookie", cookie);
+    expect(audit.status).toBe(200);
+    expect(audit.body.events.length).toBeGreaterThanOrEqual(1);
+    const ev = audit.body.events[0];
+    expect(ev.action).toBe("privacy_request.status_changed");
+    expect(ev.targetId).toBe(id);
+    expect(ev.metadata.newStatus).toBe("in_review");
+    // No requester PII anywhere in the audit payload.
+    expect(JSON.stringify(audit.body)).not.toMatch(/dana|p@example|delete my data/i);
+    // The audit endpoint requires an admin session.
+    expect(
+      (await request(app).get(`${A}/privacy-requests/${id}/audit`)).status,
+    ).toBe(401);
+  });
+});
+
+// A capturing email stub with configurable delivery behaviour.
+function emailStub(opts: {
+  connected?: boolean;
+  fail?: boolean;
+  status?: "sent" | "logged" | "failed";
+}) {
+  const sent: { to: string; subject: string; body: string }[] = [];
+  const stub = {
+    connected: () => opts.connected ?? true,
+    send: async (r: { to: string; subject: string; body: string }) => {
+      if (opts.fail) throw new Error("smtp down");
+      sent.push(r);
+      return { status: opts.status ?? "sent", error: undefined };
+    },
+    sendQuietly: async (r: { to: string; subject: string; body: string }) => {
+      if (!opts.fail) sent.push(r);
+    },
+  } as unknown as PlatformEmailService;
+  return { stub, sent };
+}
+const tokenFrom = (body: string): string =>
+  (body.match(/[a-f0-9]{64}/) ?? [""])[0];
+
+describe("privacy verification-email delivery state (honest & persisted)", () => {
+  it("records 'logged' (NOT sent) when no email provider is configured", async () => {
+    const b = build(); // no email dependency at all
+    await request(b.app)
+      .post("/privacy-requests")
+      .set("Host", "allelitecloud.com")
+      .send({ ...form, email: "noprovider@example.com" });
+    const [rec] = await b.privacy.list({ kind: "platform" });
+    expect(rec.verifyEmailState).toBe("logged");
+    expect(rec.verifyEmailAttempts).toBe(1);
+  });
+
+  it("records 'sent' when a connected provider accepts the message", async () => {
+    const { stub } = emailStub({ connected: true, status: "sent" });
+    const b = build(stub);
+    await request(b.app)
+      .post("/privacy-requests")
+      .set("Host", "allelitecloud.com")
+      .send({ ...form, email: "ok@example.com" });
+    const [rec] = await b.privacy.list({ kind: "platform" });
+    expect(rec.verifyEmailState).toBe("sent");
+  });
+
+  it("records 'failed' when the transport throws — never claims it was sent", async () => {
+    const { stub, sent } = emailStub({ connected: true, fail: true });
+    const b = build(stub);
+    const res = await request(b.app)
+      .post("/privacy-requests")
+      .set("Host", "allelitecloud.com")
+      .send({ ...form, email: "fails@example.com" });
+    // The requester still gets a generic response (no enumeration, no false
+    // "sent" claim to them either).
+    expect(res.status).toBe(200);
+    expect(sent).toHaveLength(0);
+    const [rec] = await b.privacy.list({ kind: "platform" });
+    expect(rec.verifyEmailState).toBe("failed");
+    expect(rec.verifyEmailError).toBeTruthy();
+    // The persisted error must never contain a raw token or the description.
+    expect(rec.verifyEmailError).not.toMatch(/[a-f0-9]{64}/);
+  });
+});
+
+describe("privacy verification resend (rotate token, no duplicate, no enumeration)", () => {
+  it("rotates the token on the existing request; the old link stops working", async () => {
+    const { stub, sent } = emailStub({ connected: true, status: "sent" });
+    const b = build(stub);
+    await request(b.app)
+      .post("/privacy-requests")
+      .set("Host", "allelitecloud.com")
+      .send({ ...form, email: "resend@example.com" });
+    expect(sent).toHaveLength(1);
+    const firstToken = tokenFrom(sent[0].body);
+
+    const resend = await request(b.app)
+      .post("/privacy-requests/resend")
+      .set("Host", "allelitecloud.com")
+      .send({ email: "resend@example.com" });
+    expect(resend.status).toBe(200);
+    expect(resend.body.message).toMatch(/if a pending request/i);
+    expect(sent).toHaveLength(2);
+    const secondToken = tokenFrom(sent[1].body);
+    expect(secondToken).not.toBe(firstToken);
+
+    // No duplicate request was created.
+    expect(await b.privacy.list({ kind: "platform" })).toHaveLength(1);
+
+    // The OLD token no longer verifies; the NEW one does.
+    const old = await b.privacy.verifyEmail(firstToken);
+    expect("error" in old).toBe(true);
+    const now = await b.privacy.verifyEmail(secondToken);
+    expect("record" in now).toBe(true);
+  });
+
+  it("stays generic for an unknown email and creates nothing (no enumeration)", async () => {
+    const { stub, sent } = emailStub({ connected: true });
+    const b = build(stub);
+    const resend = await request(b.app)
+      .post("/privacy-requests/resend")
+      .set("Host", "allelitecloud.com")
+      .send({ email: "nobody@example.com" });
+    expect(resend.status).toBe(200);
+    expect(resend.body.message).toMatch(/if a pending request/i);
+    expect(sent).toHaveLength(0);
+    expect(await b.privacy.list({ kind: "platform" })).toHaveLength(0);
+  });
+
+  it("does not resend for an already-verified request", async () => {
+    const { stub, sent } = emailStub({ connected: true, status: "sent" });
+    const b = build(stub);
+    const created = await b.privacy.create({
+      destination: "platform",
+      organizationId: null,
+      ...form,
+      email: "verified@example.com",
+    });
+    await b.privacy.verifyEmail(created.verifyToken); // now verified
+    const resend = await request(b.app)
+      .post("/privacy-requests/resend")
+      .set("Host", "allelitecloud.com")
+      .send({ email: "verified@example.com" });
+    expect(resend.status).toBe(200);
+    // Generic response, but nothing re-sent (already verified).
+    expect(sent).toHaveLength(0);
+  });
+
+  it("rate-limits resend abuse (429 after the threshold)", async () => {
+    const { stub } = emailStub({ connected: true });
+    const b = build(stub);
+    await request(b.app)
+      .post("/privacy-requests")
+      .set("Host", "allelitecloud.com")
+      .send({ ...form, email: "abuse@example.com" });
+    let sawLimited = false;
+    for (let i = 0; i < 6; i++) {
+      const r = await request(b.app)
+        .post("/privacy-requests/resend")
+        .set("Host", "allelitecloud.com")
+        .send({ email: "abuse@example.com" });
+      if (r.status === 429) sawLimited = true;
+    }
+    expect(sawLimited).toBe(true);
   });
 });

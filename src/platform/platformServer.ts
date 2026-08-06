@@ -108,6 +108,8 @@ import { TenantLegalDocumentRepository } from "./tenantlegal/TenantLegalDocument
 import { TenantQuestionnaireRepository } from "./tenantlegal/TenantQuestionnaireRepository";
 import { PrivacyRequestService } from "./privacy/PrivacyRequestService";
 import { PrivacyRequestRepository } from "./privacy/PrivacyRequestRepository";
+import { PlatformAuditService } from "./audit/PlatformAuditService";
+import { PlatformAuditRepository } from "./audit/PlatformAuditRepository";
 import { WorkflowService } from "./workflows/WorkflowService";
 import { WorkflowRepository } from "./workflows/WorkflowRepository";
 import { AiToolRegistry } from "./ai/tools/AiToolRegistry";
@@ -529,6 +531,11 @@ async function start(): Promise<void> {
     new PrivacyRequestRepository(db),
   );
 
+  // Durable, tenant-neutral audit trail for platform-admin privacy actions.
+  const platformAudit = new PlatformAuditService(
+    new PlatformAuditRepository(db),
+  );
+
   // Data-retention purge: hard-delete files soft-deleted longer than the
   // retention window (default 30 days), removing bytes + row, per-org,
   // legal-hold-aware, and audited. Backs the Privacy Policy's retention claim.
@@ -865,6 +872,7 @@ async function start(): Promise<void> {
     legalAcceptance,
     tenantLegal,
     privacy,
+    platformAudit,
     baseDomain:
       process.env
         .PLATFORM_BASE_DOMAIN ||

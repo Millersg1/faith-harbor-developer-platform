@@ -1120,7 +1120,11 @@ export class PostgresDatabase
         ADD COLUMN IF NOT EXISTS completed_at       TEXT,
         ADD COLUMN IF NOT EXISTS denied_at          TEXT,
         ADD COLUMN IF NOT EXISTS closed_at          TEXT,
-        ADD COLUMN IF NOT EXISTS purge_after        TEXT;
+        ADD COLUMN IF NOT EXISTS purge_after        TEXT,
+        ADD COLUMN IF NOT EXISTS verify_email_state    TEXT NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS verify_email_error    TEXT,
+        ADD COLUMN IF NOT EXISTS verify_email_attempts INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS verify_email_last_at  TEXT;
     `);
     // Tenant deletion cascades its privacy requests (platform requests keep a
     // NULL organization_id and are unaffected). Idempotent FK addition.
@@ -1161,6 +1165,32 @@ export class PostgresDatabase
     await this.pool.query(`
       CREATE INDEX IF NOT EXISTS privacy_request_notes_req_idx
         ON privacy_request_notes (request_id, created_at);
+    `);
+    // Durable, queryable, tenant-NEUTRAL audit trail for platform-level actions
+    // (e.g. platform-admin privacy-request lifecycle). Append-only; stores only
+    // compact enums + identifiers — never names, emails, descriptions, notes,
+    // or tokens. Distinct from tenant-scoped `audit_events` (which requires an
+    // organization_id and cannot record org-neutral platform actions).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS platform_audit_events (
+        id          TEXT PRIMARY KEY,
+        action      TEXT NOT NULL,
+        actor_type  TEXT NOT NULL DEFAULT 'platform_admin',
+        actor_id    TEXT,
+        target_type TEXT,
+        target_id   TEXT,
+        outcome     TEXT,
+        metadata    TEXT,
+        created_at  TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS platform_audit_events_created_idx
+        ON platform_audit_events (created_at DESC);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS platform_audit_events_target_idx
+        ON platform_audit_events (target_type, target_id);
     `);
 
     // Legal holds — while a hold exists for an organization, the retention

@@ -3069,6 +3069,7 @@ export function dashboardPage(): string {
     wrap.appendChild(line('From',rq.name+' <'+rq.email+'>'));
     wrap.appendChild(line('Relationship',rq.relationship||'—'));
     wrap.appendChild(line('Verified',rq.verificationState==='email_verified'?'Yes':'No'));
+    if(rq.verifyEmailState&&rq.verifyEmailState!=='sent'){var vem=rq.verifyEmailState==='failed'?'Verification email FAILED to send':rq.verifyEmailState==='logged'?'No email provider configured — not delivered':'Verification email pending';wrap.appendChild(line('Email',vem+(rq.verifyEmailAttempts?' ('+rq.verifyEmailAttempts+' attempt'+(rq.verifyEmailAttempts>1?'s':'')+')':'')));}
     wrap.appendChild(line('Status',prettyStatus(rq.status)));
     var desc=document.createElement('div');desc.style.cssText='margin:10px 0;padding:10px;background:var(--surface);border-radius:8px;white-space:pre-wrap;font-size:.9rem;';desc.textContent=rq.description;wrap.appendChild(desc);
     // Transition controls

@@ -38,6 +38,10 @@ interface Row {
   denied_at: string | null;
   closed_at: string | null;
   purge_after: string | null;
+  verify_email_state: string;
+  verify_email_error: string | null;
+  verify_email_attempts: number;
+  verify_email_last_at: string | null;
   verify_token_hash: string | null;
   verify_expires_at: string | null;
   status_token_hash: string | null;
@@ -77,9 +81,10 @@ export class PrivacyRequestRepository {
             resolution_summary, due_date, due_date_source, created_at,
             updated_at, verified_at, acknowledged_at, completed_at, denied_at,
             closed_at, purge_after, verify_token_hash, verify_expires_at,
-            status_token_hash)
+            status_token_hash, verify_email_state, verify_email_error,
+            verify_email_attempts, verify_email_last_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-                 $18,$19,$20,$21,$22,$23,$24,$25)`,
+                 $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)`,
         [
           row.id, row.destination, row.organization_id, row.type, row.name,
           row.email, row.details, row.relationship, row.verification_state,
@@ -87,7 +92,8 @@ export class PrivacyRequestRepository {
           row.due_date_source, row.created_at, row.updated_at, row.verified_at,
           row.acknowledged_at, row.completed_at, row.denied_at, row.closed_at,
           row.purge_after, row.verify_token_hash, row.verify_expires_at,
-          row.status_token_hash,
+          row.status_token_hash, row.verify_email_state, row.verify_email_error,
+          row.verify_email_attempts, row.verify_email_last_at,
         ],
       );
       return record;
@@ -117,6 +123,26 @@ export class PrivacyRequestRepository {
       row.destination === "tenant"
       ? mapRow(row)
       : undefined;
+  }
+
+  /**
+   * Fetch by id regardless of destination/scope. Used ONLY for recording
+   * verification-email delivery state on a request the caller just created (it
+   * already holds the trusted scope); never exposed to management reads, which
+   * always go through the scoped getForTenant / getPlatform methods.
+   */
+  async findAnyById(
+    id: string,
+  ): Promise<PrivacyRequestRecord | undefined> {
+    if (this.db) {
+      const r = await this.db.query(
+        "SELECT * FROM privacy_requests WHERE id=$1",
+        [id],
+      );
+      return mapOne(r.rows[0]);
+    }
+    const row = this.memory.get(id);
+    return row ? mapRow(row) : undefined;
   }
 
   async getPlatform(
@@ -219,6 +245,57 @@ export class PrivacyRequestRepository {
     return row ? mapRow(row) : undefined;
   }
 
+  /**
+   * Most-recent still-UNVERIFIED request for an email within a scope. Used by
+   * resend to rotate the verification token on the existing request rather than
+   * creating a duplicate. Destination-scoped and fail-closed (tenant requires a
+   * non-empty org id). Returns undefined if none — the caller stays generic so
+   * this never enables enumeration.
+   */
+  async findLatestUnverifiedByEmail(
+    scope: { destination: PrivacyDestination; organizationId?: string },
+    email: string,
+  ): Promise<PrivacyRequestRecord | undefined> {
+    if (scope.destination === "tenant" && !scope.organizationId) {
+      throw new Error("Tenant scope required.");
+    }
+    if (this.db) {
+      const clauses = [
+        "email=$1",
+        "destination=$2",
+        "verification_state='unverified'",
+      ];
+      const params: unknown[] = [email, scope.destination];
+      if (scope.destination === "tenant") {
+        params.push(scope.organizationId);
+        clauses.push(`organization_id=$${params.length}`);
+      } else {
+        clauses.push("organization_id IS NULL");
+      }
+      const r = await this.db.query(
+        `SELECT * FROM privacy_requests WHERE ${clauses.join(
+          " AND ",
+        )} ORDER BY created_at DESC LIMIT 1`,
+        params,
+      );
+      return mapOne(r.rows[0]);
+    }
+    return Array.from(this.memory.values())
+      .filter((row) => {
+        if (row.email !== email) return false;
+        if (row.destination !== scope.destination) return false;
+        if (row.verification_state !== "unverified") return false;
+        if (
+          scope.destination === "tenant" &&
+          row.organization_id !== scope.organizationId
+        )
+          return false;
+        return true;
+      })
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .map(mapRow)[0];
+  }
+
   private async rowByColumn(
     column: "verify_token_hash" | "status_token_hash",
     value: string,
@@ -271,7 +348,9 @@ export class PrivacyRequestRepository {
            resolution_summary=$9, due_date=$10, due_date_source=$11,
            updated_at=$12, verified_at=$13, acknowledged_at=$14,
            completed_at=$15, denied_at=$16, closed_at=$17, purge_after=$18,
-           verify_token_hash=$19, verify_expires_at=$20, status_token_hash=$21
+           verify_token_hash=$19, verify_expires_at=$20, status_token_hash=$21,
+           verify_email_state=$22, verify_email_error=$23,
+           verify_email_attempts=$24, verify_email_last_at=$25
          WHERE id=$1`,
         [
           row.id, row.type, row.name, row.details, row.relationship,
@@ -280,6 +359,8 @@ export class PrivacyRequestRepository {
           row.updated_at, row.verified_at, row.acknowledged_at,
           row.completed_at, row.denied_at, row.closed_at, row.purge_after,
           row.verify_token_hash, row.verify_expires_at, row.status_token_hash,
+          row.verify_email_state, row.verify_email_error,
+          row.verify_email_attempts, row.verify_email_last_at,
         ],
       );
       return record;
@@ -380,6 +461,10 @@ function toRow(
     denied_at: r.deniedAt,
     closed_at: r.closedAt,
     purge_after: r.purgeAfter,
+    verify_email_state: r.verifyEmailState,
+    verify_email_error: r.verifyEmailError,
+    verify_email_attempts: r.verifyEmailAttempts,
+    verify_email_last_at: r.verifyEmailLastAt,
     verify_token_hash: s.verifyTokenHash,
     verify_expires_at: s.verifyExpiresAt,
     status_token_hash: s.statusTokenHash,
@@ -417,5 +502,11 @@ function mapRow(row: Row): PrivacyRequestRecord {
     deniedAt: row.denied_at,
     closedAt: row.closed_at,
     purgeAfter: row.purge_after,
+    verifyEmailState:
+      (row.verify_email_state as PrivacyRequestRecord["verifyEmailState"]) ??
+      "pending",
+    verifyEmailError: row.verify_email_error ?? null,
+    verifyEmailAttempts: Number(row.verify_email_attempts ?? 0),
+    verifyEmailLastAt: row.verify_email_last_at ?? null,
   };
 }

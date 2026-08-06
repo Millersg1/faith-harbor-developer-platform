@@ -2,6 +2,8 @@ import { join } from "node:path";
 
 import express, {
   type ErrorRequestHandler,
+  type Request,
+  type Response,
 } from "express";
 
 import { normalizeDomain } from "../tenancy/OrganizationDomain";
@@ -82,10 +84,13 @@ import {
 } from "./tenantlegal/TenantLegalDocument";
 import type { PrivacyRequestService } from "./privacy/PrivacyRequestService";
 import { PrivacyValidationError } from "./privacy/PrivacyRequestService";
+import type { PlatformAuditService } from "./audit/PlatformAuditService";
 import { createPrivacyManagementRouter } from "./privacy/privacyManagementRouter";
 import {
   privacyIntakePage,
   privacyStatusPage,
+  privacyStatusPlaceholderPage,
+  privacyVerifyExchangePage,
   privacyVerifyResultPage,
 } from "./privacy/privacyPages";
 import {
@@ -156,6 +161,7 @@ export interface PlatformAppDependencies {
   legalAcceptance?: LegalAcceptanceService;
   tenantLegal?: TenantLegalService;
   privacy?: PrivacyRequestService;
+  platformAudit?: PlatformAuditService;
   admins: PlatformAdminService;
   adminSessions: PlatformAdminSessionService;
   platformAnalytics?: PlatformAnalyticsService;
@@ -582,6 +588,23 @@ export function createPlatformApp(
           .toLowerCase()
           .slice(0, 254),
     });
+    // Tighter limiter for verification resend (anti-abuse): 3 / 15 min /
+    // (ip,email). Independent of the submit limiter.
+    const resendLimiter = new RateLimiter({
+      max: 3,
+      windowMs: 15 * 60 * 1000,
+    });
+    const resendRateLimit = rateLimit({
+      limiter: resendLimiter,
+      scope: "privacy-resend",
+      keyPart: (req) =>
+        String(
+          (req.body as { email?: unknown })?.email ?? "",
+        )
+          .trim()
+          .toLowerCase()
+          .slice(0, 254),
+    });
 
     interface IntakeCtx {
       destination: "platform" | "tenant";
@@ -645,6 +668,90 @@ export function createPlatformApp(
       return `${proto}://${ctx.linkHost}`;
     };
 
+    // ---- Token-safe transport helpers ----
+    // Verification and status tokens are NEVER placed in a query string or the
+    // visible URL. They travel in the URL *fragment* (never sent to the server,
+    // so they can't reach an access log or Referer) and are exchanged, via a
+    // POST body, for a short-lived HttpOnly status-session cookie. These headers
+    // keep the token-processing pages out of caches, indexes, and referrers.
+    const PRIV_STATUS_COOKIE = "pr_status";
+    const PRIV_COOKIE_PATH = "/privacy-request/status";
+    const setPrivacyHeaders = (res: Response): void => {
+      res.set("Referrer-Policy", "no-referrer");
+      res.set("Cache-Control", "no-store, private, max-age=0");
+      res.set("Pragma", "no-cache");
+      res.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+      res.set("X-Content-Type-Options", "nosniff");
+    };
+    const readStatusCookie = (req: Request): string | undefined => {
+      const raw = req.headers.cookie;
+      if (!raw) return undefined;
+      for (const part of raw.split(";")) {
+        const i = part.indexOf("=");
+        if (i === -1) continue;
+        if (part.slice(0, i).trim() === PRIV_STATUS_COOKIE) {
+          return decodeURIComponent(part.slice(i + 1).trim());
+        }
+      }
+      return undefined;
+    };
+    const setStatusCookie = (res: Response, token: string): void => {
+      res.cookie(PRIV_STATUS_COOKIE, token, {
+        httpOnly: true,
+        sameSite: "strict",
+        secure: Boolean(deps.secureCookie),
+        path: PRIV_COOKIE_PATH,
+        maxAge: 90 * 24 * 60 * 60 * 1000,
+      });
+    };
+    const isFormPost = (req: Request): boolean =>
+      /application\/x-www-form-urlencoded/.test(
+        String(req.headers["content-type"] ?? ""),
+      );
+
+    // Send the verification email and record its HONEST, persisted delivery
+    // state. The raw token appears ONLY in the email body (fragment link) —
+    // never in the response, a log, or the delivery-state error. Best-effort:
+    // a delivery failure is recorded (state=failed/logged), never claimed as
+    // sent, and never throws into intake/resend.
+    const sendVerificationEmail = async (
+      ctx: { brandName: string; linkHost: string },
+      record: { id: string; email: string; organizationId: string | null },
+      verifyToken: string,
+    ): Promise<void> => {
+      const verifyUrl = `${linkBase(ctx)}/privacy-request/verify#v=${verifyToken}`;
+      const body = `We received a privacy request. Please verify your email by opening:\n\n${verifyUrl}\n\nThis link expires in 72 hours. If you did not make this request, you can ignore this message.`;
+      const subject = `Verify your privacy request to ${ctx.brandName}`;
+      if (!deps.email || !deps.email.connected()) {
+        // No real provider configured — recorded, NOT delivered (never "sent").
+        await privacy.recordVerificationDelivery(record.id, {
+          state: "logged",
+          error: deps.email ? "email provider not configured" : "no transport",
+        });
+        return;
+      }
+      const mailer = deps.email;
+      try {
+        const result = record.organizationId
+          ? await runWithTenant(
+              { organizationId: record.organizationId },
+              () => mailer.send({ to: record.email, subject, body }),
+            )
+          : await mailer.send({ to: record.email, subject, body });
+        const st = result.status;
+        await privacy.recordVerificationDelivery(record.id, {
+          state:
+            st === "sent" ? "sent" : st === "logged" ? "logged" : "failed",
+          error: st === "failed" ? result.error ?? "delivery failed" : null,
+        });
+      } catch (e) {
+        await privacy.recordVerificationDelivery(record.id, {
+          state: "failed",
+          error: e instanceof Error ? e.message : "send error",
+        });
+      }
+    };
+
     app.get("/privacy-request", (req, res, next) => {
       classifyIntake(req.headers.host)
         .then((ctx) => {
@@ -652,6 +759,7 @@ export function createPlatformApp(
             next();
             return;
           }
+          setPrivacyHeaders(res);
           res.type("html").send(
             privacyIntakePage({
               brandName: ctx.brandName,
@@ -697,28 +805,17 @@ export function createPlatformApp(
                     run,
                   )
                 : await run();
-            // Best-effort, honest verification email. The raw token appears
-            // ONLY in the email — never in the response or logs.
-            const verifyUrl = `${linkBase(ctx)}/privacy-request/verify?token=${created.verifyToken}`;
-            if (deps.email) {
-              const email = deps.email;
-              const send = () =>
-                email.sendQuietly({
-                  to: created.record.email,
-                  subject: `Verify your privacy request to ${ctx.brandName}`,
-                  body: `We received a privacy request. Please verify your email by opening:\n\n${verifyUrl}\n\nIf you did not make this request, you can ignore this message.`,
-                });
-              // Best-effort (sendQuietly never throws). Tenant emails record to
-              // the tenant outbox; platform emails send without a tenant scope.
-              if (ctx.organizationId) {
-                await runWithTenant(
-                  { organizationId: ctx.organizationId },
-                  () => send(),
-                ).catch(() => undefined);
-              } else {
-                await send().catch(() => undefined);
-              }
-            }
+            // Best-effort, honest verification email with persisted delivery
+            // state. The raw token appears ONLY in the email (fragment link).
+            await sendVerificationEmail(
+              { brandName: ctx.brandName, linkHost: ctx.linkHost },
+              {
+                id: created.record.id,
+                email: created.record.email,
+                organizationId: ctx.organizationId,
+              },
+              created.verifyToken,
+            );
             res.json({
               message:
                 "Thank you. If the details are valid, a verification email is on its way. Check your inbox to confirm your address.",
@@ -745,61 +842,235 @@ export function createPlatformApp(
       },
     );
 
-    app.get("/privacy-request/verify", (req, res) => {
-      const token =
-        typeof req.query.token === "string" ? req.query.token : "";
-      Promise.all([
-        brandCtx(req.headers.host),
-        privacy.verifyEmail(token),
-      ])
-        .then(([ctx, result]) => {
-          if ("record" in result) {
-            const statusUrl = `${linkBase(ctx)}/privacy-request/status?token=${result.statusToken}`;
-            res.type("html").send(
-              privacyVerifyResultPage(
+    // POST resend — re-send the verification email for an UNVERIFIED request.
+    // Host-classified (same fail-closed rule as submit); rotates the existing
+    // request's token (no duplicate request, no lifecycle change); ALWAYS
+    // returns the same generic response so it can't enumerate emails.
+    app.post(
+      "/privacy-requests/resend",
+      csrfGuard,
+      resendRateLimit,
+      (req, res, next) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const email = String(body.email ?? "");
+        classifyIntake(req.headers.host)
+          .then(async (ctx) => {
+            if (!ctx) {
+              next();
+              return;
+            }
+            const scope =
+              ctx.destination === "tenant" && ctx.organizationId
+                ? { kind: "tenant" as const, organizationId: ctx.organizationId }
+                : { kind: "platform" as const };
+            const rotated =
+              ctx.destination === "tenant" && ctx.organizationId
+                ? await runWithTenant(
+                    { organizationId: ctx.organizationId },
+                    () => privacy.resendVerification(scope, email),
+                  )
+                : await privacy.resendVerification(scope, email);
+            if (rotated) {
+              await sendVerificationEmail(
+                { brandName: ctx.brandName, linkHost: ctx.linkHost },
                 {
-                  brandName: ctx.brandName,
-                  destinationLabel: ctx.destination,
+                  id: rotated.record.id,
+                  email: rotated.record.email,
+                  organizationId: ctx.organizationId,
                 },
-                "ok",
-                statusUrl,
-              ),
-            );
-            return;
-          }
-          res.type("html").send(
-            privacyVerifyResultPage(
-              {
+                rotated.verifyToken,
+              );
+            }
+            // Generic either way — never reveals whether a request existed.
+            res.json({
+              message:
+                "If a pending request matches that email, we've sent a new verification link.",
+            });
+          })
+          .catch(() => {
+            res.json({
+              message:
+                "If a pending request matches that email, we've sent a new verification link.",
+            });
+          });
+      },
+    );
+
+    // GET verify — serve a NEUTRAL exchange page. The token is in the URL
+    // fragment (never sent here), so this GET consumes nothing and is safe for
+    // email link-scanners/prefetchers. The single-use consumption happens on
+    // the POST below.
+    app.get("/privacy-request/verify", (req, res, next) => {
+      brandCtx(req.headers.host)
+        .then((ctx) => {
+          setPrivacyHeaders(res);
+          res
+            .type("html")
+            .send(
+              privacyVerifyExchangePage({
                 brandName: ctx.brandName,
                 destinationLabel: ctx.destination,
-              },
-              result.error,
-            ),
-          );
+              }),
+            );
         })
-        .catch(() => res.status(400).type("html").send("Bad request"));
+        .catch(() => next());
     });
 
-    app.get("/privacy-request/status", (req, res) => {
-      const token =
-        typeof req.query.token === "string" ? req.query.token : "";
-      Promise.all([
-        brandCtx(req.headers.host),
-        privacy.requesterStatus(token),
-      ])
-        .then(([ctx, view]) => {
-          res.type("html").send(
-            privacyStatusPage(
-              {
-                brandName: ctx.brandName,
-                destinationLabel: ctx.destination,
-              },
-              view,
-            ),
-          );
+    // POST verify — exchange the single-use verification token (JSON body from
+    // the exchange script, or `code` from the no-JS form) for a status session.
+    // On success we set the HttpOnly status cookie, best-effort email the
+    // durable private status link, and hand off to the clean, token-free
+    // status URL. No token is ever echoed in a redirect target or logged.
+    app.post(
+      "/privacy-request/verify",
+      express.urlencoded({ extended: false }),
+      csrfGuard,
+      (req, res) => {
+        const form = isFormPost(req);
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const token =
+          typeof body.token === "string"
+            ? body.token
+            : typeof body.code === "string"
+              ? body.code.trim()
+              : "";
+        Promise.all([brandCtx(req.headers.host), privacy.verifyEmail(token)])
+          .then(async ([ctx, result]) => {
+            setPrivacyHeaders(res);
+            if ("record" in result) {
+              setStatusCookie(res, result.statusToken);
+              // Best-effort: email the requester their durable private status
+              // link (fragment form — never a query string). sendQuietly never
+              // throws; a failure here doesn't strand the verified request.
+              if (deps.email) {
+                const statusLink = `${linkBase(ctx)}/privacy-request/status#s=${result.statusToken}`;
+                const send = () =>
+                  deps.email!.sendQuietly({
+                    to: result.record.email,
+                    subject: `Your privacy request status link (${ctx.brandName})`,
+                    body: `Your email is verified. You can check the status of your privacy request at any time using this private link:\n\n${statusLink}\n\nKeep this link private to you.`,
+                  });
+                if (result.record.organizationId) {
+                  await runWithTenant(
+                    { organizationId: result.record.organizationId },
+                    () => send(),
+                  ).catch(() => undefined);
+                } else {
+                  await send().catch(() => undefined);
+                }
+              }
+              if (form) {
+                res.redirect(303, "/privacy-request/status");
+                return;
+              }
+              res.json({ ok: true, redirect: "/privacy-request/status" });
+              return;
+            }
+            if (form) {
+              res
+                .status(400)
+                .type("html")
+                .send(
+                  privacyVerifyResultPage(
+                    {
+                      brandName: ctx.brandName,
+                      destinationLabel: ctx.destination,
+                    },
+                    result.error,
+                  ),
+                );
+              return;
+            }
+            res.json({ ok: false, reason: result.error });
+          })
+          .catch(() => {
+            setPrivacyHeaders(res);
+            if (form) {
+              res.status(400).type("html").send("Bad request");
+            } else {
+              res.status(400).json({ ok: false, reason: "invalid" });
+            }
+          });
+      },
+    );
+
+    // GET status — cookie-gated. With a valid status-session cookie we render
+    // the redacted view server-side (works without JavaScript). Without one we
+    // serve a neutral placeholder whose script exchanges a `#s=` fragment link
+    // for the cookie, then reloads this same clean URL. The visible URL never
+    // carries a token in either path.
+    app.get("/privacy-request/status", (req, res, next) => {
+      const cookieToken = readStatusCookie(req);
+      brandCtx(req.headers.host)
+        .then(async (ctx) => {
+          setPrivacyHeaders(res);
+          const pageCtx = {
+            brandName: ctx.brandName,
+            destinationLabel: ctx.destination,
+          };
+          if (!cookieToken) {
+            res.type("html").send(privacyStatusPlaceholderPage(pageCtx));
+            return;
+          }
+          const view = await privacy.requesterStatus(cookieToken);
+          if (!view) {
+            // Stale/revoked cookie — clear it and show the neutral placeholder.
+            res.clearCookie(PRIV_STATUS_COOKIE, { path: PRIV_COOKIE_PATH });
+            res.type("html").send(privacyStatusPlaceholderPage(pageCtx));
+            return;
+          }
+          // Refresh the sliding session and render the redacted view.
+          setStatusCookie(res, cookieToken);
+          res.type("html").send(privacyStatusPage(pageCtx, view));
         })
-        .catch(() => res.status(400).type("html").send("Bad request"));
+        .catch(() => next());
     });
+
+    // POST status exchange — trade a `#s=` fragment status token (JSON body, or
+    // `code` from the no-JS form) for the HttpOnly status cookie. Returns no
+    // requester data; the browser then loads the clean status URL.
+    app.post(
+      "/privacy-request/status/exchange",
+      express.urlencoded({ extended: false }),
+      csrfGuard,
+      (req, res) => {
+        const form = isFormPost(req);
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const token =
+          typeof body.token === "string"
+            ? body.token
+            : typeof body.code === "string"
+              ? body.code.trim()
+              : "";
+        privacy
+          .requesterStatus(token)
+          .then((view) => {
+            setPrivacyHeaders(res);
+            if (view) {
+              setStatusCookie(res, token);
+              if (form) {
+                res.redirect(303, "/privacy-request/status");
+                return;
+              }
+              res.json({ ok: true });
+              return;
+            }
+            if (form) {
+              res.redirect(303, "/privacy-request/status");
+              return;
+            }
+            res.json({ ok: false });
+          })
+          .catch(() => {
+            setPrivacyHeaders(res);
+            if (form) {
+              res.status(400).type("html").send("Bad request");
+            } else {
+              res.status(400).json({ ok: false });
+            }
+          });
+      },
+    );
   }
 
   // Public form share page + submit endpoint (NO auth — resolves the tenant
@@ -992,6 +1263,7 @@ export function createPlatformApp(
       health: deps.platformHealth,
       legal: deps.legal,
       privacy: deps.privacy,
+      platformAudit: deps.platformAudit,
       secureCookie:
         deps.secureCookie,
       docsDir: deps.docsDir,

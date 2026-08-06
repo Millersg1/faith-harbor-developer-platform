@@ -147,10 +147,30 @@ export interface PrivacyRequestRecord {
   completedAt: string | null;
   deniedAt: string | null;
   closedAt: string | null;
-  /** Retention: when this record becomes eligible for purge (policy-derived). */
+  /**
+   * Reserved retention marker. NOT populated and NOT an enforcement mechanism:
+   * there is no automated time-based purge for privacy requests (see
+   * docs/19_PRIVACY_REQUESTS.md — privacy-request records are compliance
+   * evidence retained as long as reasonably necessary). Always null today.
+   */
   purgeAfter: string | null;
+  /** Honest, persisted verification-email delivery state (no PII, no tokens). */
+  verifyEmailState: VerifyEmailState;
+  /** Short, non-PII last delivery error (e.g. transport status), or null. */
+  verifyEmailError: string | null;
+  /** How many verification-email attempts have been made. */
+  verifyEmailAttempts: number;
+  /** ISO timestamp of the last verification-email attempt, or null. */
+  verifyEmailLastAt: string | null;
   /** Never expose raw tokens; only hashes are stored (see repository). */
 }
+
+/**
+ * Verification-email delivery state. `pending` before any attempt; `sent` when
+ * a transport accepted it; `logged` when no provider is configured (recorded
+ * but NOT actually delivered — never claimed as sent); `failed` on error.
+ */
+export type VerifyEmailState = "pending" | "sent" | "logged" | "failed";
 
 /** A timeline entry: an internal note or a requester-facing message. */
 export interface PrivacyRequestNote {

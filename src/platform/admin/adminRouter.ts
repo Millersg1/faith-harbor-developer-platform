@@ -24,6 +24,7 @@ import {
   PrivacyValidationError,
 } from "../privacy/PrivacyRequestService";
 import type { PrivacyRequestService } from "../privacy/PrivacyRequestService";
+import type { PlatformAuditService } from "../audit/PlatformAuditService";
 import { toPublicAdmin } from "./PlatformAdmin";
 import {
   AdminPasswordError,
@@ -45,6 +46,7 @@ export interface AdminRouterDependencies {
   health?: PlatformHealthService;
   legal?: PlatformLegalService;
   privacy?: PrivacyRequestService;
+  platformAudit?: PlatformAuditService;
   secureCookie?: boolean;
 
   /**
@@ -712,17 +714,25 @@ export function createAdminRouter(
         },
       });
     };
+    // Durable, queryable, tenant-neutral audit for platform privacy actions.
+    // Records compact enums + identifiers ONLY (never names/emails/descriptions/
+    // notes/tokens). Best-effort: never throws into the audited action.
     const plog = (
       req: Request,
       action: string,
+      targetId: string,
       meta: Record<string, unknown>,
-    ) => {
-      const adminId = (req as AdminedRequest).admin?.id ?? "?";
-      console.log(
-        `[privacy-audit] ${action} ${Object.entries(meta)
-          .map(([k, v]) => `${k}=${String(v)}`)
-          .join(" ")} admin=${adminId}`,
-      );
+    ): void => {
+      const adminId = (req as AdminedRequest).admin?.id ?? null;
+      void deps.platformAudit?.record({
+        action,
+        actorType: "platform_admin",
+        actorId: adminId,
+        targetType: "privacy_request",
+        targetId,
+        outcome: "success",
+        metadata: meta,
+      });
     };
 
     router.get(
@@ -771,8 +781,7 @@ export function createAdminRouter(
                 : undefined,
           })
           .then((rec) => {
-            plog(req, "privacy_request.status_changed", {
-              requestId: rec.id,
+            plog(req, "privacy_request.status_changed", rec.id, {
               destination: "platform",
               category: rec.category,
               newStatus: rec.status,
@@ -798,15 +807,36 @@ export function createAdminRouter(
             visibility,
             authorId: (req as AdminedRequest).admin?.id ?? null,
           })
-          .then((note) =>
+          .then((note) => {
+            // Audit records only the note's visibility + id — never its body.
+            plog(req, "privacy_request.note_added", String(req.params.id), {
+              destination: "platform",
+              noteId: note.id,
+              visibility: note.visibility,
+            });
             res.json({
               note: {
                 id: note.id,
                 visibility: note.visibility,
                 createdAt: note.createdAt,
               },
-            }),
-          )
+            });
+          })
+          .catch((e) => pfail(res, e));
+      },
+    );
+    // Durable audit trail for a platform privacy request (admin-only, no PII).
+    router.get(
+      "/privacy-requests/:id/audit",
+      deps.requireAdmin,
+      (req, res) => {
+        if (!deps.platformAudit) {
+          res.json({ events: [] });
+          return;
+        }
+        deps.platformAudit
+          .listForTarget("privacy_request", String(req.params.id))
+          .then((events) => res.json({ events }))
           .catch((e) => pfail(res, e));
       },
     );

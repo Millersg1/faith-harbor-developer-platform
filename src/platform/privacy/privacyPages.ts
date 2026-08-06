@@ -28,6 +28,8 @@ function shell(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+  <meta name="referrer" content="no-referrer" />
   <title>${escapeHtml(title)} · ${escapeHtml(brandName)}</title>
   <style>
     :root{--ink:#14181f;--muted:#5b6472;--line:#e4e7ee;--bg:#f7f8fb;--card:#fff;--accent:${a};--warn-bg:#fef3c7;--warn:#92400e;}
@@ -118,30 +120,103 @@ export function privacyIntakePage(ctx: IntakePageContext): string {
   return shell("Privacy request", ctx.brandName, ctx.accentColor, main);
 }
 
+/**
+ * Neutral verification EXCHANGE page. The single-use token arrives in the URL
+ * *fragment* (`#v=…`) — which the browser never sends to the server, so it can
+ * never reach an Apache/proxy access log or a `Referer` header. Client script
+ * reads the fragment, strips it from history immediately, and POSTs it in a
+ * request body to exchange it for a status session. No token is ever placed in
+ * a query string, the visible URL, or the DOM. A `<noscript>` manual-code form
+ * provides a JS-free fallback (the code is also POSTed, never put in a URL).
+ */
+export function privacyVerifyExchangePage(ctx: IntakePageContext): string {
+  const main = `<div class="card">
+    <h1>Verifying your request…</h1>
+    <p class="sub" id="msg">One moment while we confirm your email with ${escapeHtml(ctx.brandName)}.</p>
+    <noscript>
+      <p class="sub">JavaScript is disabled. To protect your verification code it is never placed in the address bar. Paste the code from your email below to verify.</p>
+      <form method="post" action="/privacy-request/verify">
+        <label for="code">Verification code</label>
+        <input id="code" name="code" autocomplete="off" spellcheck="false" />
+        <button class="btn" type="submit">Verify</button>
+      </form>
+    </noscript>
+  </div>`;
+  const script = `<script>
+  (function(){
+    var msg=document.getElementById('msg');
+    function done(t){msg.textContent=t;}
+    var h=location.hash||'';var m=h.match(/^#v=([A-Za-z0-9]+)$/);
+    try{history.replaceState(null,'',location.pathname);}catch(e){}
+    if(!m){done('This link is missing its verification code. Please open the link from your email.');return;}
+    var token=m[1];
+    fetch('/privacy-request/verify',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Privacy-Exchange':'1'},body:JSON.stringify({token:token})})
+      .then(function(r){return r.json().catch(function(){return{};});})
+      .then(function(d){
+        if(d&&d.ok&&d.redirect){location.replace(d.redirect);return;}
+        var reason=d&&d.reason;
+        done(reason==='expired'?'This verification link has expired. You can submit a new privacy request if needed.':reason==='already_used'?'This verification link has already been used. If you already verified, use the status link we showed you.':'This verification link is not valid. You can submit a new privacy request if needed.');
+      })
+      .catch(function(){done('Something went wrong verifying your request. Please try again in a moment.');});
+  })();
+  </script>`;
+  return shell("Verify privacy request", ctx.brandName, ctx.accentColor, main + script);
+}
+
+/** Simple server-rendered verify result (used for the no-JS form path). */
 export function privacyVerifyResultPage(
   ctx: IntakePageContext,
-  outcome: "ok" | "invalid" | "expired" | "already_used",
-  statusUrl?: string,
+  outcome: "invalid" | "expired" | "already_used",
 ): string {
-  let body: string;
-  if (outcome === "ok") {
-    body = `<h1>Email verified</h1>
-      <p class="sub">Thank you. Your privacy request has been received and is now with ${escapeHtml(ctx.brandName)}. Verifying confirms control of this email address; additional identity verification may still be required.</p>
-      ${statusUrl ? `<p>You can check the status of your request here:</p><p><a href="${escapeHtml(statusUrl)}">View request status</a></p><p class="hint">Save this link — it is private to you.</p>` : ""}`;
-  } else {
-    const m: Record<string, string> = {
-      invalid: "This verification link is not valid.",
-      expired: "This verification link has expired.",
-      already_used: "This verification link has already been used.",
-    };
-    body = `<h1>Verification link</h1><p class="sub">${escapeHtml(m[outcome])} You can submit a new privacy request if needed.</p>`;
-  }
+  const m: Record<string, string> = {
+    invalid: "This verification link is not valid.",
+    expired: "This verification link has expired.",
+    already_used: "This verification link has already been used.",
+  };
   return shell(
     "Verify privacy request",
     ctx.brandName,
     ctx.accentColor,
-    `<div class="card">${body}</div>`,
+    `<div class="card"><h1>Verification link</h1><p class="sub">${escapeHtml(m[outcome])} You can submit a new privacy request if needed.</p></div>`,
   );
+}
+
+/**
+ * Neutral status EXCHANGE placeholder, shown when there is no active status
+ * session cookie. If the requester arrived via their private status link the
+ * status token is in the fragment (`#s=…`); client script strips it from
+ * history and POSTs it to exchange it for a short-lived HttpOnly cookie, then
+ * reloads the clean, token-free status URL. A `<noscript>` manual-code form is
+ * the JS-free fallback. Contains no requester data.
+ */
+export function privacyStatusPlaceholderPage(ctx: IntakePageContext): string {
+  const main = `<div class="card">
+    <h1>Request status</h1>
+    <p class="sub" id="msg">Looking up your request…</p>
+    <noscript>
+      <p class="sub">JavaScript is disabled. Paste the status code from your email or verification page below to view your request. Your code is never placed in the address bar.</p>
+      <form method="post" action="/privacy-request/status/exchange">
+        <label for="code">Status code</label>
+        <input id="code" name="code" autocomplete="off" spellcheck="false" />
+        <button class="btn" type="submit">View status</button>
+      </form>
+    </noscript>
+  </div>`;
+  const script = `<script>
+  (function(){
+    var msg=document.getElementById('msg');
+    function done(t){msg.textContent=t;}
+    var h=location.hash||'';var m=h.match(/^#s=([A-Za-z0-9]+)$/);
+    try{history.replaceState(null,'',location.pathname);}catch(e){}
+    if(!m){done('This status link is not valid. Please use the private status link from your email or verification page.');return;}
+    var token=m[1];
+    fetch('/privacy-request/status/exchange',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Privacy-Exchange':'1'},body:JSON.stringify({token:token})})
+      .then(function(r){return r.json().catch(function(){return{};});})
+      .then(function(d){if(d&&d.ok){location.replace('/privacy-request/status');return;}done('This status link is not valid or has expired.');})
+      .catch(function(){done('Something went wrong loading your request. Please try again in a moment.');});
+  })();
+  </script>`;
+  return shell("Request status", ctx.brandName, ctx.accentColor, main + script);
 }
 
 export function privacyStatusPage(

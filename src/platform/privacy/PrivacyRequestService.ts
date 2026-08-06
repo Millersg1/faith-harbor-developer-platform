@@ -10,6 +10,7 @@ import {
   type PrivacyRequestNote,
   type PrivacyRequestRecord,
   type PrivacyStatus,
+  type VerifyEmailState,
 } from "./PrivacyRequest";
 import {
   PrivacyRequestRepository,
@@ -121,6 +122,10 @@ export class PrivacyRequestService {
       deniedAt: null,
       closedAt: null,
       purgeAfter: null,
+      verifyEmailState: "pending",
+      verifyEmailError: null,
+      verifyEmailAttempts: 0,
+      verifyEmailLastAt: null,
     };
     await this.repo.create(record, {
       verifyTokenHash,
@@ -130,6 +135,67 @@ export class PrivacyRequestService {
       statusTokenHash: null,
     });
     return { record, verifyToken };
+  }
+
+  /**
+   * Record the honest outcome of a verification-email send attempt. `sent` /
+   * `logged` / `failed` are persisted with a short, non-PII error string. Never
+   * marks a message "sent" that the transport did not accept ("logged" means no
+   * provider is configured — recorded, not delivered). Best-effort: a failure
+   * to record the delivery state must not break intake.
+   */
+  async recordVerificationDelivery(
+    id: string,
+    outcome: { state: VerifyEmailState; error?: string | null },
+  ): Promise<void> {
+    try {
+      const rec = await this.repo.findAnyById(id);
+      if (!rec) return;
+      await this.repo.update({
+        ...rec,
+        verifyEmailState: outcome.state,
+        verifyEmailError: outcome.error
+          ? String(outcome.error).slice(0, 200)
+          : null,
+        verifyEmailAttempts: rec.verifyEmailAttempts + 1,
+        verifyEmailLastAt: new Date().toISOString(),
+      });
+    } catch {
+      // Best-effort; never throw into intake.
+    }
+  }
+
+  /**
+   * Resend verification for an unverified request. Finds the most-recent still-
+   * unverified request for `email` in `scope`, ROTATES its verification token
+   * (new single-use token + fresh 72h expiry — the old token stops working),
+   * and returns the new raw token ONCE for the caller to email. Never creates a
+   * duplicate request and never transitions lifecycle. Returns null when there
+   * is no matching unverified request (the caller stays generic, so this cannot
+   * be used to enumerate emails).
+   */
+  async resendVerification(
+    scope: Scope,
+    email: string,
+  ): Promise<{ record: PrivacyRequestRecord; verifyToken: string } | null> {
+    const normalized = normalizeEmail(email);
+    if (!normalized.includes("@")) return null;
+    const repoScope =
+      scope.kind === "tenant"
+        ? { destination: "tenant" as const, organizationId: scope.organizationId }
+        : { destination: "platform" as const };
+    const rec = await this.repo.findLatestUnverifiedByEmail(
+      repoScope,
+      normalized,
+    );
+    if (!rec) return null;
+    const { token: verifyToken, hash: verifyTokenHash } = generateToken();
+    const now = new Date().toISOString();
+    await this.repo.update(rec, {
+      verifyTokenHash,
+      verifyExpiresAt: new Date(Date.parse(now) + VERIFY_TTL_MS).toISOString(),
+    });
+    return { record: rec, verifyToken };
   }
 
   /**
