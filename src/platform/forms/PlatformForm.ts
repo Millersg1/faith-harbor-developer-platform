@@ -100,13 +100,18 @@ export type SubmissionStatus =
   | "archived";
 
 /**
- * Attribution + consent evidence for a public submission. Server-derived fields
- * (ip, userAgent, referrer) are captured from the request; landingUrl + utm* are
- * supplied by the embedding page. All optional; never fabricated.
+ * Attribution + consent evidence for a public submission. Data-minimized:
+ * - NO user-agent (not in the platform's disclosed data inventory; not
+ *   collected — see docs/20_PUBLIC_LEAD_FORMS.md and the V1 Privacy Policy).
+ * - IP is stored ONLY as a keyed hash (`ipHash`) for abuse/consent evidence;
+ *   the raw IP is used transiently for rate limiting and never persisted here.
+ * - `referrer`/`landingUrl` are reduced to origin+path (no query string,
+ *   fragment, or credentials).
+ * landingUrl + utm* are supplied by the embedding page. All optional.
  */
 export interface FormAttribution {
-  ip?: string;
-  userAgent?: string;
+  /** Keyed hash of the derived client IP (never the raw IP). */
+  ipHash?: string;
   referrer?: string;
   landingUrl?: string;
   utmSource?: string;

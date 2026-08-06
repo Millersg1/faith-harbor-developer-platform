@@ -585,10 +585,29 @@ export function createPlatformApp(
       const n = Number(ts);
       return Number.isFinite(n) ? Date.now() - n : null;
     };
+    // Derive the client IP through the app's trusted-proxy config (`trust
+    // proxy = 1`), NOT arbitrary X-Forwarded-For. `req.ip` respects the single
+    // trusted hop, so a client cannot spoof XFF to forge it.
     const clientIp = (req: Request): string =>
-      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
-      req.socket.remoteAddress ||
-      "unknown";
+      req.ip || req.socket.remoteAddress || "unknown";
+    // Store only a KEYED HASH of the IP as abuse/consent evidence — never the
+    // raw IP. Privacy-minimizing: lets you correlate "same IP" without
+    // retaining the address. Truncated; a restart rotates the key.
+    const hashIp = (ip: string): string =>
+      createHmac("sha256", formTokenSecret).update(ip).digest("hex").slice(0, 16);
+    // Reduce a URL to origin+path only — dropping the query string, fragment,
+    // and any credentials — so we never persist URL tokens, consent/email
+    // tokens, or sensitive query parameters. Length-limited.
+    const sanitizeUrl = (raw: unknown): string | undefined => {
+      if (typeof raw !== "string" || !raw.trim()) return undefined;
+      try {
+        const u = new URL(raw.trim());
+        if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
+        return `${u.origin}${u.pathname}`.slice(0, 512);
+      } catch {
+        return undefined;
+      }
+    };
     const extractEmail = (data: Record<string, unknown>): string => {
       for (const v of Object.values(data)) {
         if (typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())) {
@@ -799,8 +818,9 @@ export function createPlatformApp(
           return;
         }
 
-        // Attribution: server-derived (ip/ua/referer) + client-supplied meta
-        // (landing URL + UTMs). All optional, capped, never fabricated.
+        // Attribution (data-minimized): keyed IP hash (never raw IP, never
+        // user-agent) + client-supplied landing/referrer reduced to origin+path
+        // + capped UTMs. All optional; never fabricated.
         const meta =
           body.meta && typeof body.meta === "object"
             ? (body.meta as Record<string, unknown>)
@@ -809,19 +829,24 @@ export function createPlatformApp(
           meta.utm && typeof meta.utm === "object"
             ? (meta.utm as Record<string, unknown>)
             : {};
-        const s = (v: unknown): string | undefined =>
-          typeof v === "string" && v.trim() ? v.trim().slice(0, 500) : undefined;
+        // UTM values are short labels — length-limit and strip control chars.
+        const tag = (v: unknown): string | undefined => {
+          if (typeof v !== "string" || !v.trim()) return undefined;
+          const cleaned = Array.from(v.trim())
+            .filter((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)
+            .join("");
+          return cleaned.slice(0, 200) || undefined;
+        };
         const attribution = {
-          ip,
-          userAgent: s(req.headers["user-agent"]),
-          referrer: s(meta.referrer) ?? s(req.headers.referer),
-          landingUrl: s(meta.landingUrl),
-          utmSource: s(utm.source),
-          utmMedium: s(utm.medium),
-          utmCampaign: s(utm.campaign),
-          utmContent: s(utm.content),
-          utmTerm: s(utm.term),
-          leadMagnetId: s(meta.leadMagnetId),
+          ipHash: ip && ip !== "unknown" ? hashIp(ip) : undefined,
+          referrer: sanitizeUrl(meta.referrer) ?? sanitizeUrl(req.headers.referer),
+          landingUrl: sanitizeUrl(meta.landingUrl),
+          utmSource: tag(utm.source),
+          utmMedium: tag(utm.medium),
+          utmCampaign: tag(utm.campaign),
+          utmContent: tag(utm.content),
+          utmTerm: tag(utm.term),
+          leadMagnetId: tag(meta.leadMagnetId),
         };
 
         forms

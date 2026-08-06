@@ -320,7 +320,7 @@ describe("public form submit — abuse controls", () => {
 });
 
 describe("public form — attribution & deterministic lead merge", () => {
-  it("captures UTM + landing + server-derived attribution on the submission", async () => {
+  it("captures data-minimized attribution: UTM + origin/path, IP hash, NO user-agent", async () => {
     const { app, forms } = buildApp();
     const slug = await makeForm(forms, "orgA");
     const res = await request(app)
@@ -329,8 +329,10 @@ describe("public form — attribution & deterministic lead merge", () => {
       .send({
         data: { name: "Dana", email: "dana@example.com" },
         meta: {
-          landingUrl: "https://institute.example/guide",
-          utm: { source: "newsletter", medium: "email", campaign: "spring" },
+          // Full URL with query + fragment + credentials — must be reduced.
+          landingUrl:
+            "https://user:pw@institute.example/guide?token=SECRET&x=1#frag",
+          utm: { source: "newsletter", medium: "email", campaign: "spring-2026" },
         },
       });
     expect(res.status).toBe(200);
@@ -340,9 +342,18 @@ describe("public form — attribution & deterministic lead merge", () => {
       expect(subs).toHaveLength(1);
       const a = subs[0].attribution!;
       expect(a.utmSource).toBe("newsletter");
-      expect(a.utmCampaign).toBe("spring");
+      expect(a.utmCampaign).toBe("spring-2026"); // hyphens preserved
+      // Landing URL reduced to origin+path — no credentials, query, or fragment.
       expect(a.landingUrl).toBe("https://institute.example/guide");
-      expect(a.userAgent).toBe("TestAgent/1.0");
+      expect(JSON.stringify(a)).not.toContain("SECRET");
+      expect(JSON.stringify(a)).not.toContain("user:pw");
+      expect(JSON.stringify(a)).not.toContain("frag");
+      // NO user-agent is collected (not in the disclosed data inventory).
+      expect((a as Record<string, unknown>).userAgent).toBeUndefined();
+      // IP is stored only as a short keyed hash, never the raw address.
+      expect(a.ipHash).toBeTruthy();
+      expect(a.ipHash!.length).toBeLessThanOrEqual(16);
+      expect((a as Record<string, unknown>).ip).toBeUndefined();
       expect(a.submittedAt).toBeTruthy();
     });
   });

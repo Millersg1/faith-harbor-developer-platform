@@ -80,6 +80,28 @@ titles are all data — never insert them with `innerHTML` / `outerHTML` /
 Never do `element.innerHTML = out.confirmationMessage` (or `outerHTML`,
 `insertAdjacentHTML`). It would execute `"<img src=x onerror=...>"`.
 
+## Attribution & data minimization
+
+Every public submission records attribution, minimized to what's justified and
+disclosed:
+
+- **No user-agent.** The V1 Privacy Policy's data inventory discloses IP address
+  ("Authentication and security data … IP address … to rate-limit abuse") but
+  does **not** list user-agent/device data. So user-agent is **not collected**,
+  and no visitor fingerprinting is performed. *(Factual note: an earlier build on
+  this branch collected user-agent; that was inconsistent with the disclosed
+  inventory and has been removed. The immutable V1 document is unchanged.)*
+- **IP is stored only as a short keyed hash** (`ipHash`, HMAC-truncated), never
+  the raw address. The raw IP is used **transiently** for rate limiting and is
+  never persisted. IP is derived via the app's trusted-proxy config
+  (`trust proxy = 1` → `req.ip`), never from arbitrary `X-Forwarded-For`.
+- **Landing URL & referrer are reduced to origin + path** — the query string,
+  fragment, and any URL credentials are dropped — so we never persist URL
+  tokens, consent/email tokens, or sensitive query parameters. UTM values are
+  separate short labels (control-stripped, length-limited).
+- Attribution is tenant-scoped (on the tenant's `form_submissions`) and never
+  exposed publicly or across tenants.
+
 ## Current status of the build
 
 - Fail-closed: public forms create the CRM lead only; **marketing enrollment is
