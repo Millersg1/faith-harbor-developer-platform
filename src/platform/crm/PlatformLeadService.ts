@@ -99,6 +99,13 @@ export class PlatformLeadService {
     return lead;
   }
 
+  /** Tenant-scoped lookup by email (case-insensitive) for safe merge. */
+  async findByEmail(
+    email: string,
+  ): Promise<PlatformLeadRecord | undefined> {
+    return this.repository.findByEmail(email);
+  }
+
   async list(): Promise<
     readonly PlatformLeadRecord[]
   > {

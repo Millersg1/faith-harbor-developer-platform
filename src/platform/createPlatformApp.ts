@@ -799,8 +799,33 @@ export function createPlatformApp(
           return;
         }
 
+        // Attribution: server-derived (ip/ua/referer) + client-supplied meta
+        // (landing URL + UTMs). All optional, capped, never fabricated.
+        const meta =
+          body.meta && typeof body.meta === "object"
+            ? (body.meta as Record<string, unknown>)
+            : {};
+        const utm =
+          meta.utm && typeof meta.utm === "object"
+            ? (meta.utm as Record<string, unknown>)
+            : {};
+        const s = (v: unknown): string | undefined =>
+          typeof v === "string" && v.trim() ? v.trim().slice(0, 500) : undefined;
+        const attribution = {
+          ip,
+          userAgent: s(req.headers["user-agent"]),
+          referrer: s(meta.referrer) ?? s(req.headers.referer),
+          landingUrl: s(meta.landingUrl),
+          utmSource: s(utm.source),
+          utmMedium: s(utm.medium),
+          utmCampaign: s(utm.campaign),
+          utmContent: s(utm.content),
+          utmTerm: s(utm.term),
+          leadMagnetId: s(meta.leadMagnetId),
+        };
+
         forms
-          .submitPublic(String(req.params.slug), data)
+          .submitPublic(String(req.params.slug), data, attribution)
           .then((result) => {
             submitIdemp.set(idempKey, { at: now, body: result });
             res.json(result);

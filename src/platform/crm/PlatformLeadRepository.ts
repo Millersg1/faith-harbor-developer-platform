@@ -118,6 +118,38 @@ export class PlatformLeadRepository extends TenantScopedRepository {
       : undefined;
   }
 
+  /**
+   * Find the most-recent lead in THIS tenant with a matching (case-insensitive)
+   * email. Tenant-scoped — never matches across organizations. Used for
+   * safe lead merge on repeat public submissions.
+   */
+  async findByEmail(
+    email: string,
+  ): Promise<PlatformLeadRecord | undefined> {
+    const organizationId = this.tenantId();
+    const normalized = email.trim().toLowerCase();
+    if (!normalized) return undefined;
+
+    if (this.db) {
+      const result = await this.db.query(
+        `SELECT * FROM leads
+           WHERE organization_id = $1 AND LOWER(email) = $2
+           ORDER BY created_at DESC LIMIT 1`,
+        [organizationId, normalized],
+      );
+      const row = asRow(result.rows[0]);
+      return row ? mapRow(row) : undefined;
+    }
+
+    return [...this.memory.values()]
+      .filter(
+        (l) =>
+          l.organizationId === organizationId &&
+          (l.email ?? "").trim().toLowerCase() === normalized,
+      )
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  }
+
   async list(): Promise<
     PlatformLeadRecord[]
   > {

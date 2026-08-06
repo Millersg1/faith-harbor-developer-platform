@@ -99,11 +99,40 @@ export type SubmissionStatus =
   | "read"
   | "archived";
 
+/**
+ * Attribution + consent evidence for a public submission. Server-derived fields
+ * (ip, userAgent, referrer) are captured from the request; landingUrl + utm* are
+ * supplied by the embedding page. All optional; never fabricated.
+ */
+export interface FormAttribution {
+  ip?: string;
+  userAgent?: string;
+  referrer?: string;
+  landingUrl?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  /** The lead-magnet the submission requested, if any. */
+  leadMagnetId?: string;
+  /** Consent evidence captured at submission time. */
+  consent?: {
+    granted: boolean;
+    wording?: string;
+    version?: string;
+    source?: string;
+    at?: string;
+  };
+  submittedAt?: string;
+}
+
 export interface FormSubmissionRecord {
   id: string;
   organizationId: string;
   formId: string;
   data: Record<string, unknown>;
+  attribution?: FormAttribution;
   status: SubmissionStatus;
   createdAt: string;
 }

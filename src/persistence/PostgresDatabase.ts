@@ -538,6 +538,12 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS form_submissions_idx
         ON form_submissions (organization_id, form_id, created_at DESC);
     `);
+    // Attribution for a public submission (IP/UA/referrer/landing + UTMs +
+    // consent evidence). Additive; compact JSON, no separate PII surface.
+    await this.pool.query(`
+      ALTER TABLE form_submissions
+        ADD COLUMN IF NOT EXISTS attribution JSONB;
+    `);
 
     // Workflows — tenant automations, and their runs (advanced by the worker).
     await this.pool.query(`

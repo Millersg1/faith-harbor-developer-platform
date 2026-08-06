@@ -129,7 +129,7 @@ function buildApp() {
     forms,
     baseDomain: "allelitecloud.com",
   });
-  return { app, forms };
+  return { app, forms, leads };
 }
 
 async function makeForm(
@@ -316,5 +316,84 @@ describe("public form submit — abuse controls", () => {
       .post(`/api/public/forms/${slug}/submit`)
       .send({ data: { name: "X", email: "x@example.com" } });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("public form — attribution & deterministic lead merge", () => {
+  it("captures UTM + landing + server-derived attribution on the submission", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA");
+    const res = await request(app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .set("User-Agent", "TestAgent/1.0")
+      .send({
+        data: { name: "Dana", email: "dana@example.com" },
+        meta: {
+          landingUrl: "https://institute.example/guide",
+          utm: { source: "newsletter", medium: "email", campaign: "spring" },
+        },
+      });
+    expect(res.status).toBe(200);
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const f = (await forms.list())[0];
+      const subs = await forms.listSubmissions(f.id);
+      expect(subs).toHaveLength(1);
+      const a = subs[0].attribution!;
+      expect(a.utmSource).toBe("newsletter");
+      expect(a.utmCampaign).toBe("spring");
+      expect(a.landingUrl).toBe("https://institute.example/guide");
+      expect(a.userAgent).toBe("TestAgent/1.0");
+      expect(a.submittedAt).toBeTruthy();
+    });
+  });
+
+  it("merges into an existing lead: fills gaps, never overwrites stronger data", async () => {
+    const { app, forms, leads } = buildApp();
+    const slug = await makeForm(forms, "orgA", {
+      fields: [
+        { key: "name", type: "text", label: "Name", required: true },
+        { key: "email", type: "email", label: "Email", required: true },
+        { key: "phone", type: "phone", label: "Phone", required: false },
+      ],
+    });
+    // Seed a strong existing lead (name + company set, phone empty).
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      await leads.create({
+        name: "Dana Prospect",
+        email: "dana@example.com",
+        company: "Acme Corp",
+      });
+    });
+    // A public submission with a weaker name and a phone (a gap to fill).
+    await request(app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .send({ data: { name: "D", email: "dana@example.com", phone: "555-1212" } });
+
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const all = await leads.list();
+      expect(all).toHaveLength(1); // merged, not duplicated
+      const lead = all[0];
+      expect(lead.company).toBe("Acme Corp"); // stronger data preserved
+      expect(lead.name).toBe("Dana Prospect"); // not overwritten with "D"
+      expect(lead.phone).toBe("555-1212"); // gap filled
+    });
+  });
+
+  it("never merges leads across tenants (same email, two orgs → two leads)", async () => {
+    const { app, forms, leads } = buildApp();
+    const slugA = await makeForm(forms, "orgA");
+    const slugB = await makeForm(forms, "orgB");
+    await request(app)
+      .post(`/api/public/forms/${slugA}/submit`)
+      .send({ data: { name: "Shared", email: "shared@example.com" } });
+    await request(app)
+      .post(`/api/public/forms/${slugB}/submit`)
+      .send({ data: { name: "Shared", email: "shared@example.com" } });
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      expect(await leads.list()).toHaveLength(1);
+    });
+    await runWithTenant({ organizationId: "orgB" }, async () => {
+      expect(await leads.list()).toHaveLength(1);
+    });
   });
 });

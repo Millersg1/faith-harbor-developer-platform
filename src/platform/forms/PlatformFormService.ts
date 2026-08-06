@@ -7,12 +7,14 @@ import type { PlatformLeadService } from "../crm/PlatformLeadService";
 import {
   FORM_FIELD_TYPES,
   type CreateFormRequest,
+  type FormAttribution,
   type FormField,
   type FormRecord,
   type FormSettings,
   type FormStatus,
   type FormSubmissionRecord,
 } from "./PlatformForm";
+import type { PlatformLeadRecord } from "../crm/PlatformLead";
 import { PlatformFormRepository } from "./PlatformFormRepository";
 
 export class FormValidationError extends Error {}
@@ -201,6 +203,7 @@ export class PlatformFormService {
   async submitPublic(
     slug: string,
     data: Record<string, unknown>,
+    attribution?: FormAttribution,
   ): Promise<{
     confirmationMessage: string;
   }> {
@@ -271,12 +274,15 @@ export class PlatformFormService {
               form.organizationId,
             formId: form.id,
             data: clean,
+            ...(attribution
+              ? { attribution: { ...attribution, submittedAt: nowIso } }
+              : {}),
             status: "new",
             createdAt: nowIso,
           },
         );
 
-        // Optionally create a lead from the submission.
+        // Optionally create OR safely merge a lead from the submission.
         if (
           form.createLead &&
           this.leads
@@ -288,16 +294,24 @@ export class PlatformFormService {
             );
           if (lead) {
             try {
-              await this.leads.create(
-                lead,
-              );
+              // Tenant-scoped merge: if a lead with this email already exists,
+              // fill only EMPTY fields — never overwrite stronger CRM data with
+              // blanks or lower-confidence public data. findByEmail is
+              // tenant-scoped, so leads are NEVER merged across tenants.
+              const existing = lead.email
+                ? await this.leads.findByEmail(lead.email)
+                : undefined;
+              if (existing) {
+                await this.leads.update(existing.id, mergeFill(existing, lead));
+              } else {
+                await this.leads.create(lead);
+              }
               // NOTE: a public form submission deliberately does NOT start any
               // marketing autoresponder here. Marketing enrollment is gated on
               // explicit affirmative consent AND on the platform having a
-              // consent/unsubscribe/suppression core (which does not yet
-              // exist) — so it is fail-closed for now. See
-              // docs/20_PUBLIC_LEAD_FORMS.md. Creating the CRM lead is a
-              // separate outcome from marketing and is safe on its own.
+              // consent/unsubscribe/suppression core — fail-closed for now.
+              // See docs/20_PUBLIC_LEAD_FORMS.md. Creating/merging the CRM lead
+              // is a separate outcome from marketing and is safe on its own.
             } catch {
               // A lead hiccup must not fail the submission.
             }
@@ -356,12 +370,14 @@ function extractLead(
   name: string;
   email?: string;
   company?: string;
+  phone?: string;
   source: string;
   notes: string;
 } | null {
   let email: string | undefined;
   let name: string | undefined;
   let company: string | undefined;
+  let phone: string | undefined;
 
   for (const field of form.fields) {
     const value = data[field.key];
@@ -374,6 +390,12 @@ function extractLead(
       !email
     ) {
       email = text;
+    } else if (
+      (field.type === "phone" ||
+        /phone|mobile|tel/i.test(field.key + " " + field.label)) &&
+      !phone
+    ) {
+      phone = text;
     } else if (
       /company|organization|business/i.test(
         field.key + " " + field.label,
@@ -403,6 +425,7 @@ function extractLead(
     name,
     email,
     company,
+    phone,
     source: `Form: ${form.name}`,
     notes: summarize(form, data),
   };
@@ -440,6 +463,48 @@ function formatValue(
  * Validates and trims field definitions. Unknown field types and blank
  * keys/labels are dropped.
  */
+/**
+ * Deterministic merge: return ONLY the fields to set on an existing lead, and
+ * only where the existing value is empty (or a placeholder name). Never
+ * overwrites stronger CRM data with blanks or lower-confidence public data.
+ */
+function mergeFill(
+  existing: PlatformLeadRecord,
+  incoming: {
+    name: string;
+    company?: string;
+    phone?: string;
+    source?: string;
+    notes?: string;
+  },
+): {
+  name?: string;
+  company?: string;
+  phone?: string;
+  source?: string;
+  notes?: string;
+} {
+  const upd: {
+    name?: string;
+    company?: string;
+    phone?: string;
+    source?: string;
+    notes?: string;
+  } = {};
+  const empty = (v: string | undefined): boolean => !v || !v.trim();
+  if (
+    (empty(existing.name) || existing.name === "Form submission") &&
+    incoming.name
+  ) {
+    upd.name = incoming.name;
+  }
+  if (empty(existing.company) && incoming.company) upd.company = incoming.company;
+  if (empty(existing.phone) && incoming.phone) upd.phone = incoming.phone;
+  if (empty(existing.source) && incoming.source) upd.source = incoming.source;
+  if (empty(existing.notes) && incoming.notes) upd.notes = incoming.notes;
+  return upd;
+}
+
 /** Normalize an origin to `scheme://host[:port]`, lower-cased, no trailing slash. */
 export function normalizeOrigin(raw: string): string | null {
   try {

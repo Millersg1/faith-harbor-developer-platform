@@ -28,6 +28,7 @@ interface SubmissionRow {
   organization_id: string;
   form_id: string;
   data: unknown;
+  attribution: unknown;
   status: string;
   created_at: string;
 }
@@ -245,13 +246,14 @@ export class PlatformFormRepository extends TenantScopedRepository {
     if (this.db) {
       await this.db.query(
         `INSERT INTO form_submissions
-           (id, organization_id, form_id, data, status, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
+           (id, organization_id, form_id, data, attribution, status, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         [
           full.id,
           full.organizationId,
           full.formId,
           JSON.stringify(full.data),
+          full.attribution ? JSON.stringify(full.attribution) : null,
           full.status,
           full.createdAt,
         ],
@@ -369,7 +371,7 @@ function parseFields(
 function mapSubmission(
   row: SubmissionRow,
 ): FormSubmissionRecord {
-  return {
+  const rec: FormSubmissionRecord = {
     id: row.id,
     organizationId:
       row.organization_id,
@@ -379,6 +381,25 @@ function mapSubmission(
       row.status as SubmissionStatus,
     createdAt: row.created_at,
   };
+  const attribution = parseAttribution(row.attribution);
+  if (attribution) rec.attribution = attribution;
+  return rec;
+}
+
+function parseAttribution(
+  value: unknown,
+): FormSubmissionRecord["attribution"] | undefined {
+  let obj: unknown = value;
+  if (typeof value === "string") {
+    try {
+      obj = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  return obj && typeof obj === "object"
+    ? (obj as FormSubmissionRecord["attribution"])
+    : undefined;
 }
 
 function parseData(
