@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { runWithTenant } from "../../tenancy/TenantContext";
 import type { PlatformEmailService } from "../email/PlatformEmailService";
+import type { EmailSuppressionService } from "../marketing/EmailSuppressionService";
 import { DripRepository } from "./DripRepository";
 import {
   isDripTrigger,
@@ -40,15 +41,25 @@ export interface AddStepRequest {
 export class DripService {
   private readonly now: () => number;
 
+  private readonly suppression?: EmailSuppressionService;
+
   constructor(
     private readonly repository =
       new DripRepository(),
     private readonly email?: PlatformEmailService,
-    options: { now?: () => number } = {},
+    options: {
+      now?: () => number;
+      /**
+       * Marketing eligibility gate. When present, every drip send is treated as
+       * MARKETING and is rechecked against suppression immediately before send.
+       */
+      suppression?: EmailSuppressionService;
+    } = {},
   ) {
     this.now =
       options.now ??
       (() => Date.now());
+    this.suppression = options.suppression;
   }
 
   // ---- Sequences -----------------------------------------------------
@@ -446,6 +457,26 @@ export class DripService {
       );
 
       return;
+    }
+
+    // PRE-SEND eligibility recheck (atomic w.r.t. this send): a suppression
+    // recorded AFTER enrollment — even for a message queued long ago — stops the
+    // send here. Suppressed → cancel safely, record a non-PII reason, do NOT
+    // send and do NOT meter.
+    if (this.suppression) {
+      const elig = await this.suppression.marketingDeliverability(
+        enrollment.organizationId,
+        enrollment.email,
+      );
+      if (!elig.eligible) {
+        await this.repository.updateEnrollment({
+          ...enrollment,
+          status: "canceled",
+          lastEvent: `skipped:${elig.reason ?? "ineligible"}`,
+          updatedAt: nowIso,
+        });
+        return;
+      }
     }
 
     await this.email?.sendQuietly({

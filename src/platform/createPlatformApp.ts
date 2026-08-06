@@ -44,6 +44,9 @@ import {
 } from "./forms/PlatformFormService";
 import type { FormRecord } from "./forms/PlatformForm";
 import { RateLimiter } from "./security/RateLimiter";
+import type { UnsubscribeService } from "./marketing/EmailSuppressionService";
+import type { DoubleOptInService } from "./marketing/DoubleOptInService";
+import type { MarketingConsentService } from "./marketing/MarketingConsentService";
 import type { CalendarService } from "./calendar/CalendarService";
 import type { KnowledgeService } from "./knowledge/KnowledgeService";
 import type { AuditService } from "./audit/AuditService";
@@ -117,6 +120,12 @@ export interface PlatformAppDependencies {
   hosting?: PlatformHostingService;
   tickets?: PlatformTicketService;
   leads?: PlatformLeadService;
+  /** No-login unsubscribe (tenant-scoped) + one-click. */
+  unsubscribe?: UnsubscribeService;
+  /** Double-opt-in confirmation. */
+  doubleOptIn?: DoubleOptInService;
+  /** Records/confirms marketing consent on double-opt-in confirmation. */
+  marketingConsent?: MarketingConsentService;
   proposals?: PlatformProposalService;
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
@@ -873,6 +882,204 @@ export function createPlatformApp(
       },
     );
   }
+
+  // ---- Marketing compliance: no-login unsubscribe + double-opt-in confirm ----
+  // Token-processing pages are neutral (no lead/tenant/campaign/CRM data),
+  // carry anti-leak headers, load no third-party assets, and use the hardened
+  // fragment→POST exchange so the token never reaches an access log, browser
+  // history, Referer, analytics, or cache.
+  if (deps.unsubscribe || deps.doubleOptIn) {
+    const marketingHeaders = (res: Response): void => {
+      res.set("Referrer-Policy", "no-referrer");
+      res.set("Cache-Control", "no-store, private, max-age=0");
+      res.set("Pragma", "no-cache");
+      res.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+      res.set("X-Content-Type-Options", "nosniff");
+    };
+    // A minimal, self-contained neutral exchange page. `kind` selects the
+    // fragment key (u = unsubscribe, c = confirm) and POST endpoint.
+    const exchangePage = (
+      title: string,
+      kind: "u" | "c",
+      endpoint: string,
+      loadingMsg: string,
+    ): string => {
+      const okMsg =
+        kind === "u"
+          ? "You have been unsubscribed. You will no longer receive these marketing emails."
+          : "Thank you — your subscription is confirmed.";
+      return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex, nofollow, noarchive"/>
+<meta name="referrer" content="no-referrer"/>
+<title>${title}</title>
+<style>body{font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:34rem;margin:12vh auto;padding:0 20px;color:#14181f}h1{font-size:1.4rem}.m{color:#5b6472}</style>
+</head><body><h1>${title}</h1><p class="m" id="m">${loadingMsg}</p>
+<noscript><p class="m">JavaScript is required. Paste the code from your email:</p>
+<form method="post" action="${endpoint}"><input name="code" autocomplete="off"/><button>Submit</button></form></noscript>
+<script>
+(function(){var m=document.getElementById('m');
+var h=(location.hash||'').match(/^#${kind}=([A-Za-z0-9]+)$/);
+try{history.replaceState(null,'',location.pathname);}catch(e){}
+if(!h){m.textContent='This link is missing its code. Please use the link from your email.';return;}
+fetch('${endpoint}',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Privacy-Exchange':'1'},body:JSON.stringify({token:h[1]})})
+.then(function(r){return r.json().catch(function(){return{};});})
+.then(function(d){m.textContent=(d&&d.ok)?${JSON.stringify(okMsg)}:'This link is not valid or has expired.';})
+.catch(function(){m.textContent='Something went wrong. Please try again in a moment.';});})();
+</script></body></html>`;
+    };
+    const isForm = (req: Request): boolean =>
+      /application\/x-www-form-urlencoded/.test(
+        String(req.headers["content-type"] ?? ""),
+      );
+    const bodyToken = (req: Request): string => {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      return typeof b.token === "string"
+        ? b.token
+        : typeof b.code === "string"
+          ? b.code.trim()
+          : "";
+    };
+
+    if (deps.unsubscribe) {
+      const unsub = deps.unsubscribe;
+      // Human-facing unsubscribe (fragment-exchange). GET has NO side effect
+      // (safe for email/security scanners); the POST performs the suppression.
+      app.get("/unsubscribe", (_req, res) => {
+        marketingHeaders(res);
+        res
+          .type("html")
+          .send(
+            exchangePage(
+              "Unsubscribe",
+              "u",
+              "/unsubscribe",
+              "Processing your request…",
+            ),
+          );
+      });
+      app.post(
+        "/unsubscribe",
+        express.urlencoded({ extended: false }),
+        csrfGuard,
+        (req, res) => {
+          marketingHeaders(res);
+          unsub
+            .unsubscribe(bodyToken(req))
+            .then((ok) => {
+              // Generic either way — never reveal whether the token existed.
+              if (isForm(req)) {
+                res.type("html").send(
+                  exchangePage(
+                    "Unsubscribe",
+                    "u",
+                    "/unsubscribe",
+                    ok ? "You have been unsubscribed." : "Request processed.",
+                  ),
+                );
+                return;
+              }
+              res.json({ ok: true });
+            })
+            .catch(() => res.json({ ok: true }));
+        },
+      );
+
+      // RFC 8058 one-click. The mail provider POSTs (List-Unsubscribe-Post).
+      // A GET must NOT unsubscribe — it serves a neutral page only. The token
+      // is opaque, single-purpose, hash-only at rest, and cannot read data or
+      // resubscribe; it necessarily appears in the provider's server-side
+      // request path (documented in docs/20).
+      app.get("/api/unsubscribe/one-click/:token", (_req, res) => {
+        marketingHeaders(res);
+        res
+          .type("html")
+          .send(
+            exchangePage(
+              "Unsubscribe",
+              "u",
+              "/unsubscribe",
+              "To unsubscribe, use the link in your email.",
+            ),
+          );
+      });
+      app.post(
+        "/api/unsubscribe/one-click/:token",
+        express.urlencoded({ extended: false }),
+        (req, res) => {
+          marketingHeaders(res);
+          unsub
+            .unsubscribe(String(req.params.token))
+            .then(() => res.status(200).json({ ok: true }))
+            .catch(() => res.status(200).json({ ok: true }));
+        },
+      );
+    }
+
+    if (deps.doubleOptIn) {
+      const dbl = deps.doubleOptIn;
+      app.get("/marketing/confirm", (_req, res) => {
+        marketingHeaders(res);
+        res
+          .type("html")
+          .send(
+            exchangePage(
+              "Confirm subscription",
+              "c",
+              "/marketing/confirm",
+              "Confirming your subscription…",
+            ),
+          );
+      });
+      app.post(
+        "/marketing/confirm",
+        express.urlencoded({ extended: false }),
+        csrfGuard,
+        (req, res) => {
+          marketingHeaders(res);
+          dbl
+            .confirm(bodyToken(req))
+            .then(async (outcome) => {
+              if (outcome.ok) {
+                // Record confirmed consent (immutable) in the token's tenant
+                // scope. Email verification confirms control of the address,
+                // not full identity.
+                if (deps.marketingConsent) {
+                  await runWithTenant(
+                    { organizationId: outcome.organizationId },
+                    async () => {
+                      const latest =
+                        await deps.marketingConsent!.latestForEmail(
+                          outcome.email,
+                        );
+                      if (latest && !latest.confirmedAt) {
+                        await deps.marketingConsent!.confirm(latest.id);
+                      }
+                    },
+                  ).catch(() => undefined);
+                }
+              }
+              if (isForm(req)) {
+                res.type("html").send(
+                  exchangePage(
+                    "Confirm subscription",
+                    "c",
+                    "/marketing/confirm",
+                    outcome.ok
+                      ? "Your subscription is confirmed."
+                      : "This link is not valid or has expired.",
+                  ),
+                );
+                return;
+              }
+              res.json({ ok: outcome.ok });
+            })
+            .catch(() => res.json({ ok: false }));
+        },
+      );
+    }
+  }
+
   app.get("/app", (_req, res) => {
     res
       .type("html")

@@ -102,6 +102,76 @@ disclosed:
 - Attribution is tenant-scoped (on the tenant's `form_submissions`) and never
   exposed publicly or across tenants.
 
+## Suppression, unsubscribe & consent confirmation (S6)
+
+**Tenant unsubscribe vs global technical suppression are separate.** A recipient
+unsubscribe is *tenant-scoped* (`email_suppressions` row with an
+`organization_id`) — unsubscribing from Tenant A never affects Tenant B, and B
+can't infer A's status. *Global* technical suppression (`organization_id` NULL —
+hard bounce, complaint, abuse, invalid recipient, legal/safety) applies across
+tenants but is **never attributed to a tenant**: a tenant's eligibility check
+returns only the neutral `{eligible:false, reason:"suppressed"}` — no reason
+detail, timestamp, or other tenant's relationship. A tenant's own unsubscribe
+surfaces as `reason:"unsubscribed"`. Soft bounces are **not** routed to global
+suppression. Global suppression is **not** a shared marketing unsubscribe list.
+
+**No-login unsubscribe.** The visible unsubscribe link uses the hardened
+fragment→POST exchange (`/unsubscribe#u=<token>`): a neutral page reads the
+fragment, strips it via `history.replaceState`, and POSTs it — so the token
+never reaches an access log, browser history, `Referer`, analytics, or cache.
+`GET /unsubscribe` has **no side effect** (safe for email/security scanners);
+the POST performs the (idempotent) suppression. Token pages send
+`Referrer-Policy: no-referrer`, `Cache-Control: no-store, private`,
+`X-Robots-Tag: noindex`, load no third-party assets, and expose no
+lead/tenant/campaign/CRM data.
+
+**RFC 8058 one-click token reality (documented honestly).** The
+`List-Unsubscribe` header carries an https URL the mail client/provider submits
+**server-to-server** via `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
+(POST). Because that is the provider's request, the one-click token
+**necessarily appears in the request path** the provider sends and thus in the
+server access log — this is inherent to RFC 8058 and is not hidden. It is made
+safe by construction: the token is random high-entropy, single-purpose
+(unsubscribe only — it can never resubscribe or read data), tenant+recipient
+scoped, **hash-only** at rest, revocable via suppression state, idempotent, and
+contains **no email address, organization id, lead id, or reversible personal
+data**. A `GET` on the one-click URL never unsubscribes.
+
+**Double opt-in.** Default ON for public forms. The confirmation token is
+random, single-use, time-limited (72 h), hash-only at rest, and scoped to
+(tenant, email, consent version). It travels via the same fragment→POST exchange
+(`/marketing/confirm#c=<token>`). Confirming records immutable consent evidence;
+expired/replayed/forged/cross-tenant/already-used tokens fail safely. Email
+confirmation proves control of the address — **not** full identity. No marketing
+enrollment happens before confirmation when double opt-in is on. If an
+owner/admin deliberately disables double opt-in, explicit affirmative consent is
+still required.
+
+**Enrollment uniqueness — selected behavior: "once active at a time."** A
+partial unique index (`drip_enrollments_active_uniq` on
+`(organization_id, sequence_id, LOWER(email)) WHERE status='active'`) plus the
+service-level active-enrollment dedup guarantee **at most one active enrollment**
+per (tenant, sequence, email). A duplicate submission or delayed retry cannot
+create a second simultaneous active enrollment. Legitimate **re-enrollment is
+still allowed after a completed/canceled run** (the constraint applies only to
+active rows), so future re-engagement is not permanently blocked.
+
+**Pre-send eligibility (S6 hook).** The drip worker rechecks suppression
+immediately before each send: a suppression recorded *after* enrollment — even
+for a long-queued message — cancels the send. Skipped sends record a compact
+non-PII `last_event` (e.g. `skipped:unsubscribed`) and are **not metered**. The
+fuller atomic eligibility set (consent valid, double-opt-in confirmed, lead
+active, step-not-already-sent, sender valid) and per-message send/skip/fail
+logging land with S7.
+
+**Durable audit.** The durable evidence is the DB itself — `email_suppressions`,
+`marketing_consents` (with exact wording/version), consumed double-opt-in
+tokens, and enrollment `last_event`. No raw tokens are stored (hash-only), and
+tenant-facing eligibility never discloses cross-tenant suppression history. The
+compact queryable marketing audit spine (action + enum + opaque ids only — never
+email, name, token, wording, body, unsubscribe URL, provider response, or IP)
+is added with the S7 send spine.
+
 ## Current status of the build
 
 - Fail-closed: public forms create the CRM lead only; **marketing enrollment is

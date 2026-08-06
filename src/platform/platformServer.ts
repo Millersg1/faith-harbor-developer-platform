@@ -94,6 +94,16 @@ import {
   MarketingConsentService,
   MarketingConsentRepository,
 } from "./marketing/MarketingConsentService";
+import {
+  EmailSuppressionService,
+  EmailSuppressionRepository,
+  UnsubscribeService,
+  UnsubscribeTokenRepository,
+} from "./marketing/EmailSuppressionService";
+import {
+  DoubleOptInService,
+  DoubleOptInTokenRepository,
+} from "./marketing/DoubleOptInService";
 import { PlatformFormRepository } from "./forms/PlatformFormRepository";
 import { CalendarService } from "./calendar/CalendarService";
 import { CalendarEventRepository } from "./calendar/CalendarEventRepository";
@@ -323,9 +333,23 @@ async function start(): Promise<void> {
           undefined,
       },
     );
+  // Marketing compliance core (S6): suppression, unsubscribe tokens, double
+  // opt-in. Constructed before drip so the worker can recheck suppression
+  // immediately before every send.
+  const suppression = new EmailSuppressionService(
+    new EmailSuppressionRepository(db),
+  );
+  const unsubscribe = new UnsubscribeService(
+    new UnsubscribeTokenRepository(db),
+    suppression,
+  );
+  const doubleOptIn = new DoubleOptInService(
+    new DoubleOptInTokenRepository(db),
+  );
   const drip = new DripService(
     new DripRepository(db),
     email,
+    { suppression },
   );
   // Activity spine + notifications. Recording an event fans out to the
   // notification dispatcher, which notifies the org's active owners/admins.
@@ -826,6 +850,9 @@ async function start(): Promise<void> {
     hosting,
     tickets,
     leads,
+    unsubscribe,
+    doubleOptIn,
+    marketingConsent,
     proposals,
     campaigns,
     reviews,

@@ -82,6 +82,8 @@ export interface DripEnrollmentRecord {
   status: DripEnrollmentStatus;
   /** ISO timestamp the next step is due. */
   nextRunAt: string;
+  /** Compact non-PII marker of the last action (sent/skipped/failed + reason). */
+  lastEvent?: string;
   createdAt: string;
   updatedAt: string;
 }

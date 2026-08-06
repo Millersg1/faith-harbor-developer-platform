@@ -568,6 +568,60 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS marketing_consents_lookup_idx
         ON marketing_consents (organization_id, LOWER(email), created_at DESC);
     `);
+    // Email suppression. TENANT-scoped rows (organization_id set) are a normal
+    // recipient unsubscribe from that tenant's marketing. GLOBAL rows
+    // (organization_id NULL) are platform technical suppression (hard bounce,
+    // complaint, abuse, invalid recipient, legal/safety) that applies across
+    // tenants but is NEVER attributed to any tenant. No tokens stored here.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS email_suppressions (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        email            TEXT NOT NULL,
+        scope            TEXT NOT NULL,
+        reason           TEXT NOT NULL,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    // One active suppression per (tenant, email) and per (global, email).
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS email_suppressions_tenant_uniq
+        ON email_suppressions (organization_id, LOWER(email))
+        WHERE organization_id IS NOT NULL;
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS email_suppressions_global_uniq
+        ON email_suppressions (LOWER(email))
+        WHERE organization_id IS NULL;
+    `);
+    // Unsubscribe capability tokens (hash-only). Map an opaque, revocable,
+    // single-purpose token to a (tenant, email) so a no-login unsubscribe never
+    // needs the address in the URL. Never stores the raw token.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS unsubscribe_tokens (
+        token_hash       TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        email            TEXT NOT NULL,
+        revoked          BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at       TEXT NOT NULL
+      );
+    `);
+    // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS double_optin_tokens (
+        token_hash       TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        email            TEXT NOT NULL,
+        consent_id       TEXT,
+        version          TEXT,
+        expires_at       TEXT NOT NULL,
+        consumed_at      TEXT,
+        created_at       TEXT NOT NULL
+      );
+    `);
 
     // Workflows — tenant automations, and their runs (advanced by the worker).
     await this.pool.query(`
@@ -840,6 +894,21 @@ export class PostgresDatabase
     await this.pool.query(`
       CREATE INDEX IF NOT EXISTS drip_enrollments_due_idx
         ON drip_enrollments (status, next_run_at);
+    `);
+    // Compact per-enrollment event marker (e.g. "skipped:unsubscribed",
+    // "sent:step0") — non-PII reason for send/skip/fail. Additive.
+    await this.pool.query(`
+      ALTER TABLE drip_enrollments
+        ADD COLUMN IF NOT EXISTS last_event TEXT;
+    `);
+    // Enrollment uniqueness: at most ONE ACTIVE enrollment per
+    // (tenant, sequence, email). Partial unique index makes dedup atomic while
+    // still allowing legitimate RE-enrollment after a completed/canceled run
+    // (see docs/20 — "once active at a time").
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS drip_enrollments_active_uniq
+        ON drip_enrollments (organization_id, sequence_id, LOWER(email))
+        WHERE status = 'active';
     `);
 
     // Client-portal logins — one per client contact, scoped to an org+client.

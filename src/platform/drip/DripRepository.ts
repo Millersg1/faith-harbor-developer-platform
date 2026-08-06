@@ -39,6 +39,7 @@ interface EnrollmentRow {
   step_index: number;
   status: string;
   next_run_at: string;
+  last_event: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -295,8 +296,8 @@ export class DripRepository extends TenantScopedRepository {
       await this.db.query(
         `INSERT INTO drip_enrollments
            (id, organization_id, sequence_id, email, name,
-            step_index, status, next_run_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            step_index, status, next_run_at, last_event, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           full.id,
           full.organizationId,
@@ -306,6 +307,7 @@ export class DripRepository extends TenantScopedRepository {
           full.stepIndex,
           full.status,
           full.nextRunAt,
+          full.lastEvent ?? null,
           full.createdAt,
           full.updatedAt,
         ],
@@ -445,7 +447,7 @@ export class DripRepository extends TenantScopedRepository {
       await this.db.query(
         `UPDATE drip_enrollments
             SET step_index = $3, status = $4,
-                next_run_at = $5, updated_at = $6
+                next_run_at = $5, last_event = $6, updated_at = $7
           WHERE id = $1 AND organization_id = $2`,
         [
           record.id,
@@ -453,6 +455,7 @@ export class DripRepository extends TenantScopedRepository {
           record.stepIndex,
           record.status,
           record.nextRunAt,
+          record.lastEvent ?? null,
           record.updatedAt,
         ],
       );
@@ -585,6 +588,9 @@ function mapEnrollment(
 
   if (row.name) {
     record.name = row.name;
+  }
+  if (row.last_event) {
+    record.lastEvent = row.last_event;
   }
 
   return record;
