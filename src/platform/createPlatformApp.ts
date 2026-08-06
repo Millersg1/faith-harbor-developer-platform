@@ -1,7 +1,11 @@
 import { join } from "node:path";
 
+import { createHmac, randomBytes } from "node:crypto";
+
 import express, {
   type ErrorRequestHandler,
+  type Request,
+  type Response,
 } from "express";
 
 import { normalizeDomain } from "../tenancy/OrganizationDomain";
@@ -35,8 +39,11 @@ import type { PlatformFileService } from "./files/PlatformFileService";
 import {
   FormNotFoundError,
   FormValidationError,
+  isOriginAllowed,
   type PlatformFormService,
 } from "./forms/PlatformFormService";
+import type { FormRecord } from "./forms/PlatformForm";
+import { RateLimiter } from "./security/RateLimiter";
 import type { CalendarService } from "./calendar/CalendarService";
 import type { KnowledgeService } from "./knowledge/KnowledgeService";
 import type { AuditService } from "./audit/AuditService";
@@ -550,59 +557,121 @@ export function createPlatformApp(
   if (deps.forms) {
     const forms = deps.forms;
 
-    // CORS for the PUBLIC form endpoints so a tenant's clients can embed a
-    // lead form on their OWN external website and post to us cross-origin.
-    // IMPORTANT: CORS is a browser access policy — it is NOT authentication and
-    // NOT spam/abuse protection, and the form slug is PUBLIC (it appears in the
-    // embedding page's source), never a secret or an authorization token. Abuse
-    // protection (rate limiting, honeypot, timing, size limits, idempotency,
-    // fail-closed tenant validation) is enforced separately, independent of
-    // CORS. This "*" default is a KNOWN GAP being replaced by a per-form
-    // allowed-origins policy (deny-by-default). Never set Allow-Credentials.
-    const publicFormCors: express.RequestHandler = (req, res, next) => {
-      res.set("Access-Control-Allow-Origin", "*");
-      res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.set("Access-Control-Allow-Headers", "Content-Type");
-      res.set("Access-Control-Max-Age", "600");
-      res.set("Vary", "Origin");
-      if (req.method === "OPTIONS") {
-        res.status(204).end();
-        return;
-      }
-      next();
+    // --- Public-form abuse controls (independent of CORS) ---
+    // Per-IP+form and per-email+form rate limiters. Generic 429 + Retry-After.
+    const formIpLimiter = new RateLimiter({ max: 30, windowMs: 10 * 60 * 1000 });
+    const formEmailLimiter = new RateLimiter({ max: 6, windowMs: 10 * 60 * 1000 });
+    // Short-window idempotency for double-clicks / browser retries (in-memory;
+    // seconds-scale — durable enrollment idempotency is handled separately).
+    const submitIdemp = new Map<string, { at: number; body: unknown }>();
+    const IDEMP_TTL_MS = 2 * 60 * 1000;
+    // Per-process secret for short-lived form tokens (timing anti-bot). A
+    // restart simply invalidates outstanding tokens (the visitor reloads).
+    const formTokenSecret = randomBytes(32);
+    const issueFormToken = (): string => {
+      const ts = String(Date.now());
+      const mac = createHmac("sha256", formTokenSecret)
+        .update(ts)
+        .digest("base64url");
+      return `${ts}.${mac}`;
     };
-    app.options("/api/public/forms/:slug", publicFormCors);
-    app.options("/api/public/forms/:slug/submit", publicFormCors);
+    const formTokenAgeMs = (token: unknown): number | null => {
+      if (typeof token !== "string" || !token.includes(".")) return null;
+      const [ts, mac] = token.split(".");
+      const expected = createHmac("sha256", formTokenSecret)
+        .update(ts)
+        .digest("base64url");
+      if (mac !== expected) return null;
+      const n = Number(ts);
+      return Number.isFinite(n) ? Date.now() - n : null;
+    };
+    const clientIp = (req: Request): string =>
+      (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+      req.socket.remoteAddress ||
+      "unknown";
+    const extractEmail = (data: Record<string, unknown>): string => {
+      for (const v of Object.values(data)) {
+        if (typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())) {
+          return v.trim().toLowerCase();
+        }
+      }
+      return "";
+    };
+
+    // PER-FORM CORS (deny-by-default). CORS is a browser access policy — NOT
+    // authentication and NOT spam protection — and the form slug is PUBLIC (it
+    // appears in the embedding page source), never a secret or authorization.
+    // A cross-origin browser embed is allowed ONLY for the form's explicitly
+    // configured origins (or an explicit allow-any opt-in). Disallowed origins
+    // get NO permissive CORS header. Credentials are never allowed. Abuse
+    // protection (rate limit / honeypot / timing / size / idempotency /
+    // fail-closed tenant scoping) is enforced separately, below.
+    type PublicFormReq = express.Request & { publicForm?: FormRecord };
+    const applyFormCors = (
+      res: Response,
+      form: FormRecord | undefined,
+      origin: string | undefined,
+    ): void => {
+      res.set("Vary", "Origin");
+      if (form && isOriginAllowed(form.settings, origin)) {
+        res.set(
+          "Access-Control-Allow-Origin",
+          form.settings.allowAnyOrigin ? "*" : String(origin),
+        );
+        res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res.set(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Idempotency-Key, X-Form-Token",
+        );
+        res.set("Access-Control-Max-Age", "600");
+      }
+    };
+    const publicFormCtx: express.RequestHandler = (req, res, next) => {
+      forms
+        .getPublicBySlug(String(req.params.slug))
+        .then((form) => {
+          (req as PublicFormReq).publicForm = form;
+          applyFormCors(res, form, req.headers.origin);
+          if (req.method === "OPTIONS") {
+            res.status(204).end();
+            return;
+          }
+          next();
+        })
+        .catch(() => next());
+    };
+    app.options("/api/public/forms/:slug", publicFormCtx);
+    app.options("/api/public/forms/:slug/submit", publicFormCtx);
 
     // Public form CONFIG (JSON) — lets an external page render the form's
     // fields dynamically. Returns only public, non-sensitive fields (never the
-    // owner notify email, organization id, or lead settings).
+    // owner notify email, organization id, internal settings, or lead config).
     app.get(
       "/api/public/forms/:slug",
-      publicFormCors,
-      (req, res, next) => {
-        forms
-          .getPublicBySlug(String(req.params.slug))
-          .then((form) => {
-            if (!form) {
-              res.status(404).json({
-                error: {
-                  code: "FORM_NOT_FOUND",
-                  message: "This form is not available.",
-                },
-              });
-              return;
-            }
-            res.json({
-              form: {
-                name: form.name,
-                slug: form.slug,
-                fields: form.fields,
-                confirmationMessage: form.confirmationMessage,
-              },
-            });
-          })
-          .catch(() => next());
+      publicFormCtx,
+      (req, res) => {
+        const form = (req as PublicFormReq).publicForm;
+        if (!form) {
+          res.status(404).json({
+            error: {
+              code: "FORM_NOT_FOUND",
+              message: "This form is not available.",
+            },
+          });
+          return;
+        }
+        res.json({
+          form: {
+            name: form.name,
+            slug: form.slug,
+            fields: form.fields,
+            confirmationMessage: form.confirmationMessage,
+            // A short-lived, signed token so cooperating embeds can prove a
+            // minimum completion time (anti-bot). Optional to use.
+            formToken: issueFormToken(),
+            minSubmitSeconds: form.settings.minSubmitSeconds ?? 0,
+          },
+        });
       },
     );
 
@@ -647,74 +716,110 @@ export function createPlatformApp(
 
     app.post(
       "/api/public/forms/:slug/submit",
-      publicFormCors,
+      publicFormCtx,
       (req, res, next) => {
+        const form = (req as PublicFormReq).publicForm;
+        // Fail closed: unknown OR inactive form → generic 404, no tenant leak.
+        if (!form || form.status !== "active") {
+          res.status(404).json({
+            error: {
+              code: "FORM_NOT_FOUND",
+              message: "This form is not available.",
+            },
+          });
+          return;
+        }
+        const genericOk = { confirmationMessage: form.confirmationMessage };
         const body =
-          req.body &&
-          typeof req.body ===
-            "object"
-            ? (req.body as Record<
-                string,
-                unknown
-              >)
+          req.body && typeof req.body === "object"
+            ? (req.body as Record<string, unknown>)
             : {};
         const data =
-          body.data &&
-          typeof body.data ===
-            "object"
-            ? (body.data as Record<
-                string,
-                unknown
-              >)
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
             : {};
 
+        // Request-size guard (independent of the global 20mb JSON limit).
+        if (JSON.stringify(data).length > 32_768) {
+          res.status(413).json({
+            error: { code: "PAYLOAD_TOO_LARGE", message: "Submission too large." },
+          });
+          return;
+        }
+
+        // Honeypot: a bot filling the hidden field → accept generically, drop.
+        const hp = form.settings.honeypotField;
+        if (hp && typeof data[hp] === "string" && data[hp].trim() !== "") {
+          res.json(genericOk);
+          return;
+        }
+
+        // Minimum completion time (only when a valid form token is presented).
+        const minMs = (form.settings.minSubmitSeconds ?? 0) * 1000;
+        if (minMs > 0) {
+          const age = formTokenAgeMs(body.formToken);
+          if (age !== null && age < minMs) {
+            res.json(genericOk); // too fast → drop generically (bot)
+            return;
+          }
+        }
+
+        const ip = clientIp(req);
+        const email = extractEmail(data);
+        // Rate limit by IP+form and (when present) email+form. Generic 429.
+        const ipHit = formIpLimiter.hit(`${form.id}:${ip}`);
+        const emailHit = email
+          ? formEmailLimiter.hit(`${form.id}:${email}`)
+          : { allowed: true, retryAfterMs: 0 };
+        if (!ipHit.allowed || !emailHit.allowed) {
+          const retryMs = Math.max(ipHit.retryAfterMs, emailHit.retryAfterMs);
+          res.set("Retry-After", String(Math.ceil(retryMs / 1000)));
+          res.status(429).json({
+            error: { code: "RATE_LIMITED", message: "Too many submissions. Try again later." },
+          });
+          return;
+        }
+
+        // Idempotency: an explicit Idempotency-Key, else a hash of the payload,
+        // dedupes double-clicks / browser retries within a short window.
+        const idempKeyRaw =
+          typeof req.headers["idempotency-key"] === "string"
+            ? req.headers["idempotency-key"]
+            : createHmac("sha256", formTokenSecret)
+                .update(`${form.id}:${email}:${JSON.stringify(data)}`)
+                .digest("base64url");
+        const idempKey = `${form.id}:${idempKeyRaw}`;
+        const now = Date.now();
+        for (const [k, v] of submitIdemp) {
+          if (now - v.at > IDEMP_TTL_MS) submitIdemp.delete(k);
+        }
+        const prior = submitIdemp.get(idempKey);
+        if (prior) {
+          res.json(prior.body);
+          return;
+        }
+
         forms
-          .submitPublic(
-            String(req.params.slug),
-            data,
-          )
-          .then((result) =>
-            res.json(result),
-          )
-          .catch(
-            (error: unknown) => {
-              if (
-                error instanceof
-                FormNotFoundError
-              ) {
-                res
-                  .status(404)
-                  .json({
-                    error: {
-                      code: "FORM_NOT_FOUND",
-                      message:
-                        error.message,
-                    },
-                  });
-
-                return;
-              }
-
-              if (
-                error instanceof
-                FormValidationError
-              ) {
-                res
-                  .status(400)
-                  .json({
-                    error: {
-                      code: "INVALID_SUBMISSION",
-                      message:
-                        error.message,
-                    },
-                  });
-
-                return;
-              }
-
-              next(error);
-            },
-          );
+          .submitPublic(String(req.params.slug), data)
+          .then((result) => {
+            submitIdemp.set(idempKey, { at: now, body: result });
+            res.json(result);
+          })
+          .catch((error: unknown) => {
+            if (error instanceof FormNotFoundError) {
+              res.status(404).json({
+                error: { code: "FORM_NOT_FOUND", message: "This form is not available." },
+              });
+              return;
+            }
+            if (error instanceof FormValidationError) {
+              res.status(400).json({
+                error: { code: "INVALID_SUBMISSION", message: error.message },
+              });
+              return;
+            }
+            next(error);
+          });
       },
     );
   }

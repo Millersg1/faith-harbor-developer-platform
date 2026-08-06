@@ -132,67 +132,189 @@ function buildApp() {
   return { app, forms };
 }
 
-describe("public form endpoints — CORS for external lead pages", () => {
-  it("serves the form config with an open CORS origin and no sensitive fields", async () => {
-    const { app, forms } = buildApp();
-    let slug = "";
-    await runWithTenant({ organizationId: "orgA" }, async () => {
-      slug = (
-        await forms.create({
-          name: "Contact",
-          fields: CONTACT_FIELDS,
-          notifyEmail: "owner@secret.example",
-        })
-      ).slug;
-    });
+async function makeForm(
+  forms: PlatformFormService,
+  org: string,
+  extra: Partial<Parameters<PlatformFormService["create"]>[0]> = {},
+): Promise<string> {
+  let slug = "";
+  await runWithTenant({ organizationId: org }, async () => {
+    slug = (
+      await forms.create({ name: "Contact", fields: CONTACT_FIELDS, ...extra })
+    ).slug;
+  });
+  return slug;
+}
 
-    const res = await request(app).get(`/api/public/forms/${slug}`);
-    expect(res.status).toBe(200);
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
-    expect(res.body.form.fields).toHaveLength(3);
-    // Never leak the owner's notify email or internal settings.
-    expect(JSON.stringify(res.body)).not.toContain("owner@secret.example");
-    expect(res.body.form.notifyEmail).toBeUndefined();
-    expect(res.body.form.organizationId).toBeUndefined();
+describe("public form endpoints — per-form CORS (deny-by-default)", () => {
+  const ALLOWED = "https://institute.example";
+
+  it("config never leaks sensitive fields and echoes only a configured origin", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA", {
+      notifyEmail: "owner@secret.example",
+      settings: { allowedOrigins: [ALLOWED] },
+    });
+    // Allowed origin → echoed exactly (never "*"), with Vary: Origin.
+    const ok = await request(app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Origin", ALLOWED);
+    expect(ok.status).toBe(200);
+    expect(ok.headers["access-control-allow-origin"]).toBe(ALLOWED);
+    expect(ok.headers["vary"]).toMatch(/Origin/i);
+    expect(ok.headers["access-control-allow-credentials"]).toBeUndefined();
+    expect(ok.body.form.fields).toHaveLength(3);
+    expect(JSON.stringify(ok.body)).not.toContain("owner@secret.example");
+    expect(ok.body.form.notifyEmail).toBeUndefined();
+    expect(ok.body.form.organizationId).toBeUndefined();
+    expect(ok.body.form.settings).toBeUndefined();
   });
 
-  it("answers the CORS preflight (OPTIONS) with 204 and the right headers", async () => {
+  it("a DISALLOWED origin gets no permissive CORS header", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA", {
+      settings: { allowedOrigins: [ALLOWED] },
+    });
+    const res = await request(app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Origin", "https://evil.example");
+    expect(res.status).toBe(200); // request still served…
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined(); // …but browser can't read it
+  });
+
+  it("preflight is 204; allowed origin echoed, disallowed origin denied", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA", {
+      settings: { allowedOrigins: [ALLOWED] },
+    });
+    const good = await request(app)
+      .options(`/api/public/forms/${slug}/submit`)
+      .set("Origin", ALLOWED)
+      .set("Access-Control-Request-Method", "POST");
+    expect(good.status).toBe(204);
+    expect(good.headers["access-control-allow-origin"]).toBe(ALLOWED);
+    expect(good.headers["access-control-allow-methods"]).toMatch(/POST/);
+
+    const bad = await request(app)
+      .options(`/api/public/forms/${slug}/submit`)
+      .set("Origin", "https://evil.example")
+      .set("Access-Control-Request-Method", "POST");
+    expect(bad.status).toBe(204);
+    expect(bad.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("explicit allowAnyOrigin opts into '*' (deliberate tenant choice)", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA", {
+      settings: { allowAnyOrigin: true },
+    });
+    const res = await request(app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Origin", "https://anywhere.example");
+    expect(res.headers["access-control-allow-origin"]).toBe("*");
+    expect(res.headers["access-control-allow-credentials"]).toBeUndefined();
+  });
+
+  it("unknown form config is a clean 404 with no CORS grant (no tenant leak)", async () => {
     const { app } = buildApp();
     const res = await request(app)
-      .options("/api/public/forms/whatever/submit")
-      .set("Origin", "https://client-site.example")
-      .set("Access-Control-Request-Method", "POST");
-    expect(res.status).toBe(204);
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
-    expect(res.headers["access-control-allow-methods"]).toMatch(/POST/);
-    expect(res.headers["access-control-allow-headers"]).toMatch(/Content-Type/i);
+      .get("/api/public/forms/does-not-exist")
+      .set("Origin", ALLOWED);
+    expect(res.status).toBe(404);
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toMatch(/org|tenant/i);
+  });
+});
+
+describe("public form submit — abuse controls", () => {
+  it("accepts a valid submission and creates the tenant lead", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA");
+    const res = await request(app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .send({ data: { name: "Dana", email: "dana@example.com" } });
+    expect(res.status).toBe(200);
+    expect(res.body.confirmationMessage).toBeTruthy();
   });
 
-  it("accepts a cross-origin submission and returns CORS headers", async () => {
+  it("silently drops a honeypot hit (generic success, no submission stored)", async () => {
     const { app, forms } = buildApp();
-    let slug = "";
-    await runWithTenant({ organizationId: "orgA" }, async () => {
-      slug = (await forms.create({ name: "Contact", fields: CONTACT_FIELDS }))
-        .slug;
+    const slug = await makeForm(forms, "orgA", {
+      settings: { honeypotField: "website" },
     });
     const res = await request(app)
       .post(`/api/public/forms/${slug}/submit`)
-      .set("Origin", "https://client-site.example")
-      .send({ data: { name: "Dana", email: "dana@example.com" } });
-    expect(res.status).toBe(200);
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
-    expect(res.body.confirmationMessage).toBeTruthy();
-
-    // The lead landed in the owning tenant.
+      .send({ data: { name: "Bot", email: "bot@example.com", website: "spam" } });
+    expect(res.status).toBe(200); // looks successful to the bot
+    // No submission was recorded.
     await runWithTenant({ organizationId: "orgA" }, async () => {
-      // (leads service is internal to buildApp; verify via the form submissions)
+      const list = await forms.list();
+      const subs = await forms.listSubmissions(list[0].id);
+      expect(subs).toHaveLength(0);
     });
   });
 
-  it("unknown form config is a clean 404 (still CORS-enabled)", async () => {
-    const { app } = buildApp();
-    const res = await request(app).get("/api/public/forms/does-not-exist");
+  it("rejects an oversized payload with 413", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA");
+    const big = "x".repeat(40_000);
+    const res = await request(app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .send({ data: { name: "Big", email: "big@example.com", message: big } });
+    expect(res.status).toBe(413);
+  });
+
+  it("rate-limits repeated same-email submissions with 429 + Retry-After", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA");
+    let limitedStatus = 0;
+    let retryAfter: string | undefined;
+    for (let i = 0; i < 8; i++) {
+      const r = await request(app)
+        .post(`/api/public/forms/${slug}/submit`)
+        .set("Idempotency-Key", `k${i}`) // distinct so idempotency doesn't mask it
+        .send({ data: { name: "Rae", email: "rae@example.com" } });
+      if (r.status === 429) {
+        limitedStatus = r.status;
+        retryAfter = r.headers["retry-after"];
+        break;
+      }
+    }
+    expect(limitedStatus).toBe(429);
+    expect(retryAfter).toBeTruthy();
+  });
+
+  it("idempotent double-click returns the same result without a duplicate", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA");
+    const payload = { data: { name: "Dee", email: "dee@example.com" } };
+    const a = await request(app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .set("Idempotency-Key", "dbl-1")
+      .send(payload);
+    const b = await request(app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .set("Idempotency-Key", "dbl-1")
+      .send(payload);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const list = await forms.list();
+      const subs = await forms.listSubmissions(list[0].id);
+      expect(subs).toHaveLength(1); // only ONE submission despite two posts
+    });
+  });
+
+  it("an inactive (paused) form fails closed with 404", async () => {
+    const { app, forms } = buildApp();
+    const slug = await makeForm(forms, "orgA");
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const f = (await forms.list())[0];
+      await forms.update(f.id, { status: "paused" });
+    });
+    const res = await request(app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .send({ data: { name: "X", email: "x@example.com" } });
     expect(res.status).toBe(404);
-    expect(res.headers["access-control-allow-origin"]).toBe("*");
   });
 });

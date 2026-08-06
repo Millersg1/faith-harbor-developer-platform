@@ -516,6 +516,12 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS forms_org_idx
         ON forms (organization_id, created_at DESC);
     `);
+    // Per-form security/abuse settings (allowed origins, honeypot, timing).
+    // Additive; secure defaults ('{}' = no cross-origin embedding).
+    await this.pool.query(`
+      ALTER TABLE forms
+        ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb;
+    `);
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS form_submissions (
         id               TEXT PRIMARY KEY,

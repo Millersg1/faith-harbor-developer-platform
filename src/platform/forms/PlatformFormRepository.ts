@@ -2,6 +2,7 @@ import { TenantScopedRepository } from "../../tenancy/TenantScopedRepository";
 import type {
   FormField,
   FormRecord,
+  FormSettings,
   FormStatus,
   FormSubmissionRecord,
   SubmissionStatus,
@@ -16,6 +17,7 @@ interface FormRow {
   confirmation_message: string;
   notify_email: string | null;
   create_lead: boolean;
+  settings: unknown;
   status: string;
   created_at: string;
   updated_at: string;
@@ -62,8 +64,8 @@ export class PlatformFormRepository extends TenantScopedRepository {
       await this.db.query(
         `INSERT INTO forms
            (id, organization_id, name, slug, fields, confirmation_message,
-            notify_email, create_lead, status, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+            notify_email, create_lead, settings, status, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           full.id,
           full.organizationId,
@@ -73,6 +75,7 @@ export class PlatformFormRepository extends TenantScopedRepository {
           full.confirmationMessage,
           full.notifyEmail ?? null,
           full.createLead,
+          JSON.stringify(full.settings ?? {}),
           full.status,
           full.createdAt,
           full.updatedAt,
@@ -156,8 +159,8 @@ export class PlatformFormRepository extends TenantScopedRepository {
       await this.db.query(
         `UPDATE forms
             SET name = $3, fields = $4, confirmation_message = $5,
-                notify_email = $6, create_lead = $7, status = $8,
-                updated_at = $9
+                notify_email = $6, create_lead = $7, settings = $8,
+                status = $9, updated_at = $10
           WHERE id = $1 AND organization_id = $2`,
         [
           record.id,
@@ -169,6 +172,7 @@ export class PlatformFormRepository extends TenantScopedRepository {
           record.confirmationMessage,
           record.notifyEmail ?? null,
           record.createLead,
+          JSON.stringify(record.settings ?? {}),
           record.status,
           record.updatedAt,
         ],
@@ -314,6 +318,7 @@ function mapForm(
     createLead: Boolean(
       row.create_lead,
     ),
+    settings: parseSettings(row.settings),
     status: row.status as FormStatus,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -324,6 +329,20 @@ function mapForm(
       row.notify_email;
 
   return record;
+}
+
+function parseSettings(value: unknown): FormSettings {
+  let obj: unknown = value;
+  if (typeof value === "string") {
+    try {
+      obj = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return obj && typeof obj === "object"
+    ? (obj as FormSettings)
+    : {};
 }
 
 function parseFields(

@@ -9,6 +9,7 @@ import {
   type CreateFormRequest,
   type FormField,
   type FormRecord,
+  type FormSettings,
   type FormStatus,
   type FormSubmissionRecord,
 } from "./PlatformForm";
@@ -84,6 +85,7 @@ export class PlatformFormService {
         undefined,
       createLead:
         request.createLead ?? true,
+      settings: sanitizeSettings(request.settings),
       status: "active",
       createdAt: now,
       updatedAt: now,
@@ -141,6 +143,10 @@ export class PlatformFormService {
       createLead:
         changes.createLead ??
         form.createLead,
+      settings:
+        changes.settings !== undefined
+          ? sanitizeSettings(changes.settings)
+          : form.settings,
       status:
         changes.status === "paused" ||
         changes.status === "active"
@@ -434,6 +440,63 @@ function formatValue(
  * Validates and trims field definitions. Unknown field types and blank
  * keys/labels are dropped.
  */
+/** Normalize an origin to `scheme://host[:port]`, lower-cased, no trailing slash. */
+export function normalizeOrigin(raw: string): string | null {
+  try {
+    const u = new URL(String(raw).trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a browser `Origin` may embed this form. Deny-by-default: only exact
+ * configured origins match, unless the tenant EXPLICITLY set allowAnyOrigin.
+ * The slug is public and is never treated as authorization here.
+ */
+export function isOriginAllowed(
+  settings: FormSettings | undefined,
+  origin: string | undefined,
+): boolean {
+  if (settings?.allowAnyOrigin) return true;
+  const o = origin ? normalizeOrigin(origin) : null;
+  if (!o) return false;
+  const allowed = (settings?.allowedOrigins ?? [])
+    .map((x) => normalizeOrigin(x))
+    .filter((x): x is string => Boolean(x));
+  return allowed.includes(o);
+}
+
+function sanitizeSettings(
+  s: FormSettings | undefined,
+): FormSettings {
+  const out: FormSettings = {};
+  if (s && Array.isArray(s.allowedOrigins)) {
+    const origins = s.allowedOrigins
+      .map((o) => normalizeOrigin(o))
+      .filter((o): o is string => Boolean(o));
+    if (origins.length) out.allowedOrigins = [...new Set(origins)].slice(0, 50);
+  }
+  if (s?.allowAnyOrigin === true) out.allowAnyOrigin = true;
+  if (s && typeof s.honeypotField === "string" && s.honeypotField.trim()) {
+    out.honeypotField = s.honeypotField
+      .trim()
+      .replace(/[^a-zA-Z0-9_]/g, "")
+      .slice(0, 40);
+  }
+  if (
+    s &&
+    typeof s.minSubmitSeconds === "number" &&
+    Number.isFinite(s.minSubmitSeconds) &&
+    s.minSubmitSeconds > 0
+  ) {
+    out.minSubmitSeconds = Math.min(Math.floor(s.minSubmitSeconds), 3600);
+  }
+  return out;
+}
+
 function sanitizeFields(
   fields: FormField[] | undefined,
 ): FormField[] {
