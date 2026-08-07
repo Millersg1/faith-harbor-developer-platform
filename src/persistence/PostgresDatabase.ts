@@ -675,6 +675,43 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS marketing_outbox_attempts_idx
         ON marketing_outbox_attempts (outbox_id, created_at);
     `);
+    // Durable marketing-activation intents. Created at submission (binding the
+    // EXACT terms the visitor accepted), flipped to 'ready' when consent is
+    // confirmed, and turned into an enrollment by a crash-safe worker. This is
+    // the durable pattern that guarantees a confirmed opt-in can never be lost
+    // to a crash after the HTTP response. UNIQUE keeps activation idempotent per
+    // accepted terms; the drip active-enrollment unique index is the final
+    // duplicate-enrollment safeguard.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_activations (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        form_id          TEXT,
+        sequence_id      TEXT NOT NULL,
+        email            TEXT NOT NULL,
+        consent_wording  TEXT,
+        consent_version  TEXT,
+        double_opt_in    BOOLEAN NOT NULL DEFAULT TRUE,
+        consent_ref      TEXT,
+        status           TEXT NOT NULL DEFAULT 'awaiting_confirmation',
+        reason           TEXT,
+        attempts         INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at  TEXT NOT NULL,
+        confirmed_at     TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS marketing_activations_terms_uniq
+        ON marketing_activations
+           (organization_id, form_id, LOWER(email), consent_version);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS marketing_activations_ready_idx
+        ON marketing_activations (status, next_attempt_at);
+    `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS double_optin_tokens (
