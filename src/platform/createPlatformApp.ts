@@ -634,7 +634,10 @@ export function createPlatformApp(
     // get NO permissive CORS header. Credentials are never allowed. Abuse
     // protection (rate limit / honeypot / timing / size / idempotency /
     // fail-closed tenant scoping) is enforced separately, below.
-    type PublicFormReq = express.Request & { publicForm?: FormRecord };
+    type PublicFormReq = express.Request & {
+      publicForm?: FormRecord;
+      canonicalBase?: string;
+    };
     const applyFormCors = (
       res: Response,
       form: FormRecord | undefined,
@@ -657,12 +660,45 @@ export function createPlatformApp(
     const publicFormCtx: express.RequestHandler = (req, res, next) => {
       forms
         .getPublicBySlug(String(req.params.slug))
-        .then((form) => {
+        .then(async (form) => {
           (req as PublicFormReq).publicForm = form;
           applyFormCors(res, form, req.headers.origin);
           if (req.method === "OPTIONS") {
             res.status(204).end();
             return;
+          }
+          if (form) {
+            // HOST-BINDING (fail-closed): if the request host resolves to a
+            // tenant (subdomain / verified custom domain), it MUST be the form's
+            // owner. A cross-tenant host + slug is refused with the SAME generic
+            // 404 as an unknown slug (no tenant/form existence leak). Client-
+            // supplied org id / host / redirect are ignored — only the trusted
+            // host resolver + the form's own org are used.
+            const resolved = await resolveTenantByHost(
+              req.headers.host,
+              deps,
+            ).catch(() => null);
+            if (resolved && resolved.organizationId !== form.organizationId) {
+              (req as PublicFormReq).publicForm = undefined;
+              res.status(404).json({
+                error: {
+                  code: "FORM_NOT_FOUND",
+                  message: "This form is not available.",
+                },
+              });
+              return;
+            }
+            // Build links from the form OWNER's trusted canonical host (its
+            // subdomain), never the incoming request host / apex / another
+            // tenant.
+            const org = await deps.organizations
+              .get(form.organizationId)
+              .catch(() => undefined);
+            if (org && deps.baseDomain) {
+              const proto = deps.secureCookie ? "https" : "http";
+              (req as PublicFormReq).canonicalBase =
+                `${proto}://${org.slug}.${deps.baseDomain}`;
+            }
           }
           next();
         })
