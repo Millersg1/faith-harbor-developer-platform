@@ -604,6 +604,18 @@ function validateMessage(
     extractAddress(message.to),
     "recipient",
   );
+
+  // Optional fields must be equally injection-safe.
+  if (message.replyTo !== undefined) {
+    assertHeaderSafe(message.replyTo, "reply-to");
+  }
+  if (message.messageId !== undefined) {
+    assertHeaderSafe(message.messageId, "message-id");
+  }
+  for (const [key, value] of Object.entries(message.headers ?? {})) {
+    assertHeaderSafe(key, "header name");
+    assertHeaderSafe(value, "header value");
+  }
 }
 
 /**
@@ -688,20 +700,54 @@ function base64(
 function buildMessage(
   message: EmailMessage,
 ): string {
-  const headers = [
+  const messageId = message.messageId
+    ? `<${message.messageId}>`
+    : `<${randomUUID()}@${domainOf(message.from)}>`;
+  const lines = [
     `From: ${message.from}`,
     `To: ${message.to}`,
+    ...(message.replyTo ? [`Reply-To: ${message.replyTo}`] : []),
     `Subject: ${message.subject}`,
     `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <${randomUUID()}@${domainOf(message.from)}>`,
+    `Message-ID: ${messageId}`,
+    ...Object.entries(message.headers ?? {}).map(
+      ([k, v]) => `${k}: ${v}`,
+    ),
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=utf-8",
-    "Content-Transfer-Encoding: 8bit",
-  ].join("\r\n");
+  ];
 
-  const body = message.body
+  const text = message.body
     .replace(/\r?\n/g, "\r\n")
     .replace(/^\./gm, "..");
 
-  return `${headers}\r\n\r\n${body}`;
+  if (!message.html) {
+    lines.push(
+      "Content-Type: text/plain; charset=utf-8",
+      "Content-Transfer-Encoding: 8bit",
+    );
+    return `${lines.join("\r\n")}\r\n\r\n${text}`;
+  }
+
+  // multipart/alternative: plain-text + HTML (plain is always present).
+  const boundary = `b_${randomUUID().replace(/-/g, "")}`;
+  const html = message.html
+    .replace(/\r?\n/g, "\r\n")
+    .replace(/^\./gm, "..");
+  lines.push(
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+  );
+  const parts = [
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=utf-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    text,
+    `--${boundary}`,
+    "Content-Type: text/html; charset=utf-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    html,
+    `--${boundary}--`,
+  ].join("\r\n");
+  return `${lines.join("\r\n")}\r\n\r\n${parts}`;
 }

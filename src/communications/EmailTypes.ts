@@ -30,6 +30,15 @@ export interface EmailMessage {
    * always kept so non-HTML clients and the outbox record stay readable.
    */
   html?: string;
+  /** Optional Reply-To header (e.g. a tenant's marketing reply address). */
+  replyTo?: string;
+  /** Optional caller-supplied Message-ID value (without angle brackets). */
+  messageId?: string;
+  /**
+   * Optional extra headers (e.g. List-Unsubscribe). Header names + values are
+   * CR/LF-validated by the transport; an unsafe value is refused, never sent.
+   */
+  headers?: Record<string, string>;
 }
 
 /**
