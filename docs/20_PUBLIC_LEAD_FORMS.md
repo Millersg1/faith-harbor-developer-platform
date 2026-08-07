@@ -172,6 +172,42 @@ compact queryable marketing audit spine (action + enum + opaque ids only — nev
 email, name, token, wording, body, unsubscribe URL, provider response, or IP)
 is added with the S7 send spine.
 
+## Marketing send outbox — precise delivery guarantees (S7a)
+
+Claims stated exactly (no over-promising):
+
+- **Idempotent, exactly-once *enqueueing*** per enrollment step (`UNIQUE
+  (enrollment_id, step_index)`).
+- **Exactly-once *metering*** — a message is metered iff/when it reaches `sent`,
+  once.
+- **No automatic blind resend after an ambiguous SMTP attempt.**
+- **External email delivery is NOT guaranteed exactly once.** SMTP has an
+  unavoidable ambiguous crash window.
+- A crash **before** confirmed SMTP acceptance can leave a message classified
+  `delivery_unknown` **even if it was never delivered**.
+- A crash **after** SMTP acceptance but before the DB update can leave it
+  `delivery_unknown` **even though the recipient may receive it**.
+- `sent` confirms SMTP **acceptance**, which does **not** prove inbox delivery.
+
+On recovery these windows are indistinguishable (a row left `sending` with an
+expired lease), so all become `delivery_unknown` and are never auto-resent.
+
+**Immutable attempt history.** Every attempt/transition appends one row to
+`marketing_outbox_attempts` (compact enums + ids only — never email, name, body,
+subject, address, consent wording, or token). A manual retry **appends** a new
+attempt; it never overwrites prior history.
+
+**Owner/admin `delivery_unknown` review workflow:** (1) **resolve** — mark
+reviewed without resending; (2) **retry** — deliberately re-queue, with a
+prominent duplicate-risk warning (appends a new attempt); (3) **cancel**. Each
+manual resolution is audited with compact action + actor id only.
+
+**Final-eligibility boundary (honest).** Suppression/eligibility is rechecked
+immediately before each send, so an unsubscribe that commits before that check
+stops the message. But an unsubscribe that commits **after** the check and
+**before** SMTP acceptance cannot always stop the already-in-flight message —
+this is an unavoidable boundary and is documented, not hidden.
+
 ## Current status of the build
 
 - Fail-closed: public forms create the CRM lead only; **marketing enrollment is

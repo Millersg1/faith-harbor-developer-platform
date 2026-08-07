@@ -609,9 +609,13 @@ export class PostgresDatabase
       );
     `);
     // Durable marketing send outbox. One row per (enrollment, step) — the
-    // UNIQUE constraint makes enqueue idempotent and delivery exactly-once. The
-    // lease columns (lease_owner/lease_until) prevent two workers sending the
-    // same message; an expired lease recovers safely. Honest delivery states:
+    // UNIQUE constraint gives idempotent, EXACTLY-ONCE ENQUEUEING of one
+    // logical message. This does NOT guarantee exactly-once external email
+    // delivery: SMTP has an unavoidable ambiguous crash window (a crash before
+    // confirmed acceptance, or after acceptance but before the DB update, both
+    // land in `delivery_unknown`). Metering is exactly-once for messages
+    // confirmed `sent`. Lease columns prevent two workers sending the same
+    // message; an expired lease recovers safely (never a blind resend). States:
     // queued → sending → sent | failed | skipped | delivery_unknown | terminal.
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS marketing_outbox (
@@ -644,6 +648,32 @@ export class PostgresDatabase
     await this.pool.query(`
       CREATE INDEX IF NOT EXISTS marketing_outbox_claim_idx
         ON marketing_outbox (status, next_attempt_at);
+    `);
+    // Owner/admin resolution marker for delivery_unknown review (no resend).
+    await this.pool.query(`
+      ALTER TABLE marketing_outbox
+        ADD COLUMN IF NOT EXISTS resolved_at TEXT;
+    `);
+    // Immutable, append-only attempt history — one row per attempt/action, with
+    // COMPACT identifiers + enums ONLY. Never an email, name, body, address,
+    // consent wording, or token. A manual retry appends a new attempt; it never
+    // overwrites prior history.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_outbox_attempts (
+        id             TEXT PRIMARY KEY,
+        outbox_id      TEXT NOT NULL,
+        organization_id TEXT NOT NULL,
+        attempt_no     INTEGER NOT NULL,
+        event          TEXT NOT NULL,
+        provider_id    TEXT,
+        reason         TEXT,
+        actor          TEXT,
+        created_at     TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS marketing_outbox_attempts_idx
+        ON marketing_outbox_attempts (outbox_id, created_at);
     `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`

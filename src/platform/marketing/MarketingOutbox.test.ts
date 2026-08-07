@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MarketingOutboxAttemptRepository,
   MarketingOutboxRepository,
   MarketingOutboxService,
   type Eligibility,
@@ -151,6 +152,140 @@ describe("MarketingOutbox — crash windows & lease recovery", () => {
       },
     });
     expect(sends).toBe(0);
+  });
+});
+
+describe("MarketingOutbox — crash-window boundaries (honest, no blind resend)", () => {
+  // All three windows are INDISTINGUISHABLE on recovery — a row left `sending`
+  // with an expired lease — so all resolve to delivery_unknown and are never
+  // auto-resent. The narratives document what may have happened.
+  async function stuckSending(repo: MarketingOutboxRepository, clockRef: { t: number }) {
+    const svc = new MarketingOutboxService(repo, () => clockRef.t);
+    await svc.enqueue(enqueueInput());
+    // A worker leases it, then the process dies (no state update).
+    await repo.claimDue(
+      "dead",
+      new Date(clockRef.t).toISOString(),
+      new Date(clockRef.t + 60_000).toISOString(),
+      10,
+    );
+    return svc;
+  }
+
+  it("window 1: crash BEFORE SMTP submission → delivery_unknown, not resent (may NOT have been delivered)", async () => {
+    const repo = new MarketingOutboxRepository();
+    const clk = { t: 1_000 };
+    const svc = await stuckSending(repo, clk);
+    clk.t += 120_000;
+    let sends = 0;
+    await svc.runOnce(OWNER, {
+      eligibility: eligibleAlways,
+      send: async () => {
+        sends += 1;
+        return { outcome: "accepted" };
+      },
+    });
+    expect(sends).toBe(0);
+    const att = await svc.needsAttention("orgA");
+    expect(att[0]?.status).toBe("delivery_unknown");
+  });
+
+  it("window 2 (unresolved SMTP) & window 3 (accepted-before-record) both → delivery_unknown, not resent", async () => {
+    // Same recovery mechanism; window 3's recipient MAY have received it.
+    const repo = new MarketingOutboxRepository();
+    const clk = { t: 5_000 };
+    const svc = await stuckSending(repo, clk);
+    clk.t += 200_000;
+    let sends = 0;
+    await svc.runOnce(OWNER, {
+      eligibility: eligibleAlways,
+      send: async () => {
+        sends += 1;
+        return { outcome: "accepted" };
+      },
+    });
+    expect(sends).toBe(0);
+    // Running again still never auto-resends a delivery_unknown.
+    clk.t += 200_000;
+    await svc.runOnce(OWNER, {
+      eligibility: eligibleAlways,
+      send: async () => {
+        sends += 1;
+        return { outcome: "accepted" };
+      },
+    });
+    expect(sends).toBe(0);
+  });
+
+});
+
+describe("MarketingOutbox — review workflow (immutable history, audit-safe)", () => {
+  it("resolve marks reviewed WITHOUT resending; drops off the attention list", async () => {
+    const repo = new MarketingOutboxRepository();
+    const attempts = new MarketingOutboxAttemptRepository();
+    const clk = { t: 1_000 };
+    const svc = new MarketingOutboxService(repo, () => clk.t, attempts);
+    await svc.enqueue(enqueueInput());
+    await repo.claimDue("dead", new Date(clk.t).toISOString(), new Date(clk.t + 1).toISOString(), 10);
+    clk.t += 10_000;
+    await svc.runOnce(OWNER, { eligibility: eligibleAlways, send: acceptAlways });
+    const [du] = await svc.needsAttention("orgA");
+    expect(du.status).toBe("delivery_unknown");
+
+    expect(await svc.resolve(du.id, "orgA", "admin-1")).toBe(true);
+    expect(await svc.needsAttention("orgA")).toHaveLength(0); // resolved, no resend
+    const hist = await svc.history(du.id);
+    expect(hist.some((h) => h.event === "manual_resolved" && h.actor === "admin-1")).toBe(true);
+  });
+
+  it("a deliberate retry appends a NEW attempt and re-queues (never overwrites history)", async () => {
+    const repo = new MarketingOutboxRepository();
+    const attempts = new MarketingOutboxAttemptRepository();
+    const clk = { t: 1_000 };
+    const svc = new MarketingOutboxService(repo, () => clk.t, attempts);
+    await svc.enqueue(enqueueInput());
+    await repo.claimDue("dead", new Date(clk.t).toISOString(), new Date(clk.t + 1).toISOString(), 10);
+    clk.t += 10_000;
+    await svc.runOnce(OWNER, { eligibility: eligibleAlways, send: acceptAlways }); // → delivery_unknown
+    const [du] = await svc.needsAttention("orgA");
+
+    expect(await svc.retry(du.id, "orgA", "admin-1")).toBe(true);
+    const histAfterRetry = await svc.history(du.id);
+    expect(histAfterRetry.some((h) => h.event === "delivery_unknown")).toBe(true); // prior kept
+    expect(histAfterRetry.some((h) => h.event === "manual_retry")).toBe(true); // new appended
+    // Now re-queued → a real send happens on the next pass.
+    let sends = 0;
+    await svc.runOnce(OWNER, {
+      eligibility: eligibleAlways,
+      send: async () => {
+        sends += 1;
+        return { outcome: "accepted", providerId: "p2" };
+      },
+    });
+    expect(sends).toBe(1);
+    const finalHist = await svc.history(du.id);
+    expect(finalHist.filter((h) => h.event === "sent")).toHaveLength(1);
+  });
+
+  it("attempt history contains only compact enums/ids — no email, body, or subject", async () => {
+    const repo = new MarketingOutboxRepository();
+    const attempts = new MarketingOutboxAttemptRepository();
+    const clk = { t: 1_000 };
+    const svc = new MarketingOutboxService(repo, () => clk.t, attempts);
+    await svc.enqueue(
+      enqueueInput({ email: "secret@x.com", subject: "SECRET-SUBJ", body: "SECRET-BODY" }),
+    );
+    // Force a delivery_unknown so the message is retrievable via needsAttention.
+    await repo.claimDue("dead", new Date(clk.t).toISOString(), new Date(clk.t + 1).toISOString(), 10);
+    clk.t += 10_000;
+    await svc.runOnce(OWNER, { eligibility: eligibleAlways, send: acceptAlways });
+    const [du] = await svc.needsAttention("orgA");
+    expect(du).toBeTruthy();
+    const dump = JSON.stringify(await svc.history(du.id));
+    expect(dump).not.toMatch(/secret@x\.com/i);
+    expect(dump).not.toMatch(/SECRET-BODY/);
+    expect(dump).not.toMatch(/SECRET-SUBJ/);
+    expect(dump).toContain("delivery_unknown"); // compact enum present
   });
 });
 

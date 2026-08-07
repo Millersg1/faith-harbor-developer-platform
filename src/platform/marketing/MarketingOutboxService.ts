@@ -40,8 +40,107 @@ export interface OutboxMessage {
   providerId: string | null;
   messageIdHeader: string | null;
   reason: string | null;
+  /** Set when an owner/admin resolves a delivery_unknown without resending. */
+  resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * One immutable attempt-history entry. COMPACT identifiers + enums ONLY — never
+ * an email, name, body, address, consent wording, or token.
+ */
+export interface OutboxAttempt {
+  id: string;
+  outboxId: string;
+  organizationId: string;
+  attemptNo: number;
+  event:
+    | "sent"
+    | "failed"
+    | "terminal"
+    | "skipped"
+    | "delivery_unknown"
+    | "manual_retry"
+    | "manual_resolved"
+    | "manual_cancel";
+  providerId: string | null;
+  reason: string | null;
+  actor: string | null;
+  createdAt: string;
+}
+
+/** Append-only attempt history. No update/delete — the log is immutable. */
+export class MarketingOutboxAttemptRepository {
+  private readonly rows: OutboxAttempt[] = [];
+
+  constructor(private readonly db?: PgQueryable) {}
+
+  async append(a: OutboxAttempt): Promise<void> {
+    if (this.db) {
+      await this.db.query(
+        `INSERT INTO marketing_outbox_attempts
+           (id, outbox_id, organization_id, attempt_no, event, provider_id,
+            reason, actor, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          a.id, a.outboxId, a.organizationId, a.attemptNo, a.event,
+          a.providerId, a.reason, a.actor, a.createdAt,
+        ],
+      );
+      return;
+    }
+    this.rows.push(a);
+  }
+
+  async list(outboxId: string): Promise<OutboxAttempt[]> {
+    if (this.db) {
+      const r = await this.db.query(
+        `SELECT * FROM marketing_outbox_attempts
+           WHERE outbox_id=$1 ORDER BY created_at ASC`,
+        [outboxId],
+      );
+      return (r.rows as unknown as AttemptRow[]).map(mapAttempt);
+    }
+    return this.rows.filter((a) => a.outboxId === outboxId);
+  }
+
+  async count(outboxId: string): Promise<number> {
+    if (this.db) {
+      const r = await this.db.query(
+        "SELECT COUNT(*)::int AS n FROM marketing_outbox_attempts WHERE outbox_id=$1",
+        [outboxId],
+      );
+      return Number((r.rows[0] as { n?: number } | undefined)?.n ?? 0);
+    }
+    return this.rows.filter((a) => a.outboxId === outboxId).length;
+  }
+}
+
+interface AttemptRow {
+  id: string;
+  outbox_id: string;
+  organization_id: string;
+  attempt_no: number;
+  event: string;
+  provider_id: string | null;
+  reason: string | null;
+  actor: string | null;
+  created_at: string;
+}
+
+function mapAttempt(row: AttemptRow): OutboxAttempt {
+  return {
+    id: row.id,
+    outboxId: row.outbox_id,
+    organizationId: row.organization_id,
+    attemptNo: Number(row.attempt_no),
+    event: row.event as OutboxAttempt["event"],
+    providerId: row.provider_id,
+    reason: row.reason,
+    actor: row.actor,
+    createdAt: row.created_at,
+  };
 }
 
 export interface EnqueueInput {
@@ -139,18 +238,19 @@ export class MarketingOutboxRepository {
    * worker). We cannot prove whether the transport accepted them, so mark them
    * `delivery_unknown` for manual review — never a blind resend. Returns count.
    */
-  async recoverExpiredLeases(nowIso: string): Promise<number> {
+  async recoverExpiredLeases(nowIso: string): Promise<OutboxMessage[]> {
     if (this.db) {
       const r = await this.db.query(
         `UPDATE marketing_outbox
             SET status='delivery_unknown', reason='crash:ambiguous',
                 lease_owner=NULL, lease_until=NULL, updated_at=$1
-          WHERE status='sending' AND lease_until IS NOT NULL AND lease_until < $1`,
+          WHERE status='sending' AND lease_until IS NOT NULL AND lease_until < $1
+          RETURNING *`,
         [nowIso],
       );
-      return r.rowCount ?? 0;
+      return (r.rows as unknown as OutboxRow[]).map(mapRow);
     }
-    let n = 0;
+    const recovered: OutboxMessage[] = [];
     for (const m of this.rows.values()) {
       if (
         m.status === "sending" &&
@@ -162,10 +262,10 @@ export class MarketingOutboxRepository {
         m.leaseOwner = null;
         m.leaseUntil = null;
         m.updatedAt = nowIso;
-        n += 1;
+        recovered.push({ ...m });
       }
     }
-    return n;
+    return recovered;
   }
 
   async update(msg: OutboxMessage): Promise<void> {
@@ -174,12 +274,12 @@ export class MarketingOutboxRepository {
         `UPDATE marketing_outbox SET
             status=$2, attempts=$3, next_attempt_at=$4, lease_owner=$5,
             lease_until=$6, provider_id=$7, message_id_header=$8, reason=$9,
-            updated_at=$10
+            resolved_at=$10, updated_at=$11
           WHERE id=$1`,
         [
           msg.id, msg.status, msg.attempts, msg.nextAttemptAt, msg.leaseOwner,
           msg.leaseUntil, msg.providerId, msg.messageIdHeader, msg.reason,
-          msg.updatedAt,
+          msg.resolvedAt, msg.updatedAt,
         ],
       );
       return;
@@ -209,6 +309,7 @@ export class MarketingOutboxRepository {
         `SELECT * FROM marketing_outbox
            WHERE organization_id=$1
              AND status IN ('terminal','delivery_unknown')
+             AND resolved_at IS NULL
            ORDER BY updated_at DESC LIMIT 500`,
         [organizationId],
       );
@@ -217,8 +318,18 @@ export class MarketingOutboxRepository {
     return [...this.rows.values()].filter(
       (m) =>
         m.organizationId === organizationId &&
+        m.resolvedAt === null &&
         (m.status === "terminal" || m.status === "delivery_unknown"),
     );
+  }
+
+  /** Tenant-scoped fetch for the review workflow (fail-closed on wrong org). */
+  async getForOrg(
+    id: string,
+    organizationId: string,
+  ): Promise<OutboxMessage | undefined> {
+    const m = await this.get(id);
+    return m && m.organizationId === organizationId ? m : undefined;
   }
 
   /** Cancel queued/failed messages for an enrollment (pause/cancel). */
@@ -265,6 +376,7 @@ interface OutboxRow {
   provider_id: string | null;
   message_id_header: string | null;
   reason: string | null;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -287,6 +399,7 @@ function mapRow(row: OutboxRow): OutboxMessage {
     providerId: row.provider_id,
     messageIdHeader: row.message_id_header,
     reason: row.reason,
+    resolvedAt: row.resolved_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -312,7 +425,27 @@ export class MarketingOutboxService {
   constructor(
     private readonly repo = new MarketingOutboxRepository(),
     private readonly now: () => number = () => Date.now(),
+    private readonly attempts = new MarketingOutboxAttemptRepository(),
   ) {}
+
+  private async logAttempt(
+    m: OutboxMessage,
+    event: OutboxAttempt["event"],
+    extra: { providerId?: string | null; reason?: string | null; actor?: string | null } = {},
+  ): Promise<void> {
+    const n = (await this.attempts.count(m.id)) + 1;
+    await this.attempts.append({
+      id: randomUUID(),
+      outboxId: m.id,
+      organizationId: m.organizationId,
+      attemptNo: n,
+      event,
+      providerId: extra.providerId ?? null,
+      reason: extra.reason ?? null,
+      actor: extra.actor ?? null,
+      createdAt: new Date(this.now()).toISOString(),
+    });
+  }
 
   async enqueue(input: EnqueueInput): Promise<boolean> {
     const nowIso = new Date(this.now()).toISOString();
@@ -333,6 +466,7 @@ export class MarketingOutboxService {
       providerId: null,
       messageIdHeader: null,
       reason: null,
+      resolvedAt: null,
       createdAt: nowIso,
       updatedAt: nowIso,
     });
@@ -342,11 +476,79 @@ export class MarketingOutboxService {
     return this.repo.listNeedsAttention(organizationId);
   }
 
+  async history(outboxId: string): Promise<OutboxAttempt[]> {
+    return this.attempts.list(outboxId);
+  }
+
   async cancelForEnrollment(enrollmentId: string): Promise<void> {
     await this.repo.cancelForEnrollment(
       enrollmentId,
       new Date(this.now()).toISOString(),
     );
+  }
+
+  // ---- Owner/admin review workflow for delivery_unknown / terminal ----
+
+  /** Mark a message resolved WITHOUT resending. Audited (compact, no PII). */
+  async resolve(
+    id: string,
+    organizationId: string,
+    actor: string,
+  ): Promise<boolean> {
+    const m = await this.repo.getForOrg(id, organizationId);
+    if (!m) return false;
+    const nowIso = new Date(this.now()).toISOString();
+    await this.repo.update({ ...m, resolvedAt: nowIso, updatedAt: nowIso });
+    await this.logAttempt(m, "manual_resolved", { actor });
+    return true;
+  }
+
+  /**
+   * Deliberate owner/admin retry of a delivery_unknown/terminal message. This
+   * re-queues it for another attempt — it MAY produce a duplicate (the UI warns
+   * prominently). It APPENDS a new attempt to the immutable history and never
+   * overwrites prior attempts.
+   */
+  async retry(
+    id: string,
+    organizationId: string,
+    actor: string,
+  ): Promise<boolean> {
+    const m = await this.repo.getForOrg(id, organizationId);
+    if (!m) return false;
+    const nowIso = new Date(this.now()).toISOString();
+    await this.logAttempt(m, "manual_retry", { actor, reason: "operator_forced" });
+    await this.repo.update({
+      ...m,
+      status: "queued",
+      nextAttemptAt: nowIso,
+      resolvedAt: null,
+      leaseOwner: null,
+      leaseUntil: null,
+      reason: "manual_retry",
+      updatedAt: nowIso,
+    });
+    return true;
+  }
+
+  /** Cancel a message (no further attempts). Audited. */
+  async cancelMessage(
+    id: string,
+    organizationId: string,
+    actor: string,
+  ): Promise<boolean> {
+    const m = await this.repo.getForOrg(id, organizationId);
+    if (!m) return false;
+    const nowIso = new Date(this.now()).toISOString();
+    await this.repo.update({
+      ...m,
+      status: "skipped",
+      reason: "manually_canceled",
+      resolvedAt: nowIso,
+      updatedAt: nowIso,
+    });
+    await this.logAttempt(m, "manual_cancel", { actor });
+    return true;
   }
 
   /**
@@ -364,7 +566,10 @@ export class MarketingOutboxService {
   ): Promise<{ sent: number; skipped: number; failed: number }> {
     const nowMs = this.now();
     const nowIso = new Date(nowMs).toISOString();
-    await this.repo.recoverExpiredLeases(nowIso);
+    const recovered = await this.repo.recoverExpiredLeases(nowIso);
+    for (const rm of recovered) {
+      await this.logAttempt(rm, "delivery_unknown", { reason: "crash:ambiguous" });
+    }
     const leaseUntil = new Date(nowMs + (deps.leaseMs ?? 60_000)).toISOString();
     const claimed = await this.repo.claimDue(
       owner,
@@ -388,6 +593,7 @@ export class MarketingOutboxService {
           leaseUntil: null,
           updatedAt: new Date(this.now()).toISOString(),
         });
+        await this.logAttempt(m, "skipped", { reason: elig.reason });
         skipped += 1;
         continue;
       }
@@ -402,7 +608,8 @@ export class MarketingOutboxService {
       }
       const afterIso = new Date(this.now()).toISOString();
       if (attempt.outcome === "accepted") {
-        // Single metering point.
+        // Single metering point (a message is metered iff/when it reaches
+        // `sent`). This confirms SMTP ACCEPTANCE, not guaranteed delivery.
         await this.repo.update({
           ...m,
           status: "sent",
@@ -413,6 +620,7 @@ export class MarketingOutboxService {
           leaseUntil: null,
           updatedAt: afterIso,
         });
+        await this.logAttempt(m, "sent", { providerId: attempt.providerId ?? null });
         sent += 1;
       } else {
         const attempts = m.attempts + 1;
@@ -427,6 +635,9 @@ export class MarketingOutboxService {
           leaseOwner: null,
           leaseUntil: null,
           updatedAt: afterIso,
+        });
+        await this.logAttempt(m, terminal ? "terminal" : "failed", {
+          reason: attempt.reason.slice(0, 80),
         });
         failed += 1;
       }
