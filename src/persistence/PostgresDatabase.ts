@@ -675,6 +675,26 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS marketing_outbox_attempts_idx
         ON marketing_outbox_attempts (outbox_id, created_at);
     `);
+    // Per-tenant marketing sender configuration. The visible From ADDRESS is
+    // usable only when its domain is platform-approved for SMTP sending;
+    // otherwise a platform-controlled From on an authenticated AEC domain is
+    // used with the tenant's business name + validated Reply-To. Physical
+    // mailing address is required (CAN-SPAM). No SMTP credentials are stored
+    // here. Website/custom-domain verification is NOT email-sending approval.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_sender_config (
+        organization_id       TEXT PRIMARY KEY
+                                REFERENCES organizations (id) ON DELETE CASCADE,
+        business_name         TEXT,
+        from_address          TEXT,
+        sending_domain_approved BOOLEAN NOT NULL DEFAULT FALSE,
+        reply_to              TEXT,
+        physical_address      TEXT,
+        status                TEXT NOT NULL DEFAULT 'incomplete',
+        updated_by            TEXT,
+        updated_at            TEXT NOT NULL
+      );
+    `);
     // Durable marketing-activation intents. Created at submission (binding the
     // EXACT terms the visitor accepted), flipped to 'ready' when consent is
     // confirmed, and turned into an enrollment by a crash-safe worker. This is
