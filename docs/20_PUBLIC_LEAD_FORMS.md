@@ -28,6 +28,27 @@ allowed-origins, abuse controls (rate limit / honeypot / timing / size /
 idempotency), consent gating, and suppression — never from the slug being
 "hard to guess."
 
+## Origin policy — the decision (accurate description)
+
+- **GET config:** returning `200` **without** `Access-Control-Allow-Origin` for a
+  disallowed Origin is CORS *response* policy, not server authorization. The
+  config is public + non-sensitive, so it is served either way; the browser
+  simply can't read it cross-origin unless the Origin is allowed.
+- **POST submit:** the per-form allowed-origins list, **when configured**, is
+  ALSO enforced as a submission restriction for **browser** requests — a request
+  carrying an Origin that is neither same-host nor in the allowlist (and not
+  `allowAnyOrigin`) is refused with `403` **before any** lead / consent /
+  attribution / activation / magnet / enrollment / outbox mutation.
+- **Missing Origin (server-to-server):** allowed — Origin is forgeable/omittable,
+  so it is never authentication; these requests are governed by the abuse
+  controls (rate limit, honeypot, timing, size, idempotency) + host-binding +
+  suppression. (A future hash-only scoped form-submission key could add a hard
+  server-side origin restriction; none is required today.)
+- **Default (no allowlist) / `allowAnyOrigin`:** open. Same-origin tenant form
+  submissions always work.
+- The unguessable slug and the CORS allowlist are **never** described as
+  authentication against automated abuse; the abuse controls above are.
+
 ## CORS is a browser policy — not auth, not anti-bot
 
 CORS only decides which browser origins may read a cross-origin response. It is

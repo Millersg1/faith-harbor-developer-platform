@@ -201,3 +201,95 @@ describe("host-binding vs CORS are independent", () => {
   });
 });
 
+describe("submission Origin restriction (mutation-level, documented decision)", () => {
+  const submit = (b: ReturnType<typeof build>, slug: string) =>
+    request(b.app)
+      .post(`/api/public/forms/${slug}/submit`)
+      .set("Host", "allelitecloud.com");
+
+  async function restrictedForm(b: ReturnType<typeof build>, orgId: string) {
+    let slug = "";
+    await runWithTenant({ organizationId: orgId }, async () => {
+      slug = (
+        await b.forms.create({
+          name: "Contact",
+          fields: CONTACT_FIELDS,
+          settings: { allowedOrigins: ["https://acme-site.example"] },
+        })
+      ).slug;
+    });
+    return slug;
+  }
+
+  it("a DISALLOWED browser Origin is refused BEFORE any lead is created", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    const slug = await restrictedForm(b, a.id);
+    const res = await submit(b, slug)
+      .set("Origin", "https://evil.example")
+      .send({ data: { name: "X", email: "x@example.com" } });
+    expect(res.status).toBe(403);
+    await runWithTenant({ organizationId: a.id }, async () => {
+      expect(await b.leads.list()).toHaveLength(0); // NO mutation
+    });
+  });
+
+  it("an ALLOWED browser Origin submits and creates the lead", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    const slug = await restrictedForm(b, a.id);
+    const res = await submit(b, slug)
+      .set("Origin", "https://acme-site.example")
+      .send({ data: { name: "Dana", email: "dana@example.com" } });
+    expect(res.status).toBe(200);
+    await runWithTenant({ organizationId: a.id }, async () => {
+      expect(await b.leads.list()).toHaveLength(1);
+    });
+  });
+
+  it("a NO-Origin (server-to-server) submission is allowed (documented policy)", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    const slug = await restrictedForm(b, a.id);
+    const res = await submit(b, slug).send({
+      data: { name: "S2S", email: "s2s@example.com" },
+    });
+    expect(res.status).toBe(200);
+    await runWithTenant({ organizationId: a.id }, async () => {
+      expect(await b.leads.list()).toHaveLength(1);
+    });
+  });
+
+  it("a form WITHOUT an allowlist accepts any origin (open by default)", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    let slug = "";
+    await runWithTenant({ organizationId: a.id }, async () => {
+      slug = (await b.forms.create({ name: "Open", fields: CONTACT_FIELDS })).slug;
+    });
+    const res = await submit(b, slug)
+      .set("Origin", "https://anywhere.example")
+      .send({ data: { name: "Open", email: "open@example.com" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("Origin cannot override tenant identity — the lead lands in the form OWNER's tenant", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    const other = await makeOrg(b.app, "beta");
+    let slug = "";
+    await runWithTenant({ organizationId: a.id }, async () => {
+      slug = (await b.forms.create({ name: "Open", fields: CONTACT_FIELDS })).slug;
+    });
+    await submit(b, slug)
+      .set("Origin", `https://${other.slug}.allelitecloud.com`)
+      .send({ data: { name: "Z", email: "z@example.com" } });
+    await runWithTenant({ organizationId: a.id }, async () => {
+      expect(await b.leads.list()).toHaveLength(1); // owner tenant
+    });
+    await runWithTenant({ organizationId: other.id }, async () => {
+      expect(await b.leads.list()).toHaveLength(0); // NOT the Origin's tenant
+    });
+  });
+});
+

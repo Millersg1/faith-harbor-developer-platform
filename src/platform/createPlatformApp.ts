@@ -807,6 +807,42 @@ export function createPlatformApp(
           });
           return;
         }
+        // ORIGIN SUBMISSION RESTRICTION (defense-in-depth, NOT authentication).
+        // DECISION: when a form configures an allowed-origins list, a BROWSER
+        // submission (one carrying an Origin) is accepted only from a same-host
+        // page or an allowed origin — otherwise it is refused BEFORE any lead /
+        // consent / attribution / activation / magnet / enrollment / outbox
+        // mutation. A request WITHOUT an Origin (non-browser / server-to-server)
+        // is NOT blocked here — Origin is forgeable/omittable, so it can never be
+        // authentication; those requests are governed by the abuse controls
+        // below (rate limit, honeypot, timing, size, idempotency) + host-binding
+        // + suppression. A form with no allowlist (or allowAnyOrigin) is open.
+        {
+          const origin = req.headers.origin;
+          const restrict =
+            !!form.settings.allowedOrigins?.length &&
+            !form.settings.allowAnyOrigin;
+          if (restrict && typeof origin === "string" && origin) {
+            const reqHost = String(req.headers.host ?? "")
+              .toLowerCase()
+              .split(":")[0];
+            let originHost = "\0";
+            try {
+              originHost = new URL(origin).hostname.toLowerCase();
+            } catch {
+              originHost = "\0";
+            }
+            if (originHost !== reqHost && !isOriginAllowed(form.settings, origin)) {
+              res.status(403).json({
+                error: {
+                  code: "ORIGIN_NOT_ALLOWED",
+                  message: "This form cannot be submitted from here.",
+                },
+              });
+              return;
+            }
+          }
+        }
         const genericOk = { confirmationMessage: form.confirmationMessage };
         const body =
           req.body && typeof req.body === "object"
