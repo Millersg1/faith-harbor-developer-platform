@@ -668,17 +668,31 @@ export function createPlatformApp(
             return;
           }
           if (form) {
-            // HOST-BINDING (fail-closed): if the request host resolves to a
-            // tenant (subdomain / verified custom domain), it MUST be the form's
-            // owner. A cross-tenant host + slug is refused with the SAME generic
-            // 404 as an unknown slug (no tenant/form existence leak). Client-
-            // supplied org id / host / redirect are ignored — only the trusted
-            // host resolver + the form's own org are used.
-            const resolved = await resolveTenantByHost(
-              req.headers.host,
-              deps,
-            ).catch(() => null);
-            if (resolved && resolved.organizationId !== form.organizationId) {
+            // HOST-BINDING (allowlist, fail-closed). Public form API access is
+            // permitted ONLY through: (a) the configured AEC apex host,
+            // (b) the form OWNER's canonical tenant subdomain, or (c) a verified
+            // custom domain that resolves to the form owner. Everything else —
+            // unknown Host, unverified custom domain, malformed Host, another
+            // tenant's host, forged/conflicting forwarded-host — is refused with
+            // the SAME generic 404 (no tenant/form existence leak). We use the
+            // real `Host` via the trusted resolver and IGNORE X-Forwarded-Host
+            // and any client-supplied org id / host / redirect. CORS-origin
+            // authorization is enforced SEPARATELY (applyFormCors above).
+            const domain = normalizeDomain(req.headers.host ?? "");
+            const base = deps.baseDomain
+              ? deps.baseDomain.toLowerCase()
+              : "";
+            const isApex =
+              !!base && (domain === base || domain === `www.${base}`);
+            let allowed = isApex;
+            if (!allowed) {
+              const resolved = await resolveTenantByHost(
+                req.headers.host,
+                deps,
+              ).catch(() => null);
+              allowed = !!resolved && resolved.organizationId === form.organizationId;
+            }
+            if (!allowed) {
               (req as PublicFormReq).publicForm = undefined;
               res.status(404).json({
                 error: {
@@ -688,9 +702,9 @@ export function createPlatformApp(
               });
               return;
             }
-            // Build links from the form OWNER's trusted canonical host (its
-            // subdomain), never the incoming request host / apex / another
-            // tenant.
+            // Links ALWAYS use the form OWNER's trusted canonical host (its
+            // subdomain) — even when accessed via the apex — never the incoming
+            // request host, apex, Origin, or another tenant.
             const org = await deps.organizations
               .get(form.organizationId)
               .catch(() => undefined);

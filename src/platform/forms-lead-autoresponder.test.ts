@@ -157,7 +157,7 @@ describe("public form endpoints — per-form CORS (deny-by-default)", () => {
     });
     // Allowed origin → echoed exactly (never "*"), with Vary: Origin.
     const ok = await request(app)
-      .get(`/api/public/forms/${slug}`)
+      .get(`/api/public/forms/${slug}`).set("Host", "allelitecloud.com")
       .set("Origin", ALLOWED);
     expect(ok.status).toBe(200);
     expect(ok.headers["access-control-allow-origin"]).toBe(ALLOWED);
@@ -176,7 +176,7 @@ describe("public form endpoints — per-form CORS (deny-by-default)", () => {
       settings: { allowedOrigins: [ALLOWED] },
     });
     const res = await request(app)
-      .get(`/api/public/forms/${slug}`)
+      .get(`/api/public/forms/${slug}`).set("Host", "allelitecloud.com")
       .set("Origin", "https://evil.example");
     expect(res.status).toBe(200); // request still served…
     expect(res.headers["access-control-allow-origin"]).toBeUndefined(); // …but browser can't read it
@@ -188,7 +188,7 @@ describe("public form endpoints — per-form CORS (deny-by-default)", () => {
       settings: { allowedOrigins: [ALLOWED] },
     });
     const good = await request(app)
-      .options(`/api/public/forms/${slug}/submit`)
+      .options(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .set("Origin", ALLOWED)
       .set("Access-Control-Request-Method", "POST");
     expect(good.status).toBe(204);
@@ -196,7 +196,7 @@ describe("public form endpoints — per-form CORS (deny-by-default)", () => {
     expect(good.headers["access-control-allow-methods"]).toMatch(/POST/);
 
     const bad = await request(app)
-      .options(`/api/public/forms/${slug}/submit`)
+      .options(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .set("Origin", "https://evil.example")
       .set("Access-Control-Request-Method", "POST");
     expect(bad.status).toBe(204);
@@ -209,7 +209,7 @@ describe("public form endpoints — per-form CORS (deny-by-default)", () => {
       settings: { allowAnyOrigin: true },
     });
     const res = await request(app)
-      .get(`/api/public/forms/${slug}`)
+      .get(`/api/public/forms/${slug}`).set("Host", "allelitecloud.com")
       .set("Origin", "https://anywhere.example");
     expect(res.headers["access-control-allow-origin"]).toBe("*");
     expect(res.headers["access-control-allow-credentials"]).toBeUndefined();
@@ -231,7 +231,7 @@ describe("public form submit — abuse controls", () => {
     const { app, forms } = buildApp();
     const slug = await makeForm(forms, "orgA");
     const res = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .send({ data: { name: "Dana", email: "dana@example.com" } });
     expect(res.status).toBe(200);
     expect(res.body.confirmationMessage).toBeTruthy();
@@ -243,7 +243,7 @@ describe("public form submit — abuse controls", () => {
       settings: { honeypotField: "website" },
     });
     const res = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .send({ data: { name: "Bot", email: "bot@example.com", website: "spam" } });
     expect(res.status).toBe(200); // looks successful to the bot
     // No submission was recorded.
@@ -259,7 +259,7 @@ describe("public form submit — abuse controls", () => {
     const slug = await makeForm(forms, "orgA");
     const big = "x".repeat(40_000);
     const res = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .send({ data: { name: "Big", email: "big@example.com", message: big } });
     expect(res.status).toBe(413);
   });
@@ -271,7 +271,7 @@ describe("public form submit — abuse controls", () => {
     let retryAfter: string | undefined;
     for (let i = 0; i < 8; i++) {
       const r = await request(app)
-        .post(`/api/public/forms/${slug}/submit`)
+        .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
         .set("Idempotency-Key", `k${i}`) // distinct so idempotency doesn't mask it
         .send({ data: { name: "Rae", email: "rae@example.com" } });
       if (r.status === 429) {
@@ -289,11 +289,11 @@ describe("public form submit — abuse controls", () => {
     const slug = await makeForm(forms, "orgA");
     const payload = { data: { name: "Dee", email: "dee@example.com" } };
     const a = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .set("Idempotency-Key", "dbl-1")
       .send(payload);
     const b = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .set("Idempotency-Key", "dbl-1")
       .send(payload);
     expect(a.status).toBe(200);
@@ -313,7 +313,7 @@ describe("public form submit — abuse controls", () => {
       await forms.update(f.id, { status: "paused" });
     });
     const res = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .send({ data: { name: "X", email: "x@example.com" } });
     expect(res.status).toBe(404);
   });
@@ -324,7 +324,7 @@ describe("public form — attribution & deterministic lead merge", () => {
     const { app, forms } = buildApp();
     const slug = await makeForm(forms, "orgA");
     const res = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .set("User-Agent", "TestAgent/1.0")
       .send({
         data: { name: "Dana", email: "dana@example.com" },
@@ -377,7 +377,7 @@ describe("public form — attribution & deterministic lead merge", () => {
     });
     // A public submission with a weaker name and a phone (a gap to fill).
     await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
+      .post(`/api/public/forms/${slug}/submit`).set("Host", "allelitecloud.com")
       .send({ data: { name: "D", email: "dana@example.com", phone: "555-1212" } });
 
     await runWithTenant({ organizationId: "orgA" }, async () => {
@@ -395,10 +395,10 @@ describe("public form — attribution & deterministic lead merge", () => {
     const slugA = await makeForm(forms, "orgA");
     const slugB = await makeForm(forms, "orgB");
     await request(app)
-      .post(`/api/public/forms/${slugA}/submit`)
+      .post(`/api/public/forms/${slugA}/submit`).set("Host", "allelitecloud.com")
       .send({ data: { name: "Shared", email: "shared@example.com" } });
     await request(app)
-      .post(`/api/public/forms/${slugB}/submit`)
+      .post(`/api/public/forms/${slugB}/submit`).set("Host", "allelitecloud.com")
       .send({ data: { name: "Shared", email: "shared@example.com" } });
     await runWithTenant({ organizationId: "orgA" }, async () => {
       expect(await leads.list()).toHaveLength(1);

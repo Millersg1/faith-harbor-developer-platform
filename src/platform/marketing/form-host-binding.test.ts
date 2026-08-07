@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 import { runWithTenant } from "../../tenancy/TenantContext";
 import { OrganizationService } from "../../tenancy/OrganizationService";
 import { OrganizationDomainService } from "../../tenancy/OrganizationDomainService";
+import { OrganizationDomainRepository } from "../../tenancy/OrganizationDomainRepository";
+import {
+  verificationHost,
+  verificationValue,
+} from "../../tenancy/OrganizationDomain";
 import { PlatformAdminService } from "../admin/PlatformAdminService";
 import { PlatformAdminSessionService } from "../admin/PlatformAdminSessionService";
 import { BrandingRepository } from "../branding/BrandingRepository";
@@ -37,6 +42,11 @@ function build() {
   const clients = new PlatformClientService(new PlatformClientRepository());
   const leads = new PlatformLeadService(new PlatformLeadRepository(), clients);
   const forms = new PlatformFormService(new PlatformFormRepository(), { leads });
+  const txt: Record<string, string[][]> = {};
+  const domains = new OrganizationDomainService(
+    new OrganizationDomainRepository(),
+    { txtResolver: async (host: string) => txt[host] ?? [] },
+  );
   const app = createPlatformApp({
     organizations,
     users,
@@ -46,14 +56,14 @@ function build() {
     projects: new PlatformProjectService(new PlatformProjectRepository(), clients),
     invoices: new PlatformInvoiceService(new PlatformInvoiceRepository(), clients),
     signup: new PlatformSignupService(organizations, users, sessions),
-    domains: new OrganizationDomainService(),
+    domains,
     admins: new PlatformAdminService(),
     adminSessions: new PlatformAdminSessionService(),
     forms,
     leads,
     baseDomain: "allelitecloud.com",
   });
-  return { app, forms, leads };
+  return { app, forms, leads, domains, txt };
 }
 
 async function makeOrg(app: ReturnType<typeof build>["app"], name: string) {
@@ -63,75 +73,131 @@ async function makeOrg(app: ReturnType<typeof build>["app"], name: string) {
   return { id: r.body.organization.id as string, slug: r.body.organization.slug as string };
 }
 
-describe("public form host-binding (fail-closed, no cross-tenant)", () => {
-  it("serves config on the OWNER's subdomain, the apex, and unknown hosts; 404 on another tenant's host", async () => {
-    const { app, forms } = build();
-    const a = await makeOrg(app, "acme");
-    const b = await makeOrg(app, "beta");
+async function verifyDomain(
+  b: ReturnType<typeof build>,
+  orgId: string,
+  domain: string,
+) {
+  await runWithTenant({ organizationId: orgId }, async () => {
+    const added = await b.domains.add(domain);
+    b.txt[verificationHost(added.domain)] = [
+      [verificationValue(added.verificationToken)],
+    ];
+    await b.domains.verify(added.id);
+  });
+}
+
+describe("public form host-binding — allowlist (apex / owner subdomain / owner verified domain)", () => {
+  it("allows the owner subdomain, the apex, and the owner's VERIFIED custom domain", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    await verifyDomain(b, a.id, "leads.acme-brand.test");
     let slug = "";
     await runWithTenant({ organizationId: a.id }, async () => {
-      slug = (await forms.create({ name: "Contact", fields: CONTACT_FIELDS })).slug;
+      slug = (await b.forms.create({ name: "Contact", fields: CONTACT_FIELDS })).slug;
     });
-
-    // Owner's own subdomain → allowed.
-    const own = await request(app)
-      .get(`/api/public/forms/${slug}`)
-      .set("Host", `${a.slug}.allelitecloud.com`);
-    expect(own.status).toBe(200);
-
-    // Apex host (external embedding) → allowed per the documented rule.
-    const apex = await request(app)
-      .get(`/api/public/forms/${slug}`)
-      .set("Host", "allelitecloud.com");
-    expect(apex.status).toBe(200);
-
-    // Unknown/unverified host → resolves to no tenant → allowed (still the
-    // owner's form), and never leaks tenant existence.
-    const unknown = await request(app)
-      .get(`/api/public/forms/${slug}`)
-      .set("Host", "totally-unknown.example");
-    expect(unknown.status).toBe(200);
-
-    // ANOTHER tenant's host + this slug → fail closed with the SAME generic 404.
-    const cross = await request(app)
-      .get(`/api/public/forms/${slug}`)
-      .set("Host", `${b.slug}.allelitecloud.com`);
-    expect(cross.status).toBe(404);
-    expect(JSON.stringify(cross.body)).not.toMatch(/acme|beta|org/i);
+    for (const host of [
+      `${a.slug}.allelitecloud.com`,
+      "allelitecloud.com",
+      "leads.acme-brand.test",
+    ]) {
+      const res = await request(b.app).get(`/api/public/forms/${slug}`).set("Host", host);
+      expect(res.status, host).toBe(200);
+    }
   });
 
-  it("a cross-tenant host on SUBMIT fails closed and creates no lead", async () => {
-    const { app, forms, leads } = build();
-    const a = await makeOrg(app, "acme");
-    const b = await makeOrg(app, "beta");
+  it("REJECTS unknown, unverified-custom-domain, malformed, and another-tenant hosts with a generic 404", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    const other = await makeOrg(b.app, "beta");
     let slug = "";
     await runWithTenant({ organizationId: a.id }, async () => {
-      slug = (await forms.create({ name: "Contact", fields: CONTACT_FIELDS })).slug;
+      slug = (await b.forms.create({ name: "Contact", fields: CONTACT_FIELDS })).slug;
     });
-    const res = await request(app)
-      .post(`/api/public/forms/${slug}/submit`)
-      .set("Host", `${b.slug}.allelitecloud.com`)
-      .send({ data: { name: "X", email: "x@example.com" } });
-    expect(res.status).toBe(404);
-    // No lead was created in EITHER tenant.
-    await runWithTenant({ organizationId: a.id }, async () => {
-      expect(await leads.list()).toHaveLength(0);
-    });
-    await runWithTenant({ organizationId: b.id }, async () => {
-      expect(await leads.list()).toHaveLength(0);
-    });
+    for (const host of [
+      "totally-unknown.example", // unknown Host
+      "unverified.acme-brand.test", // unverified custom domain
+      "!!!malformed:::", // malformed
+      `${other.slug}.allelitecloud.com`, // another tenant's subdomain
+    ]) {
+      const res = await request(b.app).get(`/api/public/forms/${slug}`).set("Host", host);
+      expect(res.status, host).toBe(404);
+      expect(JSON.stringify(res.body)).not.toMatch(/acme|beta|org/i);
+    }
   });
 
-  it("an unknown slug is a generic 404 regardless of host (no existence leak)", async () => {
-    const { app } = build();
-    const a = await makeOrg(app, "acme");
-    const viaOwner = await request(app)
-      .get("/api/public/forms/does-not-exist")
-      .set("Host", `${a.slug}.allelitecloud.com`);
-    const viaApex = await request(app)
-      .get("/api/public/forms/does-not-exist")
-      .set("Host", "allelitecloud.com");
-    expect(viaOwner.status).toBe(404);
-    expect(viaApex.status).toBe(404);
+  it("a forged X-Forwarded-Host cannot smuggle a foreign host (Host is authoritative)", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    const other = await makeOrg(b.app, "beta");
+    let slug = "";
+    await runWithTenant({ organizationId: a.id }, async () => {
+      slug = (await b.forms.create({ name: "Contact", fields: CONTACT_FIELDS })).slug;
+    });
+    // Real Host is the owner's → allowed; forged XFH pointing at another tenant
+    // is ignored.
+    const ok = await request(b.app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Host", `${a.slug}.allelitecloud.com`)
+      .set("X-Forwarded-Host", `${other.slug}.allelitecloud.com`);
+    expect(ok.status).toBe(200);
+    // Real Host is unknown → rejected, regardless of a valid-looking XFH.
+    const bad = await request(b.app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Host", "unknown.example")
+      .set("X-Forwarded-Host", `${a.slug}.allelitecloud.com`);
+    expect(bad.status).toBe(404);
   });
 });
+
+describe("host-binding vs CORS are independent", () => {
+  it("an ALLOWED Origin on a permitted Host works; an unapproved Origin gets no CORS", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    let slug = "";
+    await runWithTenant({ organizationId: a.id }, async () => {
+      slug = (
+        await b.forms.create({
+          name: "Contact",
+          fields: CONTACT_FIELDS,
+          settings: { allowedOrigins: ["https://acme-site.example"] },
+        })
+      ).slug;
+    });
+    // Allowed Origin + apex Host → served with the echoed CORS origin.
+    const ok = await request(b.app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Host", "allelitecloud.com")
+      .set("Origin", "https://acme-site.example");
+    expect(ok.status).toBe(200);
+    expect(ok.headers["access-control-allow-origin"]).toBe("https://acme-site.example");
+    // Unapproved Origin (still a permitted Host) → served, but NO CORS grant.
+    const noCors = await request(b.app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Host", "allelitecloud.com")
+      .set("Origin", "https://evil.example");
+    expect(noCors.status).toBe(200);
+    expect(noCors.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("an ALLOWED Origin on an UNKNOWN Host still fails (Host != CORS authorization)", async () => {
+    const b = build();
+    const a = await makeOrg(b.app, "acme");
+    let slug = "";
+    await runWithTenant({ organizationId: a.id }, async () => {
+      slug = (
+        await b.forms.create({
+          name: "Contact",
+          fields: CONTACT_FIELDS,
+          settings: { allowedOrigins: ["https://acme-site.example"] },
+        })
+      ).slug;
+    });
+    const res = await request(b.app)
+      .get(`/api/public/forms/${slug}`)
+      .set("Host", "unknown.example")
+      .set("Origin", "https://acme-site.example");
+    expect(res.status).toBe(404); // host boundary wins, independent of CORS
+  });
+});
+
