@@ -148,6 +148,28 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_users_org
         ON users (organization_id);
     `);
+    // Durable account-email verification evidence. NULL = unverified (existing
+    // users are NOT auto-verified). Cleared when the account email changes.
+    await this.pool.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS email_verified_at TEXT;
+    `);
+    // Account-email verification tokens: hash-only, single-use, time-limited,
+    // bound to (user id, normalized email). NOT marketing double-opt-in.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS email_verification_tokens (
+        token_hash   TEXT PRIMARY KEY,
+        user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        email        TEXT NOT NULL,
+        expires_at   TEXT NOT NULL,
+        consumed_at  TEXT,
+        created_at   TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS email_verification_tokens_user_idx
+        ON email_verification_tokens (user_id);
+    `);
 
     // Sessions — server-side login tokens. Cascades on user or org
     // deletion so revocation is automatic when either goes away.
