@@ -2,22 +2,21 @@ import type { ResolvedSender } from "./MarketingSenderService";
 
 export interface MarketingContentInput {
   sender: ResolvedSender;
-  /** Tenant-authored subject. */
+  /** Tenant-authored subject (plain text; header-safe here). */
   subject: string;
-  /** Tenant-authored plain-text body (always present). */
+  /**
+   * Tenant-authored body — PLAIN TEXT (with an optional tiny Markdown-like
+   * subset: blank-line paragraphs, single-newline breaks, `# ` headings,
+   * `**bold**`, `*italic*`/`_italic_`, and `[label](http/https url)` links).
+   * This is the ONLY source of body content. We never accept or parse tenant
+   * HTML — the HTML alternative is GENERATED from this text by escaping every
+   * character first and then applying the fixed subset, so nothing tenant-
+   * authored can become executable markup.
+   */
   text: string;
-  /** Optional tenant-authored HTML body (sanitized here). */
-  html?: string;
-  /**
-   * Browser-facing unsubscribe link (hardened fragment-exchange), e.g.
-   * `https://host/unsubscribe#u=<token>`. Goes in the BODY only.
-   */
+  /** Browser fragment-exchange unsubscribe link — BODY only. */
   unsubscribeUrl: string;
-  /**
-   * RFC 8058 one-click endpoint (POST), e.g.
-   * `https://host/api/unsubscribe/one-click/<token>`. Goes in the HEADER only —
-   * never the browser fragment link.
-   */
+  /** RFC 8058 one-click endpoint — HEADER only (never the fragment link). */
   oneClickUrl: string;
 }
 
@@ -40,39 +39,95 @@ function headerSafe(value: string): string {
     .trim();
 }
 
+/** Escape EVERY HTML-significant character. Applied before any formatting. */
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Drop control/NUL characters from body text before rendering. */
+function stripControl(s: string): string {
+  return Array.from(s)
+    .filter((c) => {
+      const n = c.charCodeAt(0);
+      return n === 9 || n === 10 || (n >= 32 && n !== 127);
+    })
+    .join("");
 }
 
 /**
- * Conservative HTML sanitization for tenant-authored marketing HTML: removes
- * script/style blocks, inline event handlers, and javascript: URLs. (A full
- * DOM sanitizer would be stronger; this is the safe floor with no new deps.)
+ * Validate a link URL STRUCTURALLY and allow only http/https. Returns an
+ * escaped href, or null to reject. Operates on the already-escaped text, so
+ * `javascript:`/`data:`/`blob:`/`file:` and any control/space are rejected.
  */
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<\s*script[\s\S]*?<\s*\/\s*script\s*>/gi, "")
-    .replace(/<\s*style[\s\S]*?<\s*\/\s*style\s*>/gi, "")
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/(href|src)\s*=\s*("javascript:[^"]*"|'javascript:[^']*'|javascript:[^\s>]+)/gi, '$1="#"');
+function safeHref(escapedUrl: string): string | null {
+  const raw = escapedUrl.replace(/&amp;/g, "&").replace(/&#39;/g, "'");
+  if (/[\s<>"'\u0000-\u001f\u007f]/.test(raw)) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return escapeHtml(u.href);
+  } catch {
+    return null;
+  }
 }
 
-/** Quote a display name safely for a From header. */
+/** Apply the inline subset to ALREADY-ESCAPED text (links, bold, italic). */
+function inline(escaped: string): string {
+  let out = escaped.replace(
+    /\[([^\]]+)\]\(([^)\s]+)\)/g,
+    (whole, label: string, url: string) => {
+      const href = safeHref(url);
+      // label is already escaped; a bad URL renders as inert literal text.
+      return href ? `<a href="${href}">${label}</a>` : whole;
+    },
+  );
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  out = out.replace(/(^|[^_\w])_([^_\n]+)_/g, "$1<em>$2</em>");
+  return out;
+}
+
+/** Render body text to SAFE html (escape-first, then the fixed subset). */
+function renderBodyHtml(text: string): string {
+  const clean = stripControl(text).replace(/\r\n/g, "\n");
+  const blocks = clean.split(/\n\s*\n/);
+  return blocks
+    .map((block) => {
+      const trimmed = block.trim();
+      if (!trimmed) return "";
+      const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+      if (heading && !trimmed.includes("\n")) {
+        const level = heading[1].length;
+        return `<h${level}>${inline(escapeHtml(heading[2]))}</h${level}>`;
+      }
+      const lines = trimmed
+        .split("\n")
+        .map((l) => inline(escapeHtml(l)))
+        .join("<br>");
+      return `<p>${lines}</p>`;
+    })
+    .join("");
+}
+
+/** Quote a display name safely for a From header (keeps legitimate Unicode). */
 function quotedName(name: string): string {
   const safe = headerSafe(name).replace(/["\\]/g, "");
   return `"${safe}"`;
 }
 
 /**
- * Build a CAN-SPAM-compliant marketing message: accurate sender identity, valid
- * reply-to, physical mailing address, a VISIBLE unsubscribe link in BOTH safe
- * HTML and plain text, and the List-Unsubscribe / one-click headers. All header
- * fields are CR/LF-safe; tenant HTML is sanitized. URLs are supplied by the
- * caller from trusted host resolution (never raw Host/X-Forwarded-Host).
+ * Build a CAN-SPAM-compliant marketing message. Tenant content is plain text;
+ * the HTML alternative is generated safely (escape-then-subset — never a
+ * sanitizer over tenant HTML). Every interpolated value (business name, physical
+ * address, link labels, footer) is escaped. Includes a VISIBLE unsubscribe link
+ * in BOTH formats, the physical mailing address, and the List-Unsubscribe /
+ * one-click headers. Header fields are CR/LF-safe; URLs come from trusted host
+ * resolution.
  */
 export function buildMarketingEmail(
   input: MarketingContentInput,
@@ -84,28 +139,25 @@ export function buildMarketingEmail(
   const physical = headerSafe(sender.physicalAddress);
   const unsub = headerSafe(input.unsubscribeUrl);
   const oneClick = headerSafe(input.oneClickUrl);
+  const unsubHref = safeHref(escapeHtml(unsub));
 
-  // Plain text: body + visible unsubscribe URL + physical mailing address.
   const text =
-    `${input.text}\n\n` +
+    `${stripControl(input.text)}\n\n` +
     `— — —\n` +
     `Unsubscribe: ${unsub}\n` +
     `${physical}`;
 
-  // HTML: sanitized body + a visible unsubscribe link + physical address footer.
-  const bodyHtml = input.html
-    ? sanitizeHtml(input.html)
-    : `<p>${escapeHtml(input.text).replace(/\n/g, "<br>")}</p>`;
   const html =
-    `${bodyHtml}` +
+    `${renderBodyHtml(input.text)}` +
     `<hr>` +
     `<p style="font-size:12px;color:#666">` +
-    `<a href="${escapeHtml(unsub)}">Unsubscribe</a><br>` +
+    (unsubHref
+      ? `<a href="${unsubHref}">Unsubscribe</a><br>`
+      : `Unsubscribe: ${escapeHtml(unsub)}<br>`) +
     `${escapeHtml(physical)}` +
     `</p>`;
 
   const headers: Record<string, string> = {
-    // Header uses the one-click ENDPOINT (not the browser fragment link).
     "List-Unsubscribe": `<${oneClick}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
   };

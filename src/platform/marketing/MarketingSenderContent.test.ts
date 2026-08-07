@@ -174,14 +174,87 @@ describe("buildMarketingEmail — compliant, safe content", () => {
     expect(JSON.stringify(m.headers)).not.toContain("#u=");
   });
 
-  it("sanitizes tenant HTML (strips script, event handlers, javascript: URLs)", () => {
+  it("renders the tiny Markdown subset (bold/italic/heading/http link) safely", () => {
     const m = buildMarketingEmail({
       ...base,
-      html: '<p onclick="steal()">Hi<script>evil()</script> <a href="javascript:bad()">x</a></p>',
+      text: "# Hi\n\nSome **bold** and *italic* and a [link](https://ok.test/x).",
     });
-    expect(m.html).not.toMatch(/<script/i);
-    expect(m.html).not.toMatch(/onclick=/i);
-    expect(m.html).not.toMatch(/javascript:/i);
-    expect(m.html).toContain("Hi"); // legitimate content preserved
+    expect(m.html).toContain("<h1>Hi</h1>");
+    expect(m.html).toContain("<strong>bold</strong>");
+    expect(m.html).toContain("<em>italic</em>");
+    expect(m.html).toContain('<a href="https://ok.test/x">link</a>');
   });
+
+  it("escapes business name and physical address interpolated into HTML", () => {
+    const m = buildMarketingEmail({
+      ...base,
+      sender: {
+        ...sender,
+        fromName: 'Björn "Q" & Sons',
+        physicalAddress: "<img src=x onerror=alert(1)> 1 St",
+      },
+    });
+    // Legitimate Unicode/quotes/punctuation in the From display name survive.
+    expect(m.from).toContain("Björn");
+    // The physical-address HTML injection is escaped, never live markup.
+    expect(m.html).not.toMatch(/<img/i);
+    expect(m.html).toContain("&lt;img");
+  });
+});
+
+describe("buildMarketingEmail — adversarial body (escape-then-subset, no HTML parsing)", () => {
+  const sender = {
+    fromName: "Co",
+    fromAddress: "no-reply@allelitecloud.com",
+    replyTo: "reply@co.test",
+    physicalAddress: "1 St, OH",
+    usingPlatformFallback: true,
+  };
+  const wrap = (text: string) =>
+    buildMarketingEmail({
+      sender,
+      subject: "s",
+      text,
+      unsubscribeUrl: "https://co.test/unsubscribe#u=T",
+      oneClickUrl: "https://co.test/api/unsubscribe/one-click/T",
+    }).html;
+
+  const payloads: [string, string][] = [
+    ["script tag", "<script>evil()</script>"],
+    ["nested/malformed tags", "<div><scr<script>ipt>x</script></div>"],
+    ["mixed-case javascript link", "[x](JaVaScRiPt:alert(1))"],
+    ["encoded javascript link", "[x](java	script:alert(1))"],
+    ["html entities", "&lt;script&gt;&#60;img&#62;"],
+    ["svg", "<svg/onload=alert(1)>"],
+    ["mathml", "<math><mtext></mtext></math>"],
+    ["srcdoc", '<iframe srcdoc="<script>x</script>">'],
+    ["event handler w/ whitespace", "<a\n onerror = alert(1) >x</a>"],
+    ["css url expression", '<div style="background:url(javascript:x)">'],
+    ["data scheme link", "[x](data:text/html,<script>alert(1)</script>)"],
+    ["blob scheme link", "[x](blob:https://co.test/abc)"],
+    ["file scheme link", "[x](file:///etc/passwd)"],
+    ["tracking pixel", '<img src="https://track.evil/p.gif?e=1" width=1 height=1>'],
+    ["broken quotes", '<a href="https://x onclick=alert(1)>x'],
+    ["html comment", "<!-- <script>x</script> -->"],
+    ["null/control chars", "a b<script>x</script>"],
+  ];
+
+  for (const [name, payload] of payloads) {
+    it(`neutralizes: ${name}`, () => {
+      const html = wrap(payload);
+      // Escape-then-subset means a hostile payload becomes inert TEXT. The proof
+      // is structural: only our fixed tag set exists, and every anchor href is
+      // http/https (never javascript/data/blob/file). A literal "javascript:"
+      // inside an escaped paragraph is harmless — it is not in a live context.
+      const tags = [...html.matchAll(/<\/?([a-z0-9]+)/gi)].map((x) => x[1].toLowerCase());
+      const allowed = new Set(["p", "br", "hr", "a", "strong", "em", "h1", "h2", "h3"]);
+      for (const t of tags) expect(allowed.has(t)).toBe(true);
+      // The ONLY attributes our generator emits are href (anchors) + style (our
+      // own footer). No event handlers or foreign attributes can appear.
+      for (const href of [...html.matchAll(/href="([^"]*)"/gi)].map((x) => x[1])) {
+        expect(href).toMatch(/^https?:/);
+      }
+      expect(html).not.toMatch(/\son[a-z]+\s*=\s*["']/i); // no on*="..." handler
+    });
+  }
 });

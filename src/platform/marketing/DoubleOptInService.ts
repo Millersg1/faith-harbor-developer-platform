@@ -71,6 +71,31 @@ export class DoubleOptInTokenRepository {
     rest.consumed_at = at;
     return true;
   }
+
+  /**
+   * Invalidate every OTHER unconsumed token for the same bound activation
+   * (matched by consent_ref), once one has confirmed. Idempotent.
+   */
+  async invalidateSiblings(
+    consentId: string,
+    keepTokenHash: string,
+    at: string,
+  ): Promise<void> {
+    if (!consentId) return;
+    if (this.db) {
+      await this.db.query(
+        `UPDATE double_optin_tokens SET consumed_at = $3
+           WHERE consent_id = $1 AND token_hash <> $2 AND consumed_at IS NULL`,
+        [consentId, keepTokenHash, at],
+      );
+      return;
+    }
+    for (const [hash, row] of this.rows) {
+      if (row.consent_id === consentId && hash !== keepTokenHash && !row.consumed_at) {
+        row.consumed_at = at;
+      }
+    }
+  }
 }
 
 export type ConfirmOutcome =
@@ -126,11 +151,14 @@ export class DoubleOptInService {
     if (Date.parse(row.expires_at) <= this.now()) {
       return { ok: false, reason: "expired" };
     }
-    const consumed = await this.tokens.consume(
-      row.token_hash,
-      new Date(this.now()).toISOString(),
-    );
+    const at = new Date(this.now()).toISOString();
+    const consumed = await this.tokens.consume(row.token_hash, at);
     if (!consumed) return { ok: false, reason: "already_used" }; // race
+    // One token confirmed the activation → invalidate all sibling tokens so a
+    // replacement/retry token can't confirm a second time. Idempotent.
+    if (row.consent_id) {
+      await this.tokens.invalidateSiblings(row.consent_id, row.token_hash, at);
+    }
     return {
       ok: true,
       organizationId: row.organization_id,

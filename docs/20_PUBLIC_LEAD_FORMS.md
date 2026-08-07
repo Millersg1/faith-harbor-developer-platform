@@ -208,6 +208,33 @@ stops the message. But an unsubscribe that commits **after** the check and
 **before** SMTP acceptance cannot always stop the already-in-flight message —
 this is an unavoidable boundary and is documented, not hidden.
 
+## Marketing email safety (S7b-iii)
+
+**HTML is generated, never sanitized.** Tenant marketing bodies are plain text
+with a tiny Markdown-like subset (blank-line paragraphs, single-line breaks,
+`# ` headings, `**bold**`, `*italic*`, and `[label](http/https)` links). The
+HTML alternative is *generated*: every character is HTML-escaped first, then the
+fixed subset is applied, so no tenant-authored markup is ever parsed. There is
+no regex "sanitizer" over arbitrary HTML. Link URLs are validated with the URL
+parser and restricted to http/https; a rejected link renders as inert text.
+Every interpolated value (business name, physical address, subject, link labels,
+footer) is escaped. An adversarial suite proves script/svg/mathml/iframe/srcdoc/
+data/blob/file/tracking-pixel/encoded-`javascript:`/event-handler payloads all
+become inert text and only the fixed tag set (`p br hr a strong em h1-3`) with
+http/https hrefs can appear.
+
+**Confirmation-token retry (hash-only).** Verify/confirm tokens are stored as
+SHA-256 hashes only, so a raw token can't be reconstructed for a retry. A retry
+mints a NEW independent raw token (new hash); the bound org/form/sequence/
+consent-wording/version never change. Multiple unexpired tokens for one
+activation may coexist; the first one to confirm atomically **invalidates all
+sibling tokens** for that activation (matched by consent reference), so a later
+replacement token can't confirm a second time. Replays are idempotent
+(`already_used`); the single-enrollment guarantee is enforced downstream by the
+idempotent activation confirm + the enrollment unique index. Restart resumes
+from the durable activation record without needing the original raw token. Raw
+tokens never appear in logs, audit metadata, ordinary columns, or access logs.
+
 ## Current status of the build
 
 - Fail-closed: public forms create the CRM lead only; **marketing enrollment is
