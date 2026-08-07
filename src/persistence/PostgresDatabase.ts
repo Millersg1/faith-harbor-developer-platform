@@ -608,6 +608,43 @@ export class PostgresDatabase
         created_at       TEXT NOT NULL
       );
     `);
+    // Durable marketing send outbox. One row per (enrollment, step) — the
+    // UNIQUE constraint makes enqueue idempotent and delivery exactly-once. The
+    // lease columns (lease_owner/lease_until) prevent two workers sending the
+    // same message; an expired lease recovers safely. Honest delivery states:
+    // queued → sending → sent | failed | skipped | delivery_unknown | terminal.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_outbox (
+        id                 TEXT PRIMARY KEY,
+        organization_id    TEXT NOT NULL
+                             REFERENCES organizations (id) ON DELETE CASCADE,
+        enrollment_id      TEXT,
+        sequence_id        TEXT,
+        step_index         INTEGER NOT NULL DEFAULT 0,
+        email              TEXT NOT NULL,
+        subject            TEXT NOT NULL DEFAULT '',
+        body               TEXT NOT NULL DEFAULT '',
+        status             TEXT NOT NULL DEFAULT 'queued',
+        attempts           INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at    TEXT NOT NULL,
+        lease_owner        TEXT,
+        lease_until        TEXT,
+        provider_id        TEXT,
+        message_id_header  TEXT,
+        reason             TEXT,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS marketing_outbox_step_uniq
+        ON marketing_outbox (enrollment_id, step_index)
+        WHERE enrollment_id IS NOT NULL;
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS marketing_outbox_claim_idx
+        ON marketing_outbox (status, next_attempt_at);
+    `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS double_optin_tokens (
