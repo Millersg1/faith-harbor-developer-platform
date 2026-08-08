@@ -13,6 +13,7 @@ interface UserRow {
   name: string | null;
   role: string;
   status: string;
+  email_verified_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -182,10 +183,16 @@ export class PlatformUserRepository extends TenantScopedRepository {
       this.tenantId();
 
     if (this.db) {
+      // Atomically CLEAR email verification if the email is changing (the CASE
+      // sees the OLD stored email). Any path that updates a user's email thus
+      // clears email_verified_at in the same write.
       await this.db.query(
         `UPDATE users
             SET email = $3, password_hash = $4, name = $5,
-                role = $6, status = $7, updated_at = $8
+                role = $6, status = $7, updated_at = $8,
+                email_verified_at = CASE
+                  WHEN LOWER(email) <> LOWER($3) THEN NULL
+                  ELSE email_verified_at END
           WHERE id = $1 AND organization_id = $2`,
         [
           user.id,
@@ -211,10 +218,76 @@ export class PlatformUserRepository extends TenantScopedRepository {
       existing.organizationId ===
         organizationId
     ) {
-      this.memory.set(user.id, user);
+      const emailChanged =
+        existing.email.toLowerCase() !== user.email.toLowerCase();
+      this.memory.set(user.id, {
+        ...user,
+        emailVerifiedAt: emailChanged
+          ? undefined
+          : user.emailVerifiedAt ?? existing.emailVerifiedAt,
+      });
     }
 
     return user;
+  }
+
+  // ---- Account-email verification (INTERNAL to the verification service) ----
+  // These bypass tenant scope because confirmation happens with no tenant
+  // session. They are exposed ONLY to the verification adapter, never to routes
+  // or unrelated services, and only ever act on a single user by id.
+
+  /** Global-by-id lookup (no tenant filter) — verification-service internal. */
+  async getByIdUnscoped(
+    id: string,
+  ): Promise<PlatformUserRecord | undefined> {
+    if (this.db) {
+      const r = await this.db.query(
+        "SELECT * FROM users WHERE id = $1",
+        [id],
+      );
+      const row = asRow(r.rows[0]);
+      return row ? mapRow(row) : undefined;
+    }
+    return this.memory.get(id);
+  }
+
+  /**
+   * Atomically set email_verified_at ONCE, but only if the user's CURRENT
+   * (normalized) email still equals the token's bound email — so an email
+   * change that raced the confirmation fails safe. Returns true on success.
+   */
+  async markEmailVerifiedIfEmailMatches(
+    id: string,
+    normalizedEmail: string,
+    at: string,
+  ): Promise<boolean> {
+    if (this.db) {
+      const r = await this.db.query(
+        `UPDATE users SET email_verified_at = $3
+           WHERE id = $1 AND LOWER(email) = $2 AND email_verified_at IS NULL`,
+        [id, normalizedEmail, at],
+      );
+      return (r.rowCount ?? 0) > 0;
+    }
+    const u = this.memory.get(id);
+    if (!u || u.email.toLowerCase() !== normalizedEmail || u.emailVerifiedAt) {
+      return false;
+    }
+    this.memory.set(id, { ...u, emailVerifiedAt: at });
+    return true;
+  }
+
+  /** Clear verification evidence (verification-service internal). */
+  async clearEmailVerifiedUnscoped(id: string): Promise<void> {
+    if (this.db) {
+      await this.db.query(
+        "UPDATE users SET email_verified_at = NULL WHERE id = $1",
+        [id],
+      );
+      return;
+    }
+    const u = this.memory.get(id);
+    if (u) this.memory.set(id, { ...u, emailVerifiedAt: undefined });
   }
 
   async delete(
@@ -269,6 +342,9 @@ function mapRow(
 
   if (row.name) {
     record.name = row.name;
+  }
+  if (row.email_verified_at) {
+    record.emailVerifiedAt = row.email_verified_at;
   }
 
   return record;

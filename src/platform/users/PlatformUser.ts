@@ -27,6 +27,9 @@ export interface PlatformUserRecord {
 
   status: PlatformUserStatus;
 
+  /** Durable account-email verification evidence (ISO), or absent = unverified. */
+  emailVerifiedAt?: string;
+
   createdAt: string;
 
   updatedAt: string;
