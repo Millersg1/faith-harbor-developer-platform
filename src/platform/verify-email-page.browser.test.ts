@@ -7,7 +7,12 @@
 import http from "node:http";
 
 import request from "supertest";
-import { chromium, type Browser } from "playwright";
+// `playwright` is a dev-only, opt-in dependency that isn't installed on
+// browserless CI. Import its TYPES only (erased at runtime) and load the runtime
+// module DYNAMICALLY inside the guarded describe, so collecting this file when
+// RUN_BROWSER_TESTS is unset never requires the package. This file is also
+// excluded from `tsconfig.json` typecheck for the same reason.
+import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const RUN = process.env.RUN_BROWSER_TESTS === "1";
@@ -89,6 +94,7 @@ function buildApp() {
 describe.runIf(RUN)("verify-email fragment-exchange page — REAL browser", () => {
   let browser: Browser | undefined;
   beforeAll(async () => {
+    const { chromium } = await import("playwright");
     browser = await chromium.launch();
   }, 60_000);
   afterAll(async () => {
