@@ -256,6 +256,60 @@ idempotent activation confirm + the enrollment unique index. Restart resumes
 from the durable activation record without needing the original raw token. Raw
 tokens never appear in logs, audit metadata, ordinary columns, or access logs.
 
+## Account verification vs marketing test — two senders, neither is marketing (S7b-iii b:2d)
+
+Two capabilities are wired as HTTP routes and kept **strictly separate**. Neither
+is ever counted as a marketing send (both go out as `transactional`, carry no
+`List-Unsubscribe`/one-click headers, and never touch consent, suppression, the
+unsubscribe system, the marketing outbox, or metering).
+
+**1. Account-email verification** proves a user controls their *account* email —
+a security prerequisite, not marketing consent.
+
+- `POST /api/platform/account/request-verification` — authenticated + CSRF. The
+  recipient is the signed-in user's own account email, selected **server-side**;
+  the request body takes **no parameters**, so a recipient/redirect override is a
+  `400` (nothing is sent). The reply is a **generic `{ok:true}`** whether or not
+  a message went out, so it can't probe which accounts exist. The message uses
+  the **platform** transactional sender (`no-reply@<baseDomain>`) and a link on
+  the **trusted platform host** (never a tenant host). An uncertain/failed SMTP
+  attempt is **not** auto-resent — the user can request again (rate-limited).
+  Limits are layered: per-user, per-email-hash, per-IP, and platform-wide.
+- Active tokens are bounded: a fresh request invalidates any still-outstanding
+  verification tokens, so at most one link is live at a time (a resend supersedes
+  the prior link).
+- `GET /verify-email` / `POST /verify-email` — the neutral **fragment-exchange**
+  confirmation page. The token travels only in the URL **fragment**; the page
+  calls `history.replaceState` to strip it **before anything else**, then POSTs
+  it. `GET` has no side effect (scanner-safe). Headers: `Cache-Control:
+  no-store`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex,nofollow`,
+  `X-Frame-Options: DENY`, and a restrictive CSP (`default-src 'none'`,
+  `frame-ancestors 'none'`, only same-origin `form-action`/`connect-src` and the
+  page's own inline style/script) — no third-party scripts, fonts, images, or
+  analytics. Messages are generic (expired/invalid/already-used are
+  indistinguishable — no account-existence leak). A real-browser (Playwright)
+  test proves the fragment is stripped from history, the token never appears in
+  any request URL, and no cross-origin request is made.
+
+**2. Marketing-sender test** lets an owner/admin confirm their *marketing* sender
+works, using the tenant's resolved+approved identity — but as a one-off
+transactional probe to their own inbox.
+
+- `POST /api/platform/marketing/test-email` — authenticated + CSRF, **owner/admin
+  only** (members are denied by role even if verified), and the caller's account
+  email must be **verified** (fail-closed `403 EMAIL_UNVERIFIED`). The recipient
+  is the caller's own verified address, server-side; a recipient override is a
+  `400`. It resolves the tenant marketing sender (`MarketingSenderService`, which
+  fails closed with a compliance action item) and sends via the existing SMTP
+  `EmailDeliveryProvider`. It is clearly labeled a test, has **no** unsubscribe
+  link/token and **no** marketing headers, and produces **no** lead / consent /
+  activation / enrollment / suppression / sequence / outbox / metering side
+  effect. The response is an **honest, sanitized** status only —
+  `accepted` (took responsibility, *not* proof of inbox placement) /
+  `rejected` / `pre_acceptance_failure` / `uncertain` — plus a coarse category
+  and a human message. Raw SMTP responses, addresses, bodies, and credentials
+  are never exposed.
+
 ## Current status of the build
 
 - Fail-closed: public forms create the CRM lead only; **marketing enrollment is

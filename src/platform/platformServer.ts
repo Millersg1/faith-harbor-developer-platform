@@ -42,6 +42,16 @@ import {
 import { SmtpEmailTransport } from "../communications/SmtpEmailTransport";
 import { PlatformEmailRepository } from "./email/PlatformEmailRepository";
 import { PlatformEmailService } from "./email/PlatformEmailService";
+import { SmtpEmailDeliveryProvider } from "./email/SmtpEmailDeliveryProvider";
+import {
+  EmailVerificationService,
+  EmailVerificationTokenRepository,
+} from "./auth/EmailVerificationService";
+import { PlatformUserVerificationStore } from "./auth/PlatformUserVerificationStore";
+import {
+  MarketingSenderService,
+  MarketingSenderRepository,
+} from "./marketing/MarketingSenderService";
 import { ClientUserRepository } from "./portal/ClientUserRepository";
 import { ClientUserService } from "./portal/ClientUserService";
 import { PortalSessionRepository } from "./portal/PortalSessionRepository";
@@ -345,6 +355,21 @@ async function start(): Promise<void> {
   );
   const doubleOptIn = new DoubleOptInService(
     new DoubleOptInTokenRepository(db),
+  );
+  // Provider-independent delivery over the existing SMTP transport (honest
+  // accepted/rejected/pre_acceptance_failure/uncertain classification). Used by
+  // account verification (platform sender) and the marketing-sender test.
+  const emailProvider = new SmtpEmailDeliveryProvider(emailTransport);
+  // Account-email verification (platform transactional; separate from all
+  // marketing systems). Its store uses a dedicated repo instance because
+  // confirmation happens with no tenant session.
+  const emailVerification = new EmailVerificationService(
+    new PlatformUserVerificationStore(new PlatformUserRepository(db)),
+    new EmailVerificationTokenRepository(db),
+  );
+  // Per-tenant marketing sender identity resolution (for the labeled test).
+  const marketingSender = new MarketingSenderService(
+    new MarketingSenderRepository(db),
   );
   const drip = new DripService(
     new DripRepository(db),
@@ -853,6 +878,9 @@ async function start(): Promise<void> {
     unsubscribe,
     doubleOptIn,
     marketingConsent,
+    emailVerification,
+    marketingSender,
+    emailProvider,
     proposals,
     campaigns,
     reviews,

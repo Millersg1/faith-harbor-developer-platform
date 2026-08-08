@@ -332,6 +332,7 @@ describe("Forms API", () => {
       .post(
         `/api/public/forms/${slug}/submit`,
       )
+      .set("Host", "allelitecloud.com")
       .send({
         data: {
           name: "Pat Q",
@@ -375,6 +376,7 @@ describe("Forms API", () => {
       .post(
         `/api/public/forms/${slug}/submit`,
       )
+      .set("Host", "allelitecloud.com")
       .send({
         data: { name: "No Email" },
       });

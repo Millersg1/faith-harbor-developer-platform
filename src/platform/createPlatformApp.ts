@@ -43,10 +43,15 @@ import {
   type PlatformFormService,
 } from "./forms/PlatformFormService";
 import type { FormRecord } from "./forms/PlatformForm";
-import { RateLimiter } from "./security/RateLimiter";
+import { RateLimiter, rateLimit } from "./security/RateLimiter";
+import { requireRole } from "./auth/requireRole";
+import type { AuthedRequest } from "./auth/requireUser";
 import type { UnsubscribeService } from "./marketing/EmailSuppressionService";
 import type { DoubleOptInService } from "./marketing/DoubleOptInService";
 import type { MarketingConsentService } from "./marketing/MarketingConsentService";
+import type { EmailVerificationService } from "./auth/EmailVerificationService";
+import type { MarketingSenderService } from "./marketing/MarketingSenderService";
+import type { EmailDeliveryProvider } from "./email/EmailDeliveryProvider";
 import type { CalendarService } from "./calendar/CalendarService";
 import type { KnowledgeService } from "./knowledge/KnowledgeService";
 import type { AuditService } from "./audit/AuditService";
@@ -126,6 +131,12 @@ export interface PlatformAppDependencies {
   doubleOptIn?: DoubleOptInService;
   /** Records/confirms marketing consent on double-opt-in confirmation. */
   marketingConsent?: MarketingConsentService;
+  /** Account-email verification (platform transactional). */
+  emailVerification?: EmailVerificationService;
+  /** Tenant marketing sender resolution (for the labeled test email). */
+  marketingSender?: MarketingSenderService;
+  /** Provider-independent email delivery (honest SMTP classification). */
+  emailProvider?: EmailDeliveryProvider;
   proposals?: PlatformProposalService;
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
@@ -1161,6 +1172,352 @@ fetch('${endpoint}',{method:'POST',credentials:'same-origin',headers:{'Content-T
               res.json({ ok: outcome.ok });
             })
             .catch(() => res.json({ ok: false }));
+        },
+      );
+    }
+  }
+
+  // ---- Account-email verification + labeled marketing-sender test ----
+  // Two capabilities kept STRICTLY separate, and NEITHER is ever counted as a
+  // marketing send:
+  //   1. Account-email verification proves a user controls their account email.
+  //      It uses the PLATFORM transactional sender on an AEC-controlled host and
+  //      NEVER touches tenant marketing-sender config, consent, suppression, or
+  //      the unsubscribe system. Its link carries no marketing headers.
+  //   2. The marketing-sender TEST uses the tenant's RESOLVED+APPROVED marketing
+  //      sender identity, but is a one-off transactional probe to the requester's
+  //      OWN verified address — no lead, consent, activation, enrollment,
+  //      suppression, sequence, outbox, or metering side effect, and no real
+  //      unsubscribe token / one-click header.
+  if (deps.emailVerification) {
+    const verifier = deps.emailVerification;
+
+    // The verification link ALWAYS lives on the trusted platform host, never a
+    // tenant host. secureCookie gates http vs https so local dev still works.
+    const platformHost = (deps.baseDomain ?? "allelitecloud.com").toLowerCase();
+    const platformProto = deps.secureCookie ? "https" : "http";
+
+    // Anti-leak, non-indexable, un-embeddable headers for the neutral exchange
+    // page. The restrictive CSP allows only same-origin form/fetch and the
+    // page's own inline style+script; no third-party scripts, fonts, images,
+    // frames, or analytics can load.
+    const verifyHeaders = (res: Response): void => {
+      res.set("Referrer-Policy", "no-referrer");
+      res.set("Cache-Control", "no-store, private, max-age=0");
+      res.set("Pragma", "no-cache");
+      res.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+      res.set("X-Content-Type-Options", "nosniff");
+      res.set("X-Frame-Options", "DENY");
+      res.set(
+        "Content-Security-Policy",
+        [
+          "default-src 'none'",
+          "base-uri 'none'",
+          "form-action 'self'",
+          "frame-ancestors 'none'",
+          "connect-src 'self'",
+          "style-src 'unsafe-inline'",
+          "script-src 'unsafe-inline'",
+        ].join("; "),
+      );
+    };
+
+    // Neutral, self-contained page: reads the token from the URL FRAGMENT
+    // (never sent to the server / logs / Referer), strips it from history
+    // BEFORE doing anything else, then POSTs it. Accessible (labelled control,
+    // visible focus, reduced-motion respected), mobile-friendly, no 3rd-party
+    // assets. Messages are generic — they never reveal whether an account or
+    // token exists.
+    const verifyPage = (settled?: boolean): string => {
+      const loading = settled
+        ? "Request processed."
+        : "Confirming your email address…";
+      return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="robots" content="noindex, nofollow, noarchive"/>
+<meta name="referrer" content="no-referrer"/>
+<title>Verify email</title>
+<style>
+:root{color-scheme:light dark}
+body{font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:34rem;margin:12vh auto;padding:0 20px;color:#14181f;background:#fff}
+@media(prefers-color-scheme:dark){body{color:#e8ecf2;background:#14181f}.m{color:#9aa4b2}}
+h1{font-size:1.4rem}.m{color:#5b6472}
+a,button,input{font:inherit}
+button{padding:.55rem 1rem;border:1px solid currentColor;border-radius:8px;background:transparent;color:inherit;cursor:pointer}
+:focus-visible{outline:3px solid #2563eb;outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head><body>
+<h1>Verify your email</h1>
+<p class="m" id="m" role="status" aria-live="polite">${loading}</p>
+<noscript><p class="m">JavaScript is required to complete verification, or paste the code from your email:</p>
+<form method="post" action="/verify-email"><label for="c">Code</label>
+<input id="c" name="code" autocomplete="off" autocapitalize="off" spellcheck="false"/>
+<button>Verify</button></form></noscript>
+<script>
+(function(){var m=document.getElementById('m');
+var h=(location.hash||'').match(/^#v=([A-Za-z0-9]+)$/);
+try{history.replaceState(null,'',location.pathname);}catch(e){}
+if(!h){m.textContent='This link is missing its code. Please use the link from your email.';return;}
+fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Privacy-Exchange':'1'},body:JSON.stringify({token:h[1]})})
+.then(function(r){return r.json().catch(function(){return{};});})
+.then(function(d){m.textContent=(d&&d.ok)?'Your email address is verified. You can close this page.':'This link is invalid, has expired, or was already used.';})
+.catch(function(){m.textContent='Something went wrong. Please try again in a moment.';});})();
+</script></body></html>`;
+    };
+
+    const isFormPost = (req: Request): boolean =>
+      /application\/x-www-form-urlencoded/.test(
+        String(req.headers["content-type"] ?? ""),
+      );
+    const readToken = (req: Request): string => {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      if (typeof b.token === "string") return b.token;
+      if (typeof b.code === "string") return b.code.trim();
+      return "";
+    };
+
+    // Per-user, per-email-hash, per-IP, and platform-wide caps on how often a
+    // verification email can be requested. Keyed limiters use req.ip (trusted
+    // single proxy hop); the platform cap uses a constant key.
+    const perUserVerify = new RateLimiter({ max: 5, windowMs: 60 * 60 * 1000 });
+    const perIpVerify = new RateLimiter({ max: 15, windowMs: 60 * 60 * 1000 });
+    const platformVerify = new RateLimiter({ max: 500, windowMs: 60 * 60 * 1000 });
+    const emailHash = (email: string): string =>
+      createHmac("sha256", platformHost).update(email.toLowerCase()).digest("hex");
+    const platformWide = (
+      limiter: RateLimiter,
+      scope: string,
+    ): express.RequestHandler => {
+      return (_req, res, next) => {
+        const r = limiter.hit(scope);
+        if (!r.allowed) {
+          res.setHeader("Retry-After", String(Math.ceil(r.retryAfterMs / 1000)));
+          res.status(429).json({
+            error: { code: "RATE_LIMITED", message: "Too many requests. Please wait a moment." },
+          });
+          return;
+        }
+        next();
+      };
+    };
+
+    // (1) Request an account-verification email. Authenticated + CSRF. The
+    // recipient is the caller's OWN account email, selected server-side; the
+    // request body takes NO parameters (a recipient/redirect override is a 400).
+    // The response is generic and identical whether or not an email was sent, so
+    // it can't be used to probe accounts. Transactional only — no unsubscribe
+    // headers. An uncertain/failed SMTP attempt is NOT auto-resent.
+    app.post(
+      "/api/platform/account/request-verification",
+      csrfGuard,
+      requireUser,
+      rateLimit({
+        limiter: perUserVerify,
+        scope: "verify-req-user",
+        keyPart: (req) => (req as AuthedRequest).auth!.user.id,
+      }),
+      rateLimit({
+        limiter: perIpVerify,
+        scope: "verify-req-ip",
+      }),
+      platformWide(platformVerify, "verify-req-platform"),
+      (req, res) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        if (Object.keys(body).length > 0) {
+          res.status(400).json({
+            error: {
+              code: "INVALID_REQUEST",
+              message: "This request takes no parameters.",
+            },
+          });
+          return;
+        }
+        const auth = (req as AuthedRequest).auth!;
+        const userId = auth.user.id;
+        const generic = (): void => {
+          res.json({ ok: true });
+        };
+        verifier
+          .request(userId)
+          .then(async (minted) => {
+            if (!minted || !deps.emailProvider) {
+              generic();
+              return;
+            }
+            // Per-email-hash cap (defense against a single mailbox being hit).
+            const eh = perUserVerify.hit(`email:${emailHash(minted.email)}`);
+            if (!eh.allowed) {
+              generic();
+              return;
+            }
+            const link = `${platformProto}://${platformHost}/verify-email#v=${minted.token}`;
+            try {
+              await deps.emailProvider.deliver({
+                to: minted.email,
+                from: `All Elite Cloud <no-reply@${platformHost}>`,
+                subject: "Verify your All Elite Cloud email address",
+                text:
+                  "Confirm your email to finish securing your All Elite Cloud account.\n\n" +
+                  "Open this link to verify this address:\n" +
+                  link +
+                  "\n\nThis link can be used once and expires in 24 hours. " +
+                  "If you did not request this, you can ignore this email — no changes have been made.",
+                messageClass: "transactional",
+                logicalId: `account-verify:${userId}`,
+                attemptId: randomBytes(12).toString("hex"),
+                sendingDomain: platformHost,
+              });
+              // We deliberately do NOT branch on the classification: the reply
+              // is generic, and an uncertain/failed attempt is never auto-resent
+              // here (the user can request again, rate-limited).
+            } catch {
+              // Swallow — never leak transport state to the caller.
+            }
+            generic();
+          })
+          .catch(() => generic());
+      },
+    );
+
+    // (2a) Neutral fragment-exchange confirmation page (public). GET has NO
+    // side effect — safe for email/security scanners to prefetch.
+    app.get("/verify-email", (_req, res) => {
+      verifyHeaders(res);
+      res.type("html").send(verifyPage());
+    });
+    // (2b) Confirm the token (public, CSRF-guarded). Generic result either way —
+    // never reveals whether the account/token existed. No auth: the token IS
+    // the proof, and confirmation happens with no tenant session.
+    app.post(
+      "/verify-email",
+      express.urlencoded({ extended: false }),
+      csrfGuard,
+      (req, res) => {
+        verifyHeaders(res);
+        verifier
+          .confirm(readToken(req))
+          .then((outcome) => {
+            if (isFormPost(req)) {
+              res.type("html").send(verifyPage(true));
+              return;
+            }
+            res.json({ ok: outcome.ok });
+          })
+          .catch(() => res.json({ ok: false }));
+      },
+    );
+
+    // (3) Send a labeled TEST email using the tenant's marketing sender.
+    // Owner/admin only (members are denied even if verified) AND the caller's
+    // account email must be verified (fail-closed). Recipient is the caller's
+    // own verified address, selected server-side; a recipient override is a 400.
+    // Uses the tenant's resolved+approved marketing sender identity but is a
+    // transactional probe: no marketing headers, no unsubscribe token, and NO
+    // lead/consent/activation/enrollment/suppression/sequence/outbox/metering
+    // side effects. Returns only an honest, sanitized classification.
+    if (deps.marketingSender && deps.emailProvider) {
+      const senderSvc = deps.marketingSender;
+      const provider = deps.emailProvider;
+      const perUserTest = new RateLimiter({ max: 6, windowMs: 60 * 60 * 1000 });
+      const perIpTest = new RateLimiter({ max: 20, windowMs: 60 * 60 * 1000 });
+      const platformTest = new RateLimiter({ max: 300, windowMs: 60 * 60 * 1000 });
+
+      app.post(
+        "/api/platform/marketing/test-email",
+        csrfGuard,
+        requireUser,
+        requireRole("owner", "admin"),
+        rateLimit({
+          limiter: perUserTest,
+          scope: "test-email-user",
+          keyPart: (req) => (req as AuthedRequest).auth!.user.id,
+        }),
+        rateLimit({ limiter: perIpTest, scope: "test-email-ip" }),
+        platformWide(platformTest, "test-email-platform"),
+        (req, res) => {
+          const body = (req.body ?? {}) as Record<string, unknown>;
+          if (Object.keys(body).length > 0) {
+            res.status(400).json({
+              error: {
+                code: "INVALID_REQUEST",
+                message: "This request takes no parameters; the test is sent to your own account email.",
+              },
+            });
+            return;
+          }
+          const auth = (req as AuthedRequest).auth!;
+          const userId = auth.user.id;
+          const recipient = auth.user.email;
+          void (async () => {
+            // Fail-closed: an unverified owner/admin cannot send a test.
+            if (!(await verifier.isVerified(userId))) {
+              res.status(403).json({
+                error: {
+                  code: "EMAIL_UNVERIFIED",
+                  message: "Verify your account email before sending a test.",
+                },
+              });
+              return;
+            }
+            // Resolve the tenant's marketing sender identity (fail-closed with a
+            // compliance action item; this is a pre-acceptance failure — it
+            // never reaches SMTP).
+            const resolution = await senderSvc.resolve();
+            if (!resolution.ok) {
+              res.status(200).json({
+                status: "pre_acceptance_failure",
+                configIssue: resolution.reason,
+                message:
+                  "Your marketing sender isn’t ready yet. Complete your sender details, then try again.",
+              });
+              return;
+            }
+            const sender = resolution.sender;
+            const result = await provider.deliver({
+              to: recipient,
+              from: `${sender.fromName} <${sender.fromAddress}>`,
+              replyTo: sender.replyTo,
+              subject: "[Test] Your All Elite Cloud marketing sender",
+              text:
+                "This is a TEST message from All Elite Cloud.\n\n" +
+                "It checks that your marketing sender configuration can send email. " +
+                "It was sent only to your own verified account address, is not part of " +
+                "any campaign, and no contacts received it.\n\n" +
+                "If the From and Reply-To look right and this arrives in your inbox, " +
+                "your marketing sender is working. This message has no unsubscribe link " +
+                "because it is a test, not a marketing email.",
+              // Transactional: this probe must NEVER be metered as a marketing
+              // send and carries no List-Unsubscribe / one-click headers.
+              messageClass: "transactional",
+              logicalId: `sender-test:${userId}`,
+              attemptId: randomBytes(12).toString("hex"),
+              sendingDomain: platformHost,
+            });
+            // Honest, sanitized status only — never the raw SMTP response,
+            // recipient address, body, credentials, or internal detail. The
+            // coarse category (e.g. "auth"/"connection"/"tls") is a safe
+            // owner-actionable hint produced by the provider.
+            const message =
+              result.classification === "accepted"
+                ? "Your sender accepted the test for delivery. Check your inbox (and spam) to confirm it arrives — acceptance isn’t proof of inbox placement."
+                : result.classification === "rejected"
+                  ? "The mail server rejected the test. Check your sender address and domain settings."
+                  : result.classification === "pre_acceptance_failure"
+                    ? "The test couldn’t be sent. This usually means a connection, TLS, or authentication issue with the mail server."
+                    : "The result was uncertain — the test may or may not have gone out. Wait a moment before trying again.";
+            res.status(200).json({
+              status: result.classification,
+              category: result.responseCategory,
+              usingPlatformFallback: sender.usingPlatformFallback,
+              message,
+            });
+          })().catch(() => {
+            res.status(200).json({
+              status: "uncertain",
+              message: "The result was uncertain. Please try again in a moment.",
+            });
+          });
         },
       );
     }

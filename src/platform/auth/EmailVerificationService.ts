@@ -137,8 +137,13 @@ export class EmailVerificationService {
     const email = await this.store.getEmail(userId);
     if (!email) return null;
     const normalized = normalizeEmail(email);
-    const raw = randomBytes(32).toString("hex");
     const nowMs = this.now();
+    // Bound the number of ACTIVE sibling tokens per user: a fresh request
+    // invalidates any still-outstanding tokens, so at most one link is live at
+    // a time (a resend supersedes the prior link). Combined with the route's
+    // rate limits, this caps how many valid links can exist for an account.
+    await this.tokens.invalidateForUser(userId, new Date(nowMs).toISOString());
+    const raw = randomBytes(32).toString("hex");
     await this.tokens.create({
       token_hash: hashToken(raw),
       user_id: userId,
