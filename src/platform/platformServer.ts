@@ -332,17 +332,25 @@ async function start(): Promise<void> {
             smtpPass as string,
         })
       : new LoggingEmailTransport();
+  const transactionalFrom =
+    process.env.SMTP_FROM?.trim() || undefined;
   const email =
     new PlatformEmailService(
       new PlatformEmailRepository(db),
       emailTransport,
       {
         connected: emailConnected,
-        fromDefault:
-          process.env.SMTP_FROM?.trim() ||
-          undefined,
+        fromDefault: transactionalFrom,
       },
     );
+  // The configured + authenticated transactional sender identity, reused for
+  // account-verification email. "Approved" = an authenticated transport AND a
+  // configured From. Absent → verification email fails closed (nothing sent);
+  // we never invent a `no-reply@<domain>` address.
+  const transactionalSender =
+    emailConnected && transactionalFrom
+      ? { from: transactionalFrom }
+      : undefined;
   // Marketing compliance core (S6): suppression, unsubscribe tokens, double
   // opt-in. Constructed before drip so the worker can recheck suppression
   // immediately before every send.
@@ -881,6 +889,7 @@ async function start(): Promise<void> {
     emailVerification,
     marketingSender,
     emailProvider,
+    transactionalSender,
     proposals,
     campaigns,
     reviews,

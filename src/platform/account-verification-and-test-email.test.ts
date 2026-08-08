@@ -58,7 +58,9 @@ class FakeProvider implements EmailDeliveryProvider {
   }
 }
 
-function build() {
+const CONFIGURED_SENDER = "All Elite Cloud <verify@allelitecloud.com>";
+
+function build(opts: { transactionalSender?: { from: string } | null } = {}) {
   const organizations = new OrganizationService();
   const userRepo = new PlatformUserRepository();
   const users = new PlatformUserService(userRepo);
@@ -89,6 +91,10 @@ function build() {
     emailVerification,
     marketingSender,
     emailProvider,
+    transactionalSender:
+      opts.transactionalSender === null
+        ? undefined
+        : opts.transactionalSender ?? { from: CONFIGURED_SENDER },
     baseDomain: "allelitecloud.com",
   });
   return {
@@ -157,8 +163,11 @@ describe("account-email verification route", () => {
     const msg = emailProvider.sent[0];
     // Server-selected recipient = the signed-in account email.
     expect(msg.to).toBe("owner@acme.com");
-    // Platform-controlled sender + host; NOT a tenant marketing identity.
-    expect(msg.from).toMatch(/no-reply@allelitecloud\.com/);
+    // The CONFIGURED transactional sender is used verbatim — never an invented
+    // `no-reply@…` address.
+    expect(msg.from).toBe(CONFIGURED_SENDER);
+    expect(msg.from).not.toMatch(/no-reply@/);
+    // Message-ID domain follows the configured sender's own domain.
     expect(msg.sendingDomain).toBe("allelitecloud.com");
     // The link lives on the trusted platform host and carries the fragment token.
     expect(msg.text).toMatch(
@@ -192,6 +201,49 @@ describe("account-email verification route", () => {
     expect(res.body).toEqual({ ok: true });
     // Exactly ONE attempt — an uncertain/failed send is not auto-retried here.
     expect(emailProvider.sent).toHaveLength(1);
+  });
+
+  it("fails closed when no transactional sender is configured (nothing sent, still generic)", async () => {
+    const { app, emailProvider } = build({ transactionalSender: null });
+    const owner = await signupOwner(app);
+    const res = await request(app)
+      .post("/api/platform/account/request-verification")
+      .set("Cookie", owner.cookie)
+      .send({});
+    // Generic reply either way — no leak that sending was skipped.
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    // No invented `no-reply@…` substitute — simply nothing sent.
+    expect(emailProvider.sent).toHaveLength(0);
+  });
+
+  it("a tenant marketing sender cannot influence the account-verification email", async () => {
+    const { app, emailProvider, marketingSender } = build();
+    const owner = await signupOwner(app);
+    // Configure a DISTINCT tenant marketing sender identity.
+    await runWithTenant({ organizationId: owner.orgId }, async () => {
+      await marketingSender.set(
+        {
+          businessName: "Tenant Marketing Co",
+          replyTo: "marketing@tenant.example",
+          fromAddress: "marketing@tenant.example",
+          physicalAddress: "9 Tenant Rd",
+        },
+        "owner",
+      );
+    });
+    const res = await request(app)
+      .post("/api/platform/account/request-verification")
+      .set("Cookie", owner.cookie)
+      .send({});
+    expect(res.status).toBe(200);
+    expect(emailProvider.sent).toHaveLength(1);
+    const msg = emailProvider.sent[0];
+    // Still the platform transactional sender — the tenant marketing identity
+    // never appears in a verification message.
+    expect(msg.from).toBe(CONFIGURED_SENDER);
+    expect(msg.from).not.toMatch(/tenant\.example/);
+    expect(msg.replyTo).toBeUndefined();
   });
 });
 

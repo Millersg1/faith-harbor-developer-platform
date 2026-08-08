@@ -271,13 +271,31 @@ a security prerequisite, not marketing consent.
   the request body takes **no parameters**, so a recipient/redirect override is a
   `400` (nothing is sent). The reply is a **generic `{ok:true}`** whether or not
   a message went out, so it can't probe which accounts exist. The message uses
-  the **platform** transactional sender (`no-reply@<baseDomain>`) and a link on
-  the **trusted platform host** (never a tenant host). An uncertain/failed SMTP
-  attempt is **not** auto-resent — the user can request again (rate-limited).
-  Limits are layered: per-user, per-email-hash, per-IP, and platform-wide.
-- Active tokens are bounded: a fresh request invalidates any still-outstanding
-  verification tokens, so at most one link is live at a time (a resend supersedes
-  the prior link).
+  the application's **configured, authenticated transactional sender identity**
+  (the same From the email service uses) — **never** an invented
+  `no-reply@<domain>`. If no approved transactional sender is configured, the
+  route **fails closed**: it sends nothing rather than fabricating an address
+  (the reply stays generic). The configured address and SMTP details are never
+  echoed in public responses, audit metadata, or ordinary logs. The link stays
+  on the **trusted platform host** (never a tenant host); the Message-ID domain
+  follows the sender's own authenticated domain. An uncertain/failed SMTP attempt
+  is **not** auto-resent — the user can request again (rate-limited). Limits are
+  layered: per-user, per-email-hash, per-IP, and platform-wide.
+- **Domain ownership ≠ sending authentication.** Controlling the web domain does
+  **not** prove that any mailbox on it is authorized to send: SPF, DKIM, DMARC,
+  PTR/HELO, and SMTP authorization are separate and must be established for the
+  transactional sender's domain independently. Sender-domain deliverability is to
+  be verified **read-only** during the later documentation/acceptance stage — **no
+  DNS is changed here**.
+- Active tokens are **bounded but not single**: a resend mints a NEW token bound
+  to the same (user, normalized email) **without** invalidating the prior,
+  possibly-delivered link — because SMTP acceptance can be uncertain, killing the
+  previous link before the replacement is known to have arrived could leave the
+  user with no usable email. A small cap (3) is enforced; when it would be
+  exceeded the **oldest** token is expired first (deterministically). The first
+  sibling to confirm invalidates **all** siblings atomically; an email change
+  invalidates every token immediately; replays are idempotent; raw tokens are
+  never stored (SHA-256 only).
 - `GET /verify-email` / `POST /verify-email` — the neutral **fragment-exchange**
   confirmation page. The token travels only in the URL **fragment**; the page
   calls `history.replaceState` to strip it **before anything else**, then POSTs

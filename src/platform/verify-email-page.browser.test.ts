@@ -80,6 +80,7 @@ function buildApp() {
       new EmailVerificationTokenRepository(),
     ),
     emailProvider,
+    transactionalSender: { from: "All Elite Cloud <verify@allelitecloud.com>" },
     baseDomain: "allelitecloud.com",
   });
   return { app, emailProvider };

@@ -137,6 +137,15 @@ export interface PlatformAppDependencies {
   marketingSender?: MarketingSenderService;
   /** Provider-independent email delivery (honest SMTP classification). */
   emailProvider?: EmailDeliveryProvider;
+  /**
+   * The application's configured + authenticated transactional sender identity
+   * (the same From used by the existing email service). Account-verification
+   * email uses THIS — never an invented `no-reply@<domain>`. Absent = no
+   * approved transactional sender, so verification email fails closed (nothing
+   * is sent) rather than fabricating an address. `from` may be a bare address
+   * or a `Name <address>` form; it is never echoed in public responses/logs.
+   */
+  transactionalSender?: { from: string };
   proposals?: PlatformProposalService;
   campaigns?: PlatformCampaignService;
   reviews?: PlatformReviewService;
@@ -1338,10 +1347,14 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
         const generic = (): void => {
           res.json({ ok: true });
         };
+        // Fail closed: with no configured+authenticated transactional sender we
+        // do NOT fabricate a `no-reply@…` address — we simply send nothing (the
+        // reply is still generic). The configured From is never echoed publicly.
+        const txSender = deps.transactionalSender;
         verifier
           .request(userId)
           .then(async (minted) => {
-            if (!minted || !deps.emailProvider) {
+            if (!minted || !deps.emailProvider || !txSender) {
               generic();
               return;
             }
@@ -1352,10 +1365,15 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
               return;
             }
             const link = `${platformProto}://${platformHost}/verify-email#v=${minted.token}`;
+            // Message-ID domain follows the configured sender's own domain (its
+            // authenticated identity), not the web host.
+            const senderDomain =
+              /@([^>\s]+)/.exec(txSender.from)?.[1]?.toLowerCase() ??
+              platformHost;
             try {
               await deps.emailProvider.deliver({
                 to: minted.email,
-                from: `All Elite Cloud <no-reply@${platformHost}>`,
+                from: txSender.from,
                 subject: "Verify your All Elite Cloud email address",
                 text:
                   "Confirm your email to finish securing your All Elite Cloud account.\n\n" +
@@ -1366,7 +1384,7 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
                 messageClass: "transactional",
                 logicalId: `account-verify:${userId}`,
                 attemptId: randomBytes(12).toString("hex"),
-                sendingDomain: platformHost,
+                sendingDomain: senderDomain,
               });
               // We deliberately do NOT branch on the classification: the reply
               // is generic, and an uncertain/failed attempt is never auto-resent

@@ -18,6 +18,16 @@ function hashToken(raw: string): string {
 const TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 /**
+ * How many unexpired verification links may exist at once for the same
+ * (user, normalized email). Small and bounded: a resend mints a fresh token
+ * WITHOUT invalidating the prior (possibly-delivered) link — because SMTP
+ * acceptance can be uncertain, invalidating the previous link before the new
+ * one is known to have arrived could strand the user with no usable email. Once
+ * ANY sibling confirms, all siblings are invalidated together.
+ */
+const MAX_ACTIVE_TOKENS = 3;
+
+/**
  * The narrow account store the verifier needs. Implemented over the real user
  * repository (global by id, since confirmation has no tenant session), or a
  * stub in tests. `markVerified` sets evidence ONLY if the current account email
@@ -89,6 +99,52 @@ export class EmailVerificationTokenRepository {
     return true;
   }
 
+  /**
+   * Active (unconsumed, unexpired) tokens for a (user, normalized email),
+   * oldest first. Ordering is deterministic — `created_at` then `token_hash`
+   * as a stable tiebreaker — so "expire the oldest" is well-defined.
+   */
+  async listActive(
+    userId: string,
+    normalizedEmail: string,
+    nowMs: number,
+  ): Promise<Array<{ token_hash: string; created_at: string }>> {
+    if (this.db) {
+      const r = await this.db.query(
+        `SELECT token_hash, created_at FROM email_verification_tokens
+           WHERE user_id=$1 AND email=$2 AND consumed_at IS NULL
+             AND expires_at > $3
+           ORDER BY created_at ASC, token_hash ASC`,
+        [userId, normalizedEmail, new Date(nowMs).toISOString()],
+      );
+      return r.rows as unknown as Array<{
+        token_hash: string;
+        created_at: string;
+      }>;
+    }
+    const out: Array<{ token_hash: string; created_at: string }> = [];
+    for (const [hash, row] of this.rows) {
+      if (
+        row.user_id === userId &&
+        row.email === normalizedEmail &&
+        !row.consumed_at &&
+        Date.parse(row.expires_at) > nowMs
+      ) {
+        out.push({ token_hash: hash, created_at: row.created_at });
+      }
+    }
+    out.sort((a, b) =>
+      a.created_at < b.created_at
+        ? -1
+        : a.created_at > b.created_at
+          ? 1
+          : a.token_hash < b.token_hash
+            ? -1
+            : 1,
+    );
+    return out;
+  }
+
   /** Invalidate all unconsumed tokens for a user (sibling invalidation / email change). */
   async invalidateForUser(
     userId: string,
@@ -138,11 +194,18 @@ export class EmailVerificationService {
     if (!email) return null;
     const normalized = normalizeEmail(email);
     const nowMs = this.now();
-    // Bound the number of ACTIVE sibling tokens per user: a fresh request
-    // invalidates any still-outstanding tokens, so at most one link is live at
-    // a time (a resend supersedes the prior link). Combined with the route's
-    // rate limits, this caps how many valid links can exist for an account.
-    await this.tokens.invalidateForUser(userId, new Date(nowMs).toISOString());
+    const at = new Date(nowMs).toISOString();
+    // Enforce a strict active-token cap for this (user, email). A resend mints a
+    // NEW token bound to the SAME user/email without touching the others; only
+    // if the cap would be exceeded do we expire the OLDEST tokens first
+    // (deterministically), never the newest possibly-delivered link. The route
+    // additionally rate-limits resends. Siblings are all invalidated together on
+    // the first successful confirmation (see confirm) or on an email change.
+    const active = await this.tokens.listActive(userId, normalized, nowMs);
+    const excess = active.length - (MAX_ACTIVE_TOKENS - 1);
+    for (let i = 0; i < excess; i += 1) {
+      await this.tokens.consume(active[i].token_hash, at); // expire oldest-first
+    }
     const raw = randomBytes(32).toString("hex");
     await this.tokens.create({
       token_hash: hashToken(raw),
@@ -150,7 +213,7 @@ export class EmailVerificationService {
       email: normalized,
       expires_at: new Date(nowMs + TTL_MS).toISOString(),
       consumed_at: null,
-      created_at: new Date(nowMs).toISOString(),
+      created_at: at,
     });
     return { token: raw, email: normalized };
   }
