@@ -100,7 +100,7 @@ export class PlatformEmailService {
           : "Email delivery failed.";
     }
 
-    return this.repository.create({
+    const record: PlatformEmailRecord = {
       id: randomUUID(),
       to,
       subject,
@@ -109,9 +109,30 @@ export class PlatformEmailService {
       status,
       provider,
       error,
-      createdAt:
-        new Date().toISOString(),
-    });
+      organizationId: "",
+      createdAt: new Date().toISOString(),
+    };
+
+    // Persisting to the tenant outbox is a best-effort secondary copy. It must
+    // not turn a transport-confirmed status into a throw (e.g. a platform-level
+    // message sent outside any tenant context, where the tenant-scoped outbox
+    // has nothing to write to). Callers get the honest transport status either
+    // way; the outbox write is attempted and swallowed on failure.
+    try {
+      return await this.repository.create({
+        id: record.id,
+        to: record.to,
+        subject: record.subject,
+        body: record.body,
+        from: record.from,
+        status: record.status,
+        provider: record.provider,
+        error: record.error,
+        createdAt: record.createdAt,
+      });
+    } catch {
+      return record;
+    }
   }
 
   /**

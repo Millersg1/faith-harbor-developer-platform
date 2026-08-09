@@ -1521,6 +1521,101 @@ export class PostgresDatabase
         ON privacy_requests (organization_id, status, created_at DESC);
     `);
 
+    // Phase 5 privacy-request workflow — ADDITIVE columns on the existing
+    // privacy_requests table (existing columns reused: id, organization_id
+    // [NULL for platform requests], type=category, email, details=description,
+    // status, assigned_to, created_at, updated_at). Raw tokens are NEVER stored
+    // — only SHA-256 hashes.
+    await this.pool.query(`
+      ALTER TABLE privacy_requests
+        ADD COLUMN IF NOT EXISTS destination        TEXT,
+        ADD COLUMN IF NOT EXISTS name               TEXT,
+        ADD COLUMN IF NOT EXISTS relationship       TEXT,
+        ADD COLUMN IF NOT EXISTS verification_state TEXT NOT NULL DEFAULT 'unverified',
+        ADD COLUMN IF NOT EXISTS verify_token_hash  TEXT,
+        ADD COLUMN IF NOT EXISTS verify_expires_at  TEXT,
+        ADD COLUMN IF NOT EXISTS status_token_hash  TEXT,
+        ADD COLUMN IF NOT EXISTS resolution_summary TEXT,
+        ADD COLUMN IF NOT EXISTS due_date           TEXT,
+        ADD COLUMN IF NOT EXISTS due_date_source    TEXT,
+        ADD COLUMN IF NOT EXISTS verified_at        TEXT,
+        ADD COLUMN IF NOT EXISTS acknowledged_at    TEXT,
+        ADD COLUMN IF NOT EXISTS completed_at       TEXT,
+        ADD COLUMN IF NOT EXISTS denied_at          TEXT,
+        ADD COLUMN IF NOT EXISTS closed_at          TEXT,
+        ADD COLUMN IF NOT EXISTS purge_after        TEXT,
+        ADD COLUMN IF NOT EXISTS verify_email_state    TEXT NOT NULL DEFAULT 'pending',
+        ADD COLUMN IF NOT EXISTS verify_email_error    TEXT,
+        ADD COLUMN IF NOT EXISTS verify_email_attempts INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS verify_email_last_at  TEXT;
+    `);
+    // Tenant deletion cascades its privacy requests (platform requests keep a
+    // NULL organization_id and are unaffected). Idempotent FK addition.
+    await this.pool.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'privacy_requests_org_fk'
+        ) THEN
+          ALTER TABLE privacy_requests
+            ADD CONSTRAINT privacy_requests_org_fk
+            FOREIGN KEY (organization_id) REFERENCES organizations (id)
+            ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `);
+    // Token lookups (verification + requester status) are by hash — indexed.
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS privacy_requests_verify_hash_idx
+        ON privacy_requests (verify_token_hash);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS privacy_requests_status_hash_idx
+        ON privacy_requests (status_token_hash);
+    `);
+    // Timeline: internal notes + requester-facing messages, cascaded to the
+    // request. Kept separate so internal notes never reach the requester view.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS privacy_request_notes (
+        id          TEXT PRIMARY KEY,
+        request_id  TEXT NOT NULL
+                      REFERENCES privacy_requests (id) ON DELETE CASCADE,
+        visibility  TEXT NOT NULL DEFAULT 'internal',
+        author_id   TEXT,
+        body        TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS privacy_request_notes_req_idx
+        ON privacy_request_notes (request_id, created_at);
+    `);
+    // Durable, queryable, tenant-NEUTRAL audit trail for platform-level actions
+    // (e.g. platform-admin privacy-request lifecycle). Append-only; stores only
+    // compact enums + identifiers — never names, emails, descriptions, notes,
+    // or tokens. Distinct from tenant-scoped `audit_events` (which requires an
+    // organization_id and cannot record org-neutral platform actions).
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS platform_audit_events (
+        id          TEXT PRIMARY KEY,
+        action      TEXT NOT NULL,
+        actor_type  TEXT NOT NULL DEFAULT 'platform_admin',
+        actor_id    TEXT,
+        target_type TEXT,
+        target_id   TEXT,
+        outcome     TEXT,
+        metadata    TEXT,
+        created_at  TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS platform_audit_events_created_idx
+        ON platform_audit_events (created_at DESC);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS platform_audit_events_target_idx
+        ON platform_audit_events (target_type, target_id);
+    `);
+
     // Legal holds — while a hold exists for an organization, the retention
     // purge skips that organization entirely (nothing is purged under hold).
     await this.pool.query(`

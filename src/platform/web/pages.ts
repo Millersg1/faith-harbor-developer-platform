@@ -1091,6 +1091,19 @@ export function dashboardPage(): string {
         <div id="legalDocs"><div class="empty">Loading…</div></div>
         <div id="legalEditor"></div>
         <div id="legalPreview" style="margin-top:12px;"></div>
+        <div id="privReqSection" style="display:none;">
+          <div class="sub" style="margin:24px 0 4px;font-weight:800;">Privacy requests <span class="pill">owner/admin</span></div>
+          <p class="hint">Requests submitted through your site's privacy-request form. These may contain personal information — handle carefully. Members cannot view them.</p>
+          <div class="msg" id="privReqMsg" role="status" aria-live="polite"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">
+            <label for="privFilterStatus" class="visually-hidden">Filter by status</label>
+            <select id="privFilterStatus" style="width:auto;padding:9px 12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);">
+              <option value="">All statuses</option>
+            </select>
+          </div>
+          <div id="privReqList"><div class="empty">Loading…</div></div>
+          <div id="privReqDetail" style="margin-top:12px;"></div>
+        </div>
       </div>
       <div class="panel">
         <h2>Account</h2>
@@ -3026,6 +3039,73 @@ export function dashboardPage(): string {
     box.appendChild(wrap);
   }
   async function legalDocAction(path,opts,okText){opts=opts||{};legalMsg('Working…');var r=await api(LEGAL+path,{method:opts.method||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(opts.body||{})});var x=await r.json().catch(function(){return{};});if(r.ok){legalMsg(okText||'Done.',true);await loadLegalWorkspace();if(x.document)legalOpen(x.document.id);}else legalMsg((x.error&&x.error.message)||'Action failed.',false);}
+
+  // ---- Privacy requests (owner/admin only) ----
+  var PRIV='/api/platform/privacy-requests/manage';
+  var PRIV_STATUSES=['pending_verification','received','identity_verification_required','in_review','awaiting_requester','fulfilled','partially_fulfilled','denied','withdrawn','closed'];
+  var PRIV_NEXT={pending_verification:['withdrawn','closed'],received:['in_review','identity_verification_required','withdrawn','closed'],identity_verification_required:['in_review','awaiting_requester','denied','withdrawn','closed'],in_review:['awaiting_requester','identity_verification_required','fulfilled','partially_fulfilled','denied','withdrawn','closed'],awaiting_requester:['in_review','fulfilled','partially_fulfilled','denied','withdrawn','closed'],fulfilled:['closed'],partially_fulfilled:['in_review','fulfilled','closed'],denied:['in_review','closed'],withdrawn:['closed'],closed:[]};
+  function privMsg(t,ok){var m=document.getElementById('privReqMsg');if(!m)return;m.className='msg'+(ok===true?' ok':ok===false?' err':'');m.textContent=t||'';}
+  function prettyStatus(s){return String(s||'').replace(/_/g,' ');}
+  async function loadPrivacyRequests(){
+    if(myRole!=='owner'&&myRole!=='admin')return;
+    var sec=document.getElementById('privReqSection');if(sec)sec.style.display='';
+    var sel=document.getElementById('privFilterStatus');
+    if(sel&&sel.options.length<=1){PRIV_STATUSES.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=prettyStatus(s);sel.appendChild(o);});sel.onchange=loadPrivacyRequests;}
+    var q=sel&&sel.value?('?status='+encodeURIComponent(sel.value)):'';
+    var r=await api(PRIV+q);if(!r.ok)return;var d=await r.json();renderPrivacyList(d.requests||[]);
+  }
+  function renderPrivacyList(rows){
+    var host=document.getElementById('privReqList');if(!host)return;clear(host);
+    if(!rows.length){host.innerHTML='<div class="empty">No privacy requests.</div>';return;}
+    var table=document.createElement('table');var tb=document.createElement('tbody');
+    rows.forEach(function(rq){
+      var tr=document.createElement('tr');
+      var td1=document.createElement('td');var ref=document.createElement('div');ref.className='o-name';ref.textContent=rq.id.slice(0,8).toUpperCase();var sub=document.createElement('div');sub.className='td-sub';sub.textContent=prettyStatus(rq.category)+' · '+(rq.verificationState==='email_verified'?'email verified':'unverified');td1.appendChild(ref);td1.appendChild(sub);
+      var td2=document.createElement('td');var pill=document.createElement('span');pill.className='pill';pill.textContent=prettyStatus(rq.status);td2.appendChild(pill);
+      var td3=document.createElement('td');td3.className='td-sub';td3.textContent=(rq.createdAt||'').slice(0,10);
+      var td4=document.createElement('td');var b=document.createElement('button');b.className='btn ghost btn-sm';b.style.width='auto';b.textContent='Open';b.onclick=function(){openPrivacyRequest(rq.id);};td4.appendChild(b);
+      tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);tr.appendChild(td4);tb.appendChild(tr);
+    });
+    table.appendChild(tb);host.appendChild(table);
+  }
+  async function openPrivacyRequest(id){
+    var r=await api(PRIV+'/'+encodeURIComponent(id));if(!r.ok){privMsg('Could not open.',false);return;}
+    var d=await r.json();renderPrivacyDetail(d.request,d.notes||[]);
+  }
+  function renderPrivacyDetail(rq,notes){
+    var box=document.getElementById('privReqDetail');if(!box)return;clear(box);
+    var wrap=document.createElement('div');wrap.style.cssText='margin-top:12px;padding:16px;border:1px solid var(--border);border-radius:12px;';
+    function line(k,v){var p=document.createElement('div');p.style.cssText='display:flex;gap:10px;font-size:.9rem;margin:2px 0;';var a=document.createElement('span');a.className='td-sub';a.style.minWidth='110px';a.textContent=k;var b=document.createElement('span');b.textContent=v;p.appendChild(a);p.appendChild(b);return p;}
+    var h=document.createElement('div');h.style.fontWeight='800';h.textContent='Request '+rq.id.slice(0,8).toUpperCase();wrap.appendChild(h);
+    wrap.appendChild(line('Type',prettyStatus(rq.category)));
+    wrap.appendChild(line('From',rq.name+' <'+rq.email+'>'));
+    wrap.appendChild(line('Relationship',rq.relationship||'—'));
+    wrap.appendChild(line('Verified',rq.verificationState==='email_verified'?'Yes':'No'));
+    if(rq.verifyEmailState&&rq.verifyEmailState!=='sent'){var vem=rq.verifyEmailState==='failed'?'Verification email FAILED to send':rq.verifyEmailState==='logged'?'No email provider configured — not delivered':'Verification email pending';wrap.appendChild(line('Email',vem+(rq.verifyEmailAttempts?' ('+rq.verifyEmailAttempts+' attempt'+(rq.verifyEmailAttempts>1?'s':'')+')':'')));}
+    wrap.appendChild(line('Status',prettyStatus(rq.status)));
+    var desc=document.createElement('div');desc.style.cssText='margin:10px 0;padding:10px;background:var(--surface);border-radius:8px;white-space:pre-wrap;font-size:.9rem;';desc.textContent=rq.description;wrap.appendChild(desc);
+    // Transition controls
+    var next=PRIV_NEXT[rq.status]||[];
+    if(next.length){
+      var trow=document.createElement('div');trow.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;';
+      var tsel=document.createElement('select');tsel.style.cssText='width:auto;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);';
+      next.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=prettyStatus(s);tsel.appendChild(o);});
+      var reason=document.createElement('input');reason.placeholder='Explanation (required to fulfill/deny)';reason.style.cssText='flex:1;min-width:180px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);';
+      var apply=document.createElement('button');apply.className='btn';apply.style.width='auto';apply.textContent='Apply';
+      apply.onclick=function(){var to=tsel.value;var substantive=(to==='fulfilled'||to==='partially_fulfilled'||to==='denied');if(substantive&&!reason.value.trim()){privMsg('An explanation is required for this decision.',false);return;}if(!confirm('Change status to '+prettyStatus(to)+'?'))return;privAction('/'+rq.id+'/transition',{to:to,resolutionSummary:reason.value.trim()||undefined});};
+      trow.appendChild(tsel);trow.appendChild(reason);trow.appendChild(apply);wrap.appendChild(trow);
+    }
+    // Notes
+    var nh=document.createElement('div');nh.style.cssText='font-weight:700;margin:14px 0 4px;font-size:.9rem;';nh.textContent='Timeline / notes';wrap.appendChild(nh);
+    (notes||[]).forEach(function(n){var nn=document.createElement('div');nn.style.cssText='font-size:.85rem;margin:3px 0;';nn.textContent='['+n.visibility+'] '+n.body+' ('+(n.createdAt||'').slice(0,10)+')';wrap.appendChild(nn);});
+    var nb=document.createElement('input');nb.placeholder='Add a note';nb.style.cssText='width:100%;padding:8px 10px;margin-top:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);';
+    var nv=document.createElement('select');nv.style.cssText='width:auto;padding:8px 10px;margin-top:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);';['internal','requester'].forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v+' note';nv.appendChild(o);});
+    var nadd=document.createElement('button');nadd.className='btn ghost';nadd.style.cssText='width:auto;margin-left:6px;';nadd.textContent='Add note';nadd.onclick=function(){if(!nb.value.trim())return;privAction('/'+rq.id+'/note',{body:nb.value.trim(),visibility:nv.value});};
+    var nrow=document.createElement('div');nrow.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;';nrow.appendChild(nv);nrow.appendChild(nadd);
+    wrap.appendChild(nb);wrap.appendChild(nrow);
+    box.appendChild(wrap);
+  }
+  async function privAction(path,body){privMsg('Working…');var r=await api(PRIV+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});var x=await r.json().catch(function(){return{};});if(r.ok){privMsg('Done.',true);await loadPrivacyRequests();if(x.request)openPrivacyRequest(x.request.id);}else privMsg((x.error&&x.error.message)||'Action failed.',false);}
   // The dashboard is organized into a few sections shown one at a time, so the
   // owner lands on a clean page instead of every panel at once. A panel's
   // section is decided by its id, else by its heading text.
@@ -3243,6 +3323,7 @@ export function dashboardPage(): string {
       document.getElementById('aisub-actions').style.display='';
       document.getElementById('aisub-employees').style.display='';
       document.getElementById('auditPanel').style.display='';
+      loadPrivacyRequests();
       loadTeam();
       loadPortalUsers();
       loadEmails();

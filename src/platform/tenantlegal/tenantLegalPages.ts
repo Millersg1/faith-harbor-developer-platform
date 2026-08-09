@@ -98,7 +98,7 @@ ${rendered.html}
       </article>
     </main>
   </div>
-  <footer>${escapeHtml(brand.businessName)} — ${escapeHtml(doc.title)} · Version ${doc.version}</footer>
+  <footer>${escapeHtml(brand.businessName)} — ${escapeHtml(doc.title)} · Version ${doc.version} · <a href="/privacy-request">Submit a privacy request</a></footer>
 </body>
 </html>`;
 }

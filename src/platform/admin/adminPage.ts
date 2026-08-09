@@ -103,6 +103,14 @@ export function adminConsolePage(): string {
   </div>
 
   <div class="panel" style="margin-top:24px;">
+    <h2>Privacy requests <span class="pill">platform</span></h2>
+    <p style="padding:0 20px;color:var(--muted);font-size:.85rem;">Requests about All Elite Cloud's own account, billing, security, or platform processing. Tenant requests are managed by each tenant and are never shown here.</p>
+    <div id="pprivMsg" class="msg" style="padding:0 20px;"></div>
+    <div id="pprivList" style="padding:8px 20px;"><div class="empty">Loading…</div></div>
+    <div id="pprivDetail" style="padding:0 20px 16px;"></div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
     <h2>Documentation</h2>
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
       <label for="docSelect">Document</label>
@@ -344,11 +352,43 @@ export function adminConsolePage(): string {
     else{legalMsg((x.error&&x.error.message)||'Action failed.',false);}
   }
 
+  // ---- Platform privacy requests ----
+  var PPRIV_NEXT={pending_verification:['withdrawn','closed'],received:['in_review','identity_verification_required','withdrawn','closed'],identity_verification_required:['in_review','awaiting_requester','denied','withdrawn','closed'],in_review:['awaiting_requester','identity_verification_required','fulfilled','partially_fulfilled','denied','withdrawn','closed'],awaiting_requester:['in_review','fulfilled','partially_fulfilled','denied','withdrawn','closed'],fulfilled:['closed'],partially_fulfilled:['in_review','fulfilled','closed'],denied:['in_review','closed'],withdrawn:['closed'],closed:[]};
+  function pprivMsg(t,ok){var m=document.getElementById('pprivMsg');if(!m)return;m.style.color=ok===true?'#4ade80':ok===false?'#f87171':'';m.textContent=t||'';}
+  function pretty(s){return String(s||'').replace(/_/g,' ');}
+  async function loadPPriv(){
+    var r=await api('/privacy-requests');if(!r.ok)return;var d=await r.json();
+    var host=document.getElementById('pprivList');host.innerHTML='';
+    var rows=d.requests||[];if(!rows.length){host.innerHTML='<div class="empty">No platform privacy requests.</div>';return;}
+    var t=document.createElement('table');var tb=document.createElement('tbody');
+    rows.forEach(function(rq){var tr=document.createElement('tr');
+      var td1=document.createElement('td');td1.innerHTML='<div class="o-name">'+esc(rq.id.slice(0,8).toUpperCase())+'</div><div class="td-sub">'+esc(pretty(rq.category))+' · '+(rq.verificationState==='email_verified'?'verified':'unverified')+'</div>';
+      var td2=document.createElement('td');var p=document.createElement('span');p.className='badge active';p.textContent=pretty(rq.status);td2.appendChild(p);
+      var td3=document.createElement('td');td3.textContent=(rq.createdAt||'').slice(0,10);
+      var td4=document.createElement('td');var b=document.createElement('button');b.className='btn btn-ghost btn-sm';b.textContent='Open';b.onclick=function(){openPPriv(rq.id);};td4.appendChild(b);
+      tr.appendChild(td1);tr.appendChild(td2);tr.appendChild(td3);tr.appendChild(td4);tb.appendChild(tr);});
+    t.appendChild(tb);host.appendChild(t);
+  }
+  async function openPPriv(id){var r=await api('/privacy-requests/'+encodeURIComponent(id));if(!r.ok){pprivMsg('Could not open.',false);return;}var d=await r.json();var rq=d.request;var box=document.getElementById('pprivDetail');box.innerHTML='';
+    var w=document.createElement('div');w.style.cssText='margin-top:10px;padding:14px;border:1px solid var(--border);border-radius:12px;';
+    w.innerHTML='<div style="font-weight:800">Request '+esc(rq.id.slice(0,8).toUpperCase())+'</div><div class="td-sub">'+esc(pretty(rq.category))+' · from '+esc(rq.name)+' &lt;'+esc(rq.email)+'&gt; · '+(rq.verificationState==='email_verified'?'verified':'unverified')+'</div>';
+    if(rq.verifyEmailState&&rq.verifyEmailState!=='sent'){var vem=document.createElement('div');vem.className='td-sub';vem.style.cssText='margin-top:4px;color:'+(rq.verifyEmailState==='failed'?'#f87171':'inherit');vem.textContent='Verification email: '+(rq.verifyEmailState==='failed'?'FAILED to send':rq.verifyEmailState==='logged'?'no provider configured (not delivered)':'pending')+(rq.verifyEmailAttempts?' · '+rq.verifyEmailAttempts+' attempt(s)':'');w.appendChild(vem);}
+    var desc=document.createElement('div');desc.style.cssText='margin:10px 0;padding:10px;background:rgba(0,0,0,.25);border-radius:8px;white-space:pre-wrap;font-size:.9rem;';desc.textContent=rq.description;w.appendChild(desc);
+    var next=PPRIV_NEXT[rq.status]||[];
+    if(next.length){var row=document.createElement('div');row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
+      var sel=document.createElement('select');sel.style.cssText='padding:8px 10px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:8px;color:var(--text);';next.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=pretty(s);sel.appendChild(o);});
+      var reason=document.createElement('input');reason.placeholder='Explanation (required to fulfill/deny)';reason.style.cssText='flex:1;min-width:180px;padding:8px 10px;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:8px;color:var(--text);';
+      var apply=document.createElement('button');apply.className='btn btn-red btn-sm';apply.textContent='Apply';apply.onclick=function(){var to=sel.value;var sub=(to==='fulfilled'||to==='partially_fulfilled'||to==='denied');if(sub&&!reason.value.trim()){pprivMsg('An explanation is required.',false);return;}if(!confirm('Change status to '+pretty(to)+'?'))return;pprivAct('/privacy-requests/'+rq.id+'/transition',{to:to,resolutionSummary:reason.value.trim()||undefined});};
+      row.appendChild(sel);row.appendChild(reason);row.appendChild(apply);w.appendChild(row);}
+    box.appendChild(w);
+  }
+  async function pprivAct(path,body){pprivMsg('Working…');var r=await api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});var x=await r.json().catch(function(){return{};});if(r.ok){pprivMsg('Done.',true);await loadPPriv();if(x.request)openPPriv(x.request.id);}else pprivMsg((x.error&&x.error.message)||'Failed.',false);}
+
   async function boot(){
     var me=await api('/me');
     if(me.ok){var d=await me.json();document.getElementById('who').textContent=esc(d.admin&&d.admin.email);
       show('login',false);show('console',true);document.getElementById('logout').style.display='';
-      await loadStats();await loadAnalytics();await loadHealth();await loadOrgs();await loadLegal();await loadDocs();}
+      await loadStats();await loadAnalytics();await loadHealth();await loadOrgs();await loadLegal();await loadPPriv();await loadDocs();}
     else{show('login',true);show('console',false);}
   }
   document.getElementById('loginForm').addEventListener('submit',async function(e){
