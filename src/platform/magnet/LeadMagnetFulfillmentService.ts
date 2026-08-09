@@ -312,6 +312,12 @@ export class LeadMagnetFulfillmentService {
    * REPLACEMENT sibling — never unlimited tokens. Returns the raw token once, or
    * null if the fulfillment isn't a ready download for this tenant.
    */
+  /** Owner/admin: list fulfillments for a tenant (records include email; the
+   * ROUTE projects to a PII-free shape before returning). */
+  async listForOrg(organizationId: string, formId?: string): Promise<FulfillmentRecord[]> {
+    return this.repo.listForOrg(organizationId, formId);
+  }
+
   async issueDownloadCapability(
     fulfillmentId: string,
     organizationId: string,

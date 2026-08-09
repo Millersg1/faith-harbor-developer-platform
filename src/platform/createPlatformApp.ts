@@ -56,7 +56,10 @@ import type { ConfirmationDispatchService } from "./marketing/ConfirmationDispat
 import { createMarketingOpsRouter } from "./marketing/marketingOpsRouter";
 import type { LeadMagnetCapabilityService } from "./magnet/LeadMagnetCapabilityService";
 import type { LeadMagnetDownloadSessionService } from "./magnet/LeadMagnetDownloadSessionService";
+import type { LeadMagnetDispatchService } from "./magnet/LeadMagnetDispatchService";
+import type { LeadMagnetFulfillmentService } from "./magnet/LeadMagnetFulfillmentService";
 import { createLeadMagnetDownloadRouter } from "./magnet/leadMagnetDownloadRouter";
+import { createMagnetOpsRouter } from "./magnet/magnetOpsRouter";
 import type { EmailVerificationService } from "./auth/EmailVerificationService";
 import type { MarketingSenderService } from "./marketing/MarketingSenderService";
 import type { EmailDeliveryProvider } from "./email/EmailDeliveryProvider";
@@ -151,6 +154,12 @@ export interface PlatformAppDependencies {
   magnetCapabilities?: LeadMagnetCapabilityService;
   /** Lead-magnet one-time download sessions (the hardened cookie exchange). */
   magnetSessions?: LeadMagnetDownloadSessionService;
+  /** Durable transactional lead-magnet email dispatch (owner/admin review). */
+  magnetDispatch?: LeadMagnetDispatchService;
+  /** Lead-magnet fulfillment records (owner/admin status). */
+  magnetFulfillment?: LeadMagnetFulfillmentService;
+  /** Whether a configured transactional sender exists (email-mode warning). */
+  transactionalSenderConfigured?: boolean;
   /** Account-email verification (platform transactional). */
   emailVerification?: EmailVerificationService;
   /** Tenant marketing sender resolution (for the labeled test email). */
@@ -1726,6 +1735,21 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
         confirmationDispatch: deps.confirmationDispatch,
         pause: deps.marketingPause,
         drip: deps.drip,
+      }),
+    );
+  }
+
+  // Lead-magnet owner/admin config + inspection (owner/admin only).
+  if (deps.magnetDispatch || deps.magnetFulfillment) {
+    app.use(
+      "/api/platform",
+      csrfGuard,
+      createMagnetOpsRouter({
+        requireUser,
+        dispatch: deps.magnetDispatch,
+        fulfillment: deps.magnetFulfillment,
+        files: deps.files,
+        transactionalConfigured: Boolean(deps.transactionalSenderConfigured),
       }),
     );
   }

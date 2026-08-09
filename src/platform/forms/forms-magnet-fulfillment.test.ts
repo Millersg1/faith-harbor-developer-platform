@@ -164,10 +164,17 @@ describe("submission → lead-magnet fulfillment (all modes, marketing-independe
     expect(rows[0].organizationId).toBe(ORG); // owner's org, not "orgB"
   });
 
-  it("an invalid owner redirect config → generic none (never navigates)", async () => {
+  it("rejects an unsafe redirect config at SAVE time (owner/admin validation)", async () => {
     const { forms } = build();
-    const form = await makeForm(forms, { ...REDIRECT, redirectUrl: "javascript:alert(1)" });
-    const res = await forms.submitPublic(form.slug, { email: "lead@x.com" }, undefined, CTX);
-    expect(res.nextAction).toEqual({ type: "none" });
+    await expect(makeForm(forms, { ...REDIRECT, redirectUrl: "javascript:alert(1)" })).rejects.toThrow(
+      /https/i,
+    );
+  });
+
+  it("rejects a download/email magnet with no selected file at save time", async () => {
+    const { forms } = build();
+    await expect(
+      makeForm(forms, { id: "m1", title: "Guide", mode: "download" }),
+    ).rejects.toThrow(/PDF file/i);
   });
 });

@@ -21,6 +21,7 @@ import type { ConfirmationDispatchService } from "../marketing/ConfirmationDispa
 import type { EmailSuppressionService } from "../marketing/EmailSuppressionService";
 import type { LeadMagnetFulfillmentService } from "../magnet/LeadMagnetFulfillmentService";
 import type { LeadMagnetDispatchService } from "../magnet/LeadMagnetDispatchService";
+import { validateRedirectUrl } from "../magnet/redirectUrlPolicy";
 import { resolveOptInPolicy } from "../marketing/marketingOptInPolicy";
 import { PlatformFormRepository } from "./PlatformFormRepository";
 
@@ -845,6 +846,24 @@ function sanitizeSettings(
           ? { fileId: clip(s.leadMagnet.fileId, 64) }
           : {}),
       };
+      // Mode-specific validation at SAVE time (owner/admin). Redirect must be a
+      // valid https URL; email/download require a selected file. (PDF-eligibility
+      // + sender readiness are surfaced as WARNINGS by the config-inspect route,
+      // since they need async/tenant lookups.)
+      const lm = out.leadMagnet;
+      if (lm.mode === "redirect") {
+        const v = validateRedirectUrl(lm.redirectUrl);
+        if (!v.ok) {
+          throw new FormValidationError(
+            "The lead-magnet redirect must be a valid https:// URL.",
+          );
+        }
+        lm.redirectUrl = v.url;
+      } else if (!lm.fileId) {
+        throw new FormValidationError(
+          "This lead-magnet mode requires a selected PDF file.",
+        );
+      }
     }
   }
   return out;
