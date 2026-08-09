@@ -50,6 +50,10 @@ import type { UnsubscribeService } from "./marketing/EmailSuppressionService";
 import type { DoubleOptInService } from "./marketing/DoubleOptInService";
 import type { MarketingConsentService } from "./marketing/MarketingConsentService";
 import type { MarketingActivationService } from "./marketing/MarketingActivationService";
+import type { MarketingOutboxService } from "./marketing/MarketingOutboxService";
+import type { MarketingPauseService } from "./marketing/MarketingPauseService";
+import type { ConfirmationDispatchService } from "./marketing/ConfirmationDispatchService";
+import { createMarketingOpsRouter } from "./marketing/marketingOpsRouter";
 import type { EmailVerificationService } from "./auth/EmailVerificationService";
 import type { MarketingSenderService } from "./marketing/MarketingSenderService";
 import type { EmailDeliveryProvider } from "./email/EmailDeliveryProvider";
@@ -134,6 +138,12 @@ export interface PlatformAppDependencies {
   marketingConsent?: MarketingConsentService;
   /** Binds the marketing activation (awaiting→ready) on confirmation. */
   marketingActivations?: MarketingActivationService;
+  /** Durable marketing outbox (owner/admin review + delivery-unknown workflow). */
+  marketingOutbox?: MarketingOutboxService;
+  /** Durable marketing pause state (owner/admin pause/resume controls). */
+  marketingPause?: MarketingPauseService;
+  /** Confirmation dispatch (owner/admin visibility of stuck confirmations). */
+  confirmationDispatch?: ConfirmationDispatchService;
   /** Account-email verification (platform transactional). */
   emailVerification?: EmailVerificationService;
   /** Tenant marketing sender resolution (for the labeled test email). */
@@ -1693,6 +1703,22 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
         legal: deps.tenantLegal,
         requireUser,
         audit: deps.audit,
+      }),
+    );
+  }
+
+  // Marketing operations (owner/admin): pause/resume/cancel + delivery-unknown
+  // review. Mounted before the general tenant API so its /marketing/* paths win.
+  if (deps.marketingOutbox || deps.marketingPause) {
+    app.use(
+      "/api/platform",
+      csrfGuard,
+      createMarketingOpsRouter({
+        requireUser,
+        outbox: deps.marketingOutbox,
+        confirmationDispatch: deps.confirmationDispatch,
+        pause: deps.marketingPause,
+        drip: deps.drip,
       }),
     );
   }

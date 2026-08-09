@@ -278,6 +278,13 @@ export class DripService {
     return this.repository.listEnrollments();
   }
 
+  /** Fetch one enrollment by id (tenant-scoped via the repository). */
+  async getEnrollment(
+    id: string,
+  ): Promise<DripEnrollmentRecord | undefined> {
+    return this.repository.getEnrollment(id);
+  }
+
   async cancelEnrollment(
     id: string,
   ): Promise<DripEnrollmentRecord> {

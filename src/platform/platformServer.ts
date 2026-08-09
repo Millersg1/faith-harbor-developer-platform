@@ -122,6 +122,25 @@ import {
   ConfirmationDispatchService,
   ConfirmationDispatchRepository,
 } from "./marketing/ConfirmationDispatchService";
+import {
+  MarketingOutboxService,
+  MarketingOutboxRepository,
+} from "./marketing/MarketingOutboxService";
+import {
+  MarketingLimitsService,
+  MarketingMeterRepository,
+} from "./marketing/MarketingLimitsService";
+import {
+  MarketingPauseService,
+  MarketingPauseRepository,
+} from "./marketing/MarketingPauseService";
+import { MarketingWorker } from "./marketing/MarketingWorker";
+import {
+  createMarketingEligibility,
+  createMarketingSend,
+} from "./marketing/marketingSendComposition";
+import { createConfirmationSend } from "./marketing/ConfirmationDispatchService";
+import { createActivationGates } from "./marketing/marketingActivationGates";
 import { PlatformFormRepository } from "./forms/PlatformFormRepository";
 import { CalendarService } from "./calendar/CalendarService";
 import { CalendarEventRepository } from "./calendar/CalendarEventRepository";
@@ -556,6 +575,18 @@ async function start(): Promise<void> {
   const confirmationDispatch = new ConfirmationDispatchService(
     new ConfirmationDispatchRepository(db),
   );
+  // Durable marketing outbox + operational safeguards (limits/pause). The
+  // sending WORKER is env-gated and off by default (production behaviour is
+  // unchanged until a deliberate cutover); these services back the owner/admin
+  // review + control routes regardless.
+  const marketingOutboxRepo = new MarketingOutboxRepository(db);
+  const marketingOutbox = new MarketingOutboxService(marketingOutboxRepo);
+  const marketingLimits = new MarketingLimitsService(
+    new MarketingMeterRepository(db),
+  );
+  const marketingPause = new MarketingPauseService(
+    new MarketingPauseRepository(db),
+  );
   const forms = new PlatformFormService(
     new PlatformFormRepository(db),
     {
@@ -911,6 +942,9 @@ async function start(): Promise<void> {
     doubleOptIn,
     marketingConsent,
     marketingActivations,
+    marketingOutbox,
+    marketingPause,
+    confirmationDispatch,
     emailVerification,
     marketingSender,
     emailProvider,
@@ -1018,6 +1052,76 @@ async function start(): Promise<void> {
   }, DRIP_TICK_MS);
   dripTimer.unref();
 
+  // Durable marketing worker — env-gated and OFF by default, so production
+  // behaviour is unchanged until a deliberate cutover (the drip direct-send path
+  // and the safeguarded outbox path must not both send the same enrollment).
+  // When enabled it runs: (1) transactional confirmation dispatch, (3) the
+  // safeguarded marketing outbox, plus ready-activation processing.
+  const MARKETING_WORKER_ENABLED =
+    process.env.MARKETING_WORKER_ENABLED === "1";
+  const MARKETING_TICK_MS = Number(process.env.MARKETING_TICK_MS ?? 60_000);
+  let marketingTimer: NodeJS.Timeout | undefined;
+  let marketingWorker: MarketingWorker | undefined;
+  if (MARKETING_WORKER_ENABLED) {
+    const baseDomain =
+      process.env.PLATFORM_BASE_DOMAIN?.trim() || "allelitecloud.com";
+    const unsubscribeBase = `https://${baseDomain}`;
+    const activationGates = createActivationGates({
+      consent: marketingConsent,
+      suppression,
+      leads,
+      drip,
+      outbox: marketingOutbox,
+    });
+    marketingWorker = new MarketingWorker({
+      outbox: marketingOutboxRepo,
+      limits: marketingLimits,
+      pause: marketingPause,
+      confirmation: {
+        service: confirmationDispatch,
+        eligibility: async (row) => {
+          const d = await suppression.marketingDeliverability(
+            row.organizationId,
+            row.email,
+          );
+          return d.eligible
+            ? { eligible: true }
+            : { eligible: false, reason: d.reason ?? "suppressed" };
+        },
+        send: createConfirmationSend({
+          doubleOptIn,
+          marketingSender,
+          emailProvider,
+        }),
+      },
+      eligibility: createMarketingEligibility({
+        consent: marketingConsent,
+        suppression,
+        leads,
+        drip,
+        marketingSender,
+      }),
+      send: createMarketingSend({
+        marketingSender,
+        emailProvider,
+        unsubscribe,
+        unsubscribeBase,
+      }),
+    });
+    marketingTimer = setInterval(() => {
+      workerLastTickAt = new Date().toISOString();
+      void (async () => {
+        try {
+          await marketingWorker!.runOnce("platform");
+          await marketingActivations.activateReady(activationGates);
+        } catch (error: unknown) {
+          console.error("Marketing worker tick failed.", error);
+        }
+      })();
+    }, MARKETING_TICK_MS);
+    marketingTimer.unref();
+  }
+
   let shuttingDown = false;
 
   const shutdown = (
@@ -1033,6 +1137,10 @@ async function start(): Promise<void> {
     );
 
     clearInterval(dripTimer);
+    // Marketing worker: stop claiming new work; any in-flight lease completes or
+    // safely expires (recovered as delivery_unknown on next start, never resent).
+    if (marketingTimer) clearInterval(marketingTimer);
+    marketingWorker?.beginShutdown();
 
     server.close(() => {
       void db

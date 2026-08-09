@@ -373,6 +373,60 @@ The periodic dispatch/enrollment **worker** (limits, concurrency, transactional>
 marketing priority, auto-pause) is deferred to the operational-safeguards stage;
 until then the durable rows queue safely and inertly.
 
+## Operational safeguards + durable worker (S7b-iv)
+
+The marketing sending pipeline has durable, restart-safe safeguards and a
+priority worker. **Tokens stay opaque random capabilities** — all bindings live
+only in the hash-keyed server record, never in the token.
+
+- **Priority & separation.** Per cycle the worker runs (1) transactional
+  confirmation dispatch, then (3) the marketing outbox. Marketing volume, pause,
+  throttle, auto-pause, or failure **never** blocks transactional email
+  (verification, password reset, privacy-request, consent-confirmation,
+  security). Marketing auto-pause pauses marketing only.
+- **Durable, restart-safe limits** (`marketing_send_meter`): per-tenant +
+  platform hourly/daily send caps, per-tenant/platform concurrency, bounded
+  retry. Counters live in the DB, so caps survive restarts. **Defaults are
+  conservative, configurable placeholders — not a measured production capacity
+  claim; they must be compared read-only against the server's real Exim/cPanel
+  limits before production use.**
+- **Attempts vs sends.** SMTP attempts are metered separately from confirmed
+  `sent` results, so a run of failures can't create an unlimited retry storm;
+  marketing metering happens exactly once per confirmed acceptance.
+- **Fairness.** Per-tenant per-cycle batch cap + SKIP-LOCKED leasing so one large
+  tenant can't monopolize the worker. Rate/pause/paused-sequence **defer** a
+  message (lease released, retried later) — never a failure, never metered.
+- **Final send-time eligibility** (rechecked immediately before each SMTP
+  attempt, in the message's tenant scope): matching+confirmed consent, tenant +
+  global suppression, lead active, enrollment active, bound sequence
+  exists/owned/active, and an **approved sender resolved at send time** (a
+  removed/invalid sender stops queued messages). Failures become **specific
+  durable** skip / needs_attention / defer / terminal states — not retry loops.
+- **Failure-rate auto-pause** uses only transport-**observable** evidence
+  (connection/auth/TLS/pre-acceptance/permanent rejection, repeated terminal,
+  delivery-unknown rate) with a minimum sample, so one failure never pauses a
+  tenant. It never infers inbox delivery, post-acceptance bounce, complaint,
+  open, or click. Audit records carry only a reason enum + threshold + recovery
+  note — never an address, SMTP body, content, or credential.
+- **delivery_unknown is never auto-resent.** A crashed lease or ambiguous result
+  is surfaced for owner/admin review with explicit actions: **resolve without
+  resend**, **deliberate retry** (which requires acknowledging that the earlier
+  attempt may have been accepted and a duplicate is possible), or **cancel**.
+  Every attempt is preserved immutably.
+- **Owner/admin controls** (`/api/platform/marketing/*`, owner/admin only,
+  members denied): pause/resume tenant marketing, pause/resume a sequence, cancel
+  an enrollment (which also cancels its queued outbox steps), and inspect
+  needs-attention work + immutable history — all fail-closed to the caller's org.
+- **Worker lifecycle.** `FOR UPDATE SKIP LOCKED` claiming, short claim
+  transactions, lease ownership + expiry, multi-worker-safe (production is
+  single-process today), PII-free health counters, graceful shutdown (stops
+  claiming new work; in-flight completes or the lease safely expires). **The
+  worker never starts in tests, and is env-gated OFF in production** until a
+  deliberate cutover — because the legacy drip direct-send path and the
+  safeguarded outbox path must not both send the same enrollment. Reconciling
+  those two paths (routing opted-in marketing exclusively through the outbox) is
+  the remaining integration step before enabling the worker live.
+
 ## Current status of the build
 
 - Fail-closed: public forms create the CRM lead only; **marketing enrollment is
