@@ -790,6 +790,43 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS confirmation_dispatch_due_idx
         ON confirmation_dispatch (status, next_attempt_at);
     `);
+    // Durable, RESTART-SAFE marketing send meter. One row per
+    // (scope, window_kind, window_start): scope = an organization id or the
+    // literal 'PLATFORM'; window_kind = 'hour' | 'day'. `sent_count` is the
+    // marketing-metering point (confirmed SMTP acceptance, counted ONCE);
+    // `attempt_count`/`failure_count`/`unknown_count` track observable SMTP
+    // outcomes for storm-protection + failure-rate auto-pause, and never gate
+    // metering. Counters survive restarts because they live here, not in memory.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_send_meter (
+        scope_key     TEXT NOT NULL,
+        window_kind   TEXT NOT NULL,
+        window_start  TEXT NOT NULL,
+        sent_count    INTEGER NOT NULL DEFAULT 0,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        unknown_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (scope_key, window_kind, window_start)
+      );
+    `);
+    // Durable marketing pause state (tenant-wide or per-sequence). Auto-pause
+    // records carry only a reason ENUM + threshold + scope + recovery note —
+    // NEVER an address, SMTP body, content, or credential. Transactional email
+    // is never affected by these rows.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS marketing_pause (
+        scope       TEXT NOT NULL,
+        scope_id    TEXT NOT NULL,
+        paused      BOOLEAN NOT NULL DEFAULT TRUE,
+        reason      TEXT,
+        threshold   TEXT,
+        recovery    TEXT,
+        auto        BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_by  TEXT,
+        updated_at  TEXT NOT NULL,
+        PRIMARY KEY (scope, scope_id)
+      );
+    `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS double_optin_tokens (

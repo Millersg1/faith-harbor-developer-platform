@@ -332,6 +332,35 @@ export class MarketingOutboxRepository {
     return m && m.organizationId === organizationId ? m : undefined;
   }
 
+  /**
+   * Count messages currently in-flight (`sending`), for the concurrency limit.
+   * `organizationId === null` counts platform-wide. Derived from durable row
+   * state, so it survives restarts (a crashed lease is recovered separately).
+   */
+  async countSending(organizationId: string | null): Promise<number> {
+    if (this.db) {
+      const r = organizationId
+        ? await this.db.query(
+            "SELECT COUNT(*)::int AS n FROM marketing_outbox WHERE status='sending' AND organization_id=$1",
+            [organizationId],
+          )
+        : await this.db.query(
+            "SELECT COUNT(*)::int AS n FROM marketing_outbox WHERE status='sending'",
+          );
+      return Number((r.rows[0] as { n: number } | undefined)?.n ?? 0);
+    }
+    let n = 0;
+    for (const m of this.rows.values()) {
+      if (
+        m.status === "sending" &&
+        (organizationId === null || m.organizationId === organizationId)
+      ) {
+        n += 1;
+      }
+    }
+    return n;
+  }
+
   /** Cancel queued/failed messages for an enrollment (pause/cancel). */
   async cancelForEnrollment(
     enrollmentId: string,
