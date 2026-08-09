@@ -827,6 +827,50 @@ export class PostgresDatabase
         PRIMARY KEY (scope, scope_id)
       );
     `);
+    // Lead-magnet fulfillment (TRANSACTIONAL, independent of marketing). One row
+    // per submission (unique submission_id → idempotent). Binds a SNAPSHOT of the
+    // owner's magnet config so later config changes never rewrite history.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS lead_magnet_fulfillments (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        form_id          TEXT NOT NULL,
+        submission_id    TEXT NOT NULL,
+        magnet_id        TEXT NOT NULL,
+        mode             TEXT NOT NULL,
+        email            TEXT,
+        file_id          TEXT,
+        redirect_url     TEXT,
+        email_subject    TEXT,
+        status           TEXT NOT NULL,
+        reason           TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS lead_magnet_fulfillments_submission_uniq
+        ON lead_magnet_fulfillments (submission_id);
+    `);
+    // Controlled, time-limited DOWNLOAD capabilities. Opaque token stored as a
+    // SHA-256 hash only; bound to org/form/fulfillment/file; short TTL + bounded
+    // use count; atomic single-use redemption.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS lead_magnet_capabilities (
+        token_hash       TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        form_id          TEXT NOT NULL,
+        fulfillment_id   TEXT NOT NULL,
+        file_id          TEXT NOT NULL,
+        expires_at       TEXT NOT NULL,
+        max_uses         INTEGER NOT NULL DEFAULT 1,
+        used_count       INTEGER NOT NULL DEFAULT 0,
+        revoked          BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at       TEXT NOT NULL
+      );
+    `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS double_optin_tokens (
