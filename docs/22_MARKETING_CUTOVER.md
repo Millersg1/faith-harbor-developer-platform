@@ -19,9 +19,14 @@ paths are mutually exclusive by construction:
 | `legacy` | **runs** | **runs** | refuses | off | **runs** |
 | `outbox` | refuses | refuses | **runs** | on | **runs** |
 
-- Unset → `legacy` (documented safe default: preserve pre-cutover behaviour).
-- Unrecognized value → **fails closed to `disabled`** (a loud startup banner
-  reports it). Startup logs the active mode; `/system-health` exposes
+- **Missing, empty, or unrecognized → `disabled`** — resolution ALWAYS fails
+  closed. Marketing sending requires an EXPLICIT, recognized mode, so a missing
+  `MARKETING_DELIVERY_MODE` can never silently enable the legacy path on a new
+  deployment, a restored server, a test environment, or a future instance. A
+  loud startup banner reports the failed-closed state. `legacy` is set ONLY when
+  an operator deliberately preserves existing behaviour during the staged
+  transition; `outbox` is set deliberately at the final cutover. **Neither mode
+  is ever inferred.** Startup logs the active mode; `/system-health` exposes
   `marketingDeliveryMode`. Tests never start the worker (no timers in
   `createPlatformApp`; the worker lives only in `platformServer`).
 - **Transactional email is never gated by mode** — account verification, password
@@ -35,9 +40,14 @@ paths are mutually exclusive by construction:
 
 1. **Backup** the database and application (see the deployment runbook; snapshot
    the DB and the app directory).
-2. **Confirm one process and the current mode.** Verify a single app process is
-   running and read the active mode from the startup banner / `/system-health`
-   (expected: `legacy`).
+2. **Confirm one process and set the mode deliberately.** Verify a single app
+   process is running and read the active mode from the startup banner /
+   `/system-health`. Because resolution fails closed, an unset variable reports
+   `disabled`. Preflight must **explicitly inspect the current production state**
+   (are there active legacy enrollments still being served?) and, only when
+   deliberately preserving existing behaviour during the staged transition, set
+   `MARKETING_DELIVERY_MODE=legacy` and restart. Never rely on an inferred
+   default.
 3. **Pause legacy marketing claims.** Set `MARKETING_DELIVERY_MODE=disabled` and
    restart the single process. Legacy `runDue` now refuses; confirmation +
    transactional continue. (Alternatively pause per-tenant via the ops routes.)

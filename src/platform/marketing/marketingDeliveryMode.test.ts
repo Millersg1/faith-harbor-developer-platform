@@ -21,23 +21,28 @@ import {
   type MarketingDeliveryMode,
 } from "./marketingDeliveryMode";
 
-describe("resolveMarketingDeliveryMode — single, fail-safe switch", () => {
-  it("unset → legacy (documented safe default, preserves behaviour)", () => {
+describe("resolveMarketingDeliveryMode — always fails closed", () => {
+  it("missing variable → disabled (no silent legacy)", () => {
     expect(resolveMarketingDeliveryMode(undefined)).toMatchObject({
-      mode: "legacy",
-      source: "default_unset",
+      mode: "disabled",
+      source: "unset_failed_closed",
     });
-    expect(resolveMarketingDeliveryMode("")).toMatchObject({ mode: "legacy" });
   });
-  it("recognized values are honored (case/space-insensitive)", () => {
-    expect(resolveMarketingDeliveryMode("outbox").mode).toBe("outbox");
-    expect(resolveMarketingDeliveryMode(" Legacy ").mode).toBe("legacy");
-    expect(resolveMarketingDeliveryMode("disabled").mode).toBe("disabled");
+  it("empty value → disabled", () => {
+    expect(resolveMarketingDeliveryMode("")).toMatchObject({ mode: "disabled" });
+    expect(resolveMarketingDeliveryMode("   ")).toMatchObject({ mode: "disabled" });
   });
-  it("an unrecognized value FAILS CLOSED to disabled", () => {
+  it("malformed value → disabled", () => {
     const r = resolveMarketingDeliveryMode("outbx");
     expect(r.mode).toBe("disabled");
     expect(r.source).toBe("invalid_failed_closed");
+    expect(resolveMarketingDeliveryMode("on").mode).toBe("disabled");
+    expect(resolveMarketingDeliveryMode("true").mode).toBe("disabled");
+  });
+  it("explicit legacy → legacy; explicit outbox → outbox; explicit disabled → disabled (case/space-insensitive)", () => {
+    expect(resolveMarketingDeliveryMode(" Legacy ").mode).toBe("legacy");
+    expect(resolveMarketingDeliveryMode("outbox").mode).toBe("outbox");
+    expect(resolveMarketingDeliveryMode("disabled").mode).toBe("disabled");
   });
 });
 
@@ -163,16 +168,19 @@ describe("outbox worker is gated by mode; confirmation is independent", () => {
     }
   });
 
-  it("transactional confirmation dispatch runs even when marketing is disabled", async () => {
-    const h = workerHarness("disabled");
-    await h.confirmation.enqueue({
-      organizationId: "orgA",
-      activationId: "act-1",
-      email: "c@x.com",
-      confirmBase: "https://a.example",
-    });
-    await h.worker.runOnce("w");
-    expect(h.counts.confirmation).toBe(1); // transactional unaffected by mode
-    expect(h.counts.marketing).toBe(0);
+  it("transactional confirmation dispatch runs in EVERY mode", async () => {
+    for (const mode of ["disabled", "legacy", "outbox"] as const) {
+      const h = workerHarness(mode);
+      await h.confirmation.enqueue({
+        organizationId: "orgA",
+        activationId: `act-${mode}`,
+        email: "c@x.com",
+        confirmBase: "https://a.example",
+      });
+      await h.worker.runOnce("w");
+      expect(h.counts.confirmation).toBe(1); // transactional unaffected by mode
+      // marketing only in outbox (no outbox rows enqueued here, so 0 anyway)
+      expect(h.counts.marketing).toBe(0);
+    }
   });
 });
