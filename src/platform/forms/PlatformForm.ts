@@ -100,6 +100,12 @@ export interface FormConsentConfig {
    * Defaults to true for public forms; a tenant may disable it deliberately.
    */
   doubleOptIn?: boolean;
+  /**
+   * The drip sequence a CONFIRMED opt-in enrolls into. Without it, consent is
+   * still captured but no marketing activation/enrollment is created — the lead
+   * and lead magnet are unaffected (fail-closed marketing).
+   */
+  sequenceId?: string;
 }
 
 export type LeadMagnetMode = "email" | "redirect" | "download";

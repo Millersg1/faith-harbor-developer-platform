@@ -114,6 +114,14 @@ import {
   DoubleOptInService,
   DoubleOptInTokenRepository,
 } from "./marketing/DoubleOptInService";
+import {
+  MarketingActivationService,
+  MarketingActivationRepository,
+} from "./marketing/MarketingActivationService";
+import {
+  ConfirmationDispatchService,
+  ConfirmationDispatchRepository,
+} from "./marketing/ConfirmationDispatchService";
 import { PlatformFormRepository } from "./forms/PlatformFormRepository";
 import { CalendarService } from "./calendar/CalendarService";
 import { CalendarEventRepository } from "./calendar/CalendarEventRepository";
@@ -539,9 +547,25 @@ async function start(): Promise<void> {
   const marketingConsent = new MarketingConsentService(
     new MarketingConsentRepository(db),
   );
+  // Marketing activation (durable intent) + durable, transactional double-opt-in
+  // confirmation dispatch. Inert until a form configures a target sequence; the
+  // sending worker itself is wired in a later stage (operational safeguards).
+  const marketingActivations = new MarketingActivationService(
+    new MarketingActivationRepository(db),
+  );
+  const confirmationDispatch = new ConfirmationDispatchService(
+    new ConfirmationDispatchRepository(db),
+  );
   const forms = new PlatformFormService(
     new PlatformFormRepository(db),
-    { leads, email, activity, consent: marketingConsent },
+    {
+      leads,
+      email,
+      activity,
+      consent: marketingConsent,
+      activations: marketingActivations,
+      confirmationDispatch,
+    },
   );
 
   const calendar = new CalendarService(
@@ -886,6 +910,7 @@ async function start(): Promise<void> {
     unsubscribe,
     doubleOptIn,
     marketingConsent,
+    marketingActivations,
     emailVerification,
     marketingSender,
     emailProvider,

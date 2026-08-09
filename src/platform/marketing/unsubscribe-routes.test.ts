@@ -34,6 +34,10 @@ import {
   MarketingConsentRepository,
   MarketingConsentService,
 } from "./MarketingConsentService";
+import {
+  MarketingActivationRepository,
+  MarketingActivationService,
+} from "./MarketingActivationService";
 
 function build() {
   const organizations = new OrganizationService();
@@ -51,6 +55,8 @@ function build() {
   const marketingConsent = new MarketingConsentService(
     new MarketingConsentRepository(),
   );
+  const activationRepo = new MarketingActivationRepository();
+  const marketingActivations = new MarketingActivationService(activationRepo);
   const app = createPlatformApp({
     organizations,
     users,
@@ -66,9 +72,18 @@ function build() {
     unsubscribe,
     doubleOptIn,
     marketingConsent,
+    marketingActivations,
     baseDomain: "allelitecloud.com",
   });
-  return { app, suppression, unsubscribe, doubleOptIn, marketingConsent };
+  return {
+    app,
+    suppression,
+    unsubscribe,
+    doubleOptIn,
+    marketingConsent,
+    marketingActivations,
+    activationRepo,
+  };
 }
 
 describe("unsubscribe routes — fragment-exchange, scanner-safe, neutral", () => {
@@ -154,5 +169,45 @@ describe("double-opt-in confirm route", () => {
     expect(res.status).toBe(200);
     expect(res.headers["referrer-policy"]).toBe("no-referrer");
     expect(res.headers["cache-control"]).toMatch(/no-store/);
+  });
+
+  it("confirming binds the marketing activation (awaiting→ready) for the exact terms", async () => {
+    const { app, doubleOptIn, marketingConsent, marketingActivations, activationRepo } =
+      build();
+    let token = "";
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const consent = await marketingConsent.record({
+        email: "c@x.com",
+        wording: "w",
+        version: "v1",
+        doubleOptIn: true,
+      });
+      await marketingActivations.createIntent({
+        organizationId: "orgA",
+        formId: null,
+        sequenceId: "seq-1",
+        email: "c@x.com",
+        consentVersion: "v1",
+        doubleOptIn: true,
+        consentRef: consent.id,
+      });
+      token = await doubleOptIn.mint({
+        organizationId: "orgA",
+        email: "c@x.com",
+        consentId: consent.id,
+        version: "v1",
+      });
+    });
+
+    const res = await request(app).post("/marketing/confirm").send({ token });
+    expect(res.body).toEqual({ ok: true });
+
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      // Consent confirmed AND the activation flipped to ready (bound terms).
+      expect(await marketingConsent.hasConfirmedConsent("c@x.com")).toBe(true);
+      const act = await activationRepo.findByTerms("orgA", null, "c@x.com", "v1");
+      expect(act?.status).toBe("ready");
+      expect(act?.confirmedAt).toBeTruthy();
+    });
   });
 });

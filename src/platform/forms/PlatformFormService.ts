@@ -16,10 +16,23 @@ import {
 } from "./PlatformForm";
 import type { PlatformLeadRecord } from "../crm/PlatformLead";
 import type { MarketingConsentService } from "../marketing/MarketingConsentService";
+import type { MarketingActivationService } from "../marketing/MarketingActivationService";
+import type { ConfirmationDispatchService } from "../marketing/ConfirmationDispatchService";
+import { resolveOptInPolicy } from "../marketing/marketingOptInPolicy";
 import { PlatformFormRepository } from "./PlatformFormRepository";
 
 export class FormValidationError extends Error {}
 export class FormNotFoundError extends Error {}
+
+/** Per-request public context (Origin trust + canonical host for links). */
+export interface PublicSubmitContext {
+  /** Raw request Origin header (may be undefined / "null"). */
+  origin?: string;
+  /** Whether that Origin is in the form's explicit allowlist. */
+  originAllowlisted?: boolean;
+  /** The form owner's trusted canonical origin, for confirmation links. */
+  canonicalBase?: string;
+}
 
 export interface FormServiceOptions {
   leads?: PlatformLeadService;
@@ -27,6 +40,10 @@ export interface FormServiceOptions {
   activity?: ActivityService;
   /** Records affirmative marketing consent (when a form enables it). */
   consent?: MarketingConsentService;
+  /** Durable marketing-activation intent (created only on granted consent). */
+  activations?: MarketingActivationService;
+  /** Durable double-opt-in confirmation-email dispatch. */
+  confirmationDispatch?: ConfirmationDispatchService;
   now?: () => number;
 }
 
@@ -47,6 +64,10 @@ export class PlatformFormService {
 
   private readonly consent?: MarketingConsentService;
 
+  private readonly activations?: MarketingActivationService;
+
+  private readonly confirmationDispatch?: ConfirmationDispatchService;
+
   private readonly now: () => number;
 
   constructor(
@@ -58,6 +79,8 @@ export class PlatformFormService {
     this.email = options.email;
     this.activity = options.activity;
     this.consent = options.consent;
+    this.activations = options.activations;
+    this.confirmationDispatch = options.confirmationDispatch;
     this.now =
       options.now ??
       (() => Date.now());
@@ -210,6 +233,7 @@ export class PlatformFormService {
     slug: string,
     data: Record<string, unknown>,
     attribution?: FormAttribution,
+    ctx?: PublicSubmitContext,
   ): Promise<{
     confirmationMessage: string;
   }> {
@@ -340,6 +364,68 @@ export class PlatformFormService {
               }
             } catch {
               // A consent-log hiccup must not fail the submission.
+            }
+          }
+        }
+
+        // Marketing ACTIVATION + double-opt-in confirmation dispatch. Entirely
+        // separate from lead creation and lead-magnet delivery below — a failure
+        // here never blocks the lead, and a lead never depends on this. Gated on:
+        // granted consent, a configured target sequence, and the marketing deps
+        // being wired (fail-closed otherwise). The opt-in policy FORCES double
+        // opt-in for untrusted origins (no Origin / Origin: null / allowAnyOrigin)
+        // regardless of the tenant's preference.
+        if (
+          consentGranted &&
+          consentCfg?.sequenceId &&
+          this.consent &&
+          this.activations
+        ) {
+          const email = extractLead(form, clean)?.email;
+          if (email) {
+            try {
+              const decision = resolveOptInPolicy({
+                origin: ctx?.origin,
+                originAllowlisted: Boolean(ctx?.originAllowlisted),
+                allowAnyOrigin: Boolean(form.settings.allowAnyOrigin),
+                formDoubleOptIn: consentCfg.doubleOptIn !== false,
+              });
+              const consentRecord =
+                await this.consent.latestForEmail(email);
+              const intent = await this.activations.createIntent({
+                organizationId: form.organizationId,
+                formId: form.id,
+                sequenceId: consentCfg.sequenceId,
+                email,
+                consentWording: consentCfg.wording,
+                consentVersion: consentCfg.version,
+                doubleOptIn: decision.doubleOptIn,
+                consentRef: consentRecord?.id ?? null,
+                // Single opt-in (only when the origin is trustworthy AND the
+                // tenant chose it) is immediately ready; double opt-in waits.
+                ready: !decision.doubleOptIn,
+              });
+              // Double opt-in → enqueue a durable, transactional confirmation
+              // email (no marketing unsubscribe headers, never metered). It is
+              // idempotent per activation, so a repeat submission won't double it.
+              // Requires the dispatch dep AND a canonical host for the link.
+              if (
+                decision.doubleOptIn &&
+                this.confirmationDispatch &&
+                ctx?.canonicalBase &&
+                intent.status === "awaiting_confirmation"
+              ) {
+                await this.confirmationDispatch.enqueue({
+                  organizationId: form.organizationId,
+                  activationId: intent.id,
+                  email,
+                  consentRef: consentRecord?.id ?? null,
+                  consentVersion: consentCfg.version,
+                  confirmBase: ctx.canonicalBase,
+                });
+              }
+            } catch {
+              // Marketing activation/dispatch must never fail the submission.
             }
           }
         }
@@ -634,6 +720,9 @@ function sanitizeSettings(
       doubleOptIn: s.consent.doubleOptIn !== false,
       ...(clip(s.consent.policyUrl, 512)
         ? { policyUrl: clip(s.consent.policyUrl, 512) }
+        : {}),
+      ...(clip(s.consent.sequenceId, 64)
+        ? { sequenceId: clip(s.consent.sequenceId, 64) }
         : {}),
     };
   }

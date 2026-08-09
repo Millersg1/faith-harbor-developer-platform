@@ -49,6 +49,7 @@ import type { AuthedRequest } from "./auth/requireUser";
 import type { UnsubscribeService } from "./marketing/EmailSuppressionService";
 import type { DoubleOptInService } from "./marketing/DoubleOptInService";
 import type { MarketingConsentService } from "./marketing/MarketingConsentService";
+import type { MarketingActivationService } from "./marketing/MarketingActivationService";
 import type { EmailVerificationService } from "./auth/EmailVerificationService";
 import type { MarketingSenderService } from "./marketing/MarketingSenderService";
 import type { EmailDeliveryProvider } from "./email/EmailDeliveryProvider";
@@ -131,6 +132,8 @@ export interface PlatformAppDependencies {
   doubleOptIn?: DoubleOptInService;
   /** Records/confirms marketing consent on double-opt-in confirmation. */
   marketingConsent?: MarketingConsentService;
+  /** Binds the marketing activation (awaiting→ready) on confirmation. */
+  marketingActivations?: MarketingActivationService;
   /** Account-email verification (platform transactional). */
   emailVerification?: EmailVerificationService;
   /** Tenant marketing sender resolution (for the labeled test email). */
@@ -964,8 +967,20 @@ export function createPlatformApp(
           leadMagnetId: tag(meta.leadMagnetId),
         };
 
+        // Public context for the opt-in policy + confirmation-link host. The
+        // policy FORCES double opt-in unless the Origin is a trustworthy,
+        // allowlisted browser origin.
+        const submitOrigin =
+          typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+        const submitCtx = {
+          origin: submitOrigin,
+          originAllowlisted: submitOrigin
+            ? isOriginAllowed(form.settings, submitOrigin)
+            : false,
+          canonicalBase: (req as PublicFormReq).canonicalBase,
+        };
         forms
-          .submitPublic(String(req.params.slug), data, attribution)
+          .submitPublic(String(req.params.slug), data, attribution, submitCtx)
           .then((result) => {
             submitIdemp.set(idempKey, { at: now, body: result });
             res.json(result);
@@ -1147,23 +1162,37 @@ fetch('${endpoint}',{method:'POST',credentials:'same-origin',headers:{'Content-T
             .confirm(bodyToken(req))
             .then(async (outcome) => {
               if (outcome.ok) {
-                // Record confirmed consent (immutable) in the token's tenant
-                // scope. Email verification confirms control of the address,
-                // not full identity.
-                if (deps.marketingConsent) {
-                  await runWithTenant(
-                    { organizationId: outcome.organizationId },
-                    async () => {
-                      const latest =
-                        await deps.marketingConsent!.latestForEmail(
-                          outcome.email,
-                        );
-                      if (latest && !latest.confirmedAt) {
-                        await deps.marketingConsent!.confirm(latest.id);
-                      }
-                    },
-                  ).catch(() => undefined);
-                }
+                // Record confirmed consent (immutable) AND bind the marketing
+                // activation (awaiting→ready) to the EXACT terms accepted, all
+                // in the token's tenant scope. Email verification confirms
+                // control of the address, not full identity. The enrollment
+                // itself is done later by the activation worker, which rechecks
+                // every gate — this only flips the intent to ready.
+                await runWithTenant(
+                  { organizationId: outcome.organizationId },
+                  async () => {
+                    const latest = deps.marketingConsent
+                      ? await deps.marketingConsent.latestForEmail(outcome.email)
+                      : undefined;
+                    if (
+                      deps.marketingConsent &&
+                      latest &&
+                      !latest.confirmedAt
+                    ) {
+                      await deps.marketingConsent.confirm(latest.id);
+                    }
+                    if (deps.marketingActivations && latest) {
+                      // Bound by (org, formId, email, version) — a token can
+                      // only ready the activation whose exact terms it carries.
+                      await deps.marketingActivations.confirm(
+                        outcome.organizationId,
+                        outcome.email,
+                        latest.version,
+                        latest.formId,
+                      );
+                    }
+                  },
+                ).catch(() => undefined);
               }
               if (isForm(req)) {
                 res.type("html").send(

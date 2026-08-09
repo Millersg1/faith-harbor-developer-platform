@@ -754,6 +754,42 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS marketing_activations_ready_idx
         ON marketing_activations (status, next_attempt_at);
     `);
+    // Durable, crash-safe dispatch of double-opt-in CONFIRMATION emails. Kept
+    // separate from marketing_outbox: confirmation email is transactional (no
+    // unsubscribe headers, never metered) and keyed by activation, not
+    // enrollment/step. `delivery_unknown` marks an ambiguous/crashed attempt
+    // that must never be blind-resent. No raw token is ever stored here — each
+    // send attempt mints a fresh confirmation token.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS confirmation_dispatch (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        activation_id    TEXT NOT NULL,
+        email            TEXT NOT NULL,
+        consent_ref      TEXT,
+        consent_version  TEXT,
+        confirm_base     TEXT NOT NULL,
+        status           TEXT NOT NULL DEFAULT 'queued',
+        attempts         INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at  TEXT NOT NULL,
+        lease_owner      TEXT,
+        lease_until      TEXT,
+        provider_id      TEXT,
+        reason           TEXT,
+        resolved_at      TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS confirmation_dispatch_activation_uniq
+        ON confirmation_dispatch (activation_id);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS confirmation_dispatch_due_idx
+        ON confirmation_dispatch (status, next_attempt_at);
+    `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS double_optin_tokens (

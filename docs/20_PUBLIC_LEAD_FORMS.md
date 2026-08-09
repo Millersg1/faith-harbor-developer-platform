@@ -328,6 +328,51 @@ transactional probe to their own inbox.
   and a human message. Raw SMTP responses, addresses, bodies, and credentials
   are never exposed.
 
+## Submission → activation → confirmation dispatch (S7b-iii b:3)
+
+Public submission now wires marketing **activation** and a durable, **transactional**
+double-opt-in **confirmation dispatch** — while keeping the lead (and the future
+lead magnet) completely independent.
+
+- **Forced-opt-in policy.** `resolveOptInPolicy` is consulted per submission. A
+  trustworthy, allowlisted browser Origin honors the tenant's single/double
+  choice; **no Origin / `Origin: null` / `allowAnyOrigin` FORCE double opt-in**.
+  The lead and lead magnet still proceed either way — only an immediately-active
+  marketing enrollment is withheld until the recipient confirms.
+- **Activation intent.** On granted consent AND a configured target
+  `consent.sequenceId`, a durable `marketing_activations` intent is created,
+  binding the EXACT terms accepted (org, formId, email, consent version). Single
+  opt-in → `ready`; double opt-in → `awaiting_confirmation`. With no sequence
+  configured, consent + lead are still recorded but no activation exists
+  (fail-closed marketing).
+- **Durable confirmation dispatch (`confirmation_dispatch`).** Separate from the
+  marketing outbox because a confirmation email is **transactional**: it carries
+  the tenant's sender identity + physical address but **no List-Unsubscribe /
+  one-click headers** and is **never metered** as a marketing send. Keyed by
+  activation (idempotent — a repeat submission never double-sends). Crash-safe
+  with honest states (`queued`/`sending`/`sent`/`failed`/`terminal`/
+  `delivery_unknown`): a crashed lease or an ambiguous transport result becomes
+  `delivery_unknown` and is **never blind-resent**; `uncertain` acceptance never
+  auto-retries; a deliberate retry mints a **brand-new** token (no raw token is
+  ever stored — each attempt mints fresh). Fails closed when the tenant's
+  marketing sender isn't configured.
+- **Bound confirmation.** `POST /marketing/confirm` validates the token, records
+  confirmed consent, AND flips the activation `awaiting→ready` — but only the
+  activation whose exact bound terms the token carries. Enrollment itself is done
+  later by the activation worker, which re-checks every gate (consent, suppression,
+  lead-active, the bound sequence still valid) before enrolling.
+- **Independence & isolation.** The activation/dispatch block is wrapped so a
+  failure never blocks the CRM lead; everything runs inside the form owner's
+  tenant scope (`runWithTenant`), so nothing crosses tenants. Submission replies
+  stay generic (`confirmationMessage`) — enumeration-safe.
+- **Unsubscribe headers** appear only on actual marketing messages (the drip
+  sends via the marketing outbox / `buildMarketingEmail`), never on the
+  verification, sender-test, or confirmation emails.
+
+The periodic dispatch/enrollment **worker** (limits, concurrency, transactional>
+marketing priority, auto-pause) is deferred to the operational-safeguards stage;
+until then the durable rows queue safely and inertly.
+
 ## Current status of the build
 
 - Fail-closed: public forms create the CRM lead only; **marketing enrollment is
