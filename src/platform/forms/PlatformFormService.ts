@@ -18,6 +18,9 @@ import type { PlatformLeadRecord } from "../crm/PlatformLead";
 import type { MarketingConsentService } from "../marketing/MarketingConsentService";
 import type { MarketingActivationService } from "../marketing/MarketingActivationService";
 import type { ConfirmationDispatchService } from "../marketing/ConfirmationDispatchService";
+import type { EmailSuppressionService } from "../marketing/EmailSuppressionService";
+import type { LeadMagnetFulfillmentService } from "../magnet/LeadMagnetFulfillmentService";
+import type { LeadMagnetDispatchService } from "../magnet/LeadMagnetDispatchService";
 import { resolveOptInPolicy } from "../marketing/marketingOptInPolicy";
 import { PlatformFormRepository } from "./PlatformFormRepository";
 
@@ -44,6 +47,12 @@ export interface FormServiceOptions {
   activations?: MarketingActivationService;
   /** Durable double-opt-in confirmation-email dispatch. */
   confirmationDispatch?: ConfirmationDispatchService;
+  /** Transactional lead-magnet fulfillment (independent of marketing). */
+  magnetFulfillment?: LeadMagnetFulfillmentService;
+  /** Durable transactional lead-magnet email dispatch. */
+  magnetDispatch?: LeadMagnetDispatchService;
+  /** Suppression checks (GLOBAL suppression can block a magnet email). */
+  suppression?: EmailSuppressionService;
   now?: () => number;
 }
 
@@ -68,6 +77,12 @@ export class PlatformFormService {
 
   private readonly confirmationDispatch?: ConfirmationDispatchService;
 
+  private readonly magnetFulfillment?: LeadMagnetFulfillmentService;
+
+  private readonly magnetDispatch?: LeadMagnetDispatchService;
+
+  private readonly suppression?: EmailSuppressionService;
+
   private readonly now: () => number;
 
   constructor(
@@ -81,6 +96,9 @@ export class PlatformFormService {
     this.consent = options.consent;
     this.activations = options.activations;
     this.confirmationDispatch = options.confirmationDispatch;
+    this.magnetFulfillment = options.magnetFulfillment;
+    this.magnetDispatch = options.magnetDispatch;
+    this.suppression = options.suppression;
     this.now =
       options.now ??
       (() => Date.now());
@@ -236,6 +254,15 @@ export class PlatformFormService {
     ctx?: PublicSubmitContext,
   ): Promise<{
     confirmationMessage: string;
+    /**
+     * The next action for the (possibly cross-origin embedded) client. Redirect/
+     * download carry a URL built from the OWNER canonical host; email/none carry
+     * no URL. The server never issues a 302 — the embed navigates on success.
+     */
+    nextAction?: {
+      type: "redirect" | "download" | "none";
+      url?: string;
+    };
   }> {
     const form =
       await this.repository.findBySlugGlobal(
@@ -326,9 +353,10 @@ export class PlatformFormService {
               }
             : undefined;
 
+        const submissionId = randomUUID();
         await this.repository.createSubmission(
           {
-            id: randomUUID(),
+            id: submissionId,
             organizationId:
               form.organizationId,
             formId: form.id,
@@ -499,9 +527,78 @@ export class PlatformFormService {
           },
         });
 
+        // LEAD-MAGNET fulfillment — TRANSACTIONAL and INDEPENDENT of marketing
+        // consent/enrollment. Bound to the OWNER config snapshot; client-supplied
+        // mode/file/redirect/org are ignored (only the owner's
+        // form.settings.leadMagnet is used). Durable records are committed here,
+        // BEFORE the action is returned. A failure never breaks the submission or
+        // leaks — the public reply stays generic.
+        let nextAction:
+          | { type: "redirect" | "download" | "none"; url?: string }
+          | undefined;
+        const magnet = form.settings.leadMagnet;
+        if (magnet && this.magnetFulfillment) {
+          try {
+            const email = contact?.email;
+            const result = await this.magnetFulfillment.fulfill({
+              organizationId: form.organizationId,
+              formId: form.id,
+              submissionId,
+              magnet,
+              recipientEmail: email,
+            });
+            if (result?.status === "ready" && result.mode === "redirect") {
+              nextAction = { type: "redirect", url: result.redirectUrl };
+            } else if (
+              result?.status === "ready" &&
+              result.mode === "download" &&
+              ctx?.canonicalBase
+            ) {
+              const token = await this.magnetFulfillment.issueDownloadCapability(
+                result.fulfillmentId,
+                form.organizationId,
+              );
+              nextAction = token
+                ? { type: "download", url: `${ctx.canonicalBase}/magnet#d=${token}` }
+                : { type: "none" };
+            } else if (
+              result?.status === "email_pending" &&
+              this.magnetDispatch &&
+              ctx?.canonicalBase
+            ) {
+              // GLOBAL suppression (legal/abuse/invalid/safety) blocks the email;
+              // a tenant MARKETING unsubscribe does NOT block a requested magnet.
+              // Either way the lead + fulfillment history stay intact and the
+              // public reply is generic (never reveals existence/suppression/SMTP).
+              const globallyOk = this.suppression
+                ? (await this.suppression.transactionalDeliverability(result.recipientEmail)).eligible
+                : true;
+              if (globallyOk) {
+                await this.magnetDispatch.enqueue({
+                  organizationId: form.organizationId,
+                  fulfillmentId: result.fulfillmentId,
+                  formId: form.id,
+                  fileId: result.fileId,
+                  email: result.recipientEmail,
+                  emailSubject: result.emailSubject,
+                  fileTitle: magnet.title,
+                  downloadBase: ctx.canonicalBase,
+                });
+              }
+              nextAction = { type: "none" };
+            } else {
+              // needs_attention / missing canonical host / no magnet action.
+              nextAction = { type: "none" };
+            }
+          } catch {
+            nextAction = { type: "none" };
+          }
+        }
+
         return {
           confirmationMessage:
             form.confirmationMessage,
+          ...(nextAction ? { nextAction } : {}),
         };
       },
     );

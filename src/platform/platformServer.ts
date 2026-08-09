@@ -655,6 +655,9 @@ async function start(): Promise<void> {
       consent: marketingConsent,
       activations: marketingActivations,
       confirmationDispatch,
+      magnetFulfillment,
+      magnetDispatch,
+      suppression,
     },
   );
 
