@@ -871,6 +871,44 @@ export class PostgresDatabase
         created_at       TEXT NOT NULL
       );
     `);
+    // Durable TRANSACTIONAL lead-magnet email dispatch (download-link email).
+    // Idempotent per fulfillment; a fresh capability is minted per SMTP attempt
+    // (not stored here). `delivery_unknown` = ambiguous/crashed attempt, never
+    // auto-resent. No marketing metering / unsubscribe headers.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS lead_magnet_dispatch (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        fulfillment_id   TEXT NOT NULL,
+        form_id          TEXT NOT NULL,
+        file_id          TEXT NOT NULL,
+        email            TEXT NOT NULL,
+        email_subject    TEXT,
+        business_name    TEXT,
+        reply_to         TEXT,
+        file_title       TEXT,
+        download_base    TEXT NOT NULL,
+        status           TEXT NOT NULL DEFAULT 'queued',
+        attempts         INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at  TEXT NOT NULL,
+        lease_owner      TEXT,
+        lease_until      TEXT,
+        provider_id      TEXT,
+        reason           TEXT,
+        resolved_at      TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL
+      );
+    `);
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS lead_magnet_dispatch_fulfillment_uniq
+        ON lead_magnet_dispatch (fulfillment_id);
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS lead_magnet_dispatch_due_idx
+        ON lead_magnet_dispatch (status, next_attempt_at);
+    `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS double_optin_tokens (
