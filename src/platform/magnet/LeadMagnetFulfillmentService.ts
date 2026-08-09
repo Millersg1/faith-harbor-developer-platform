@@ -178,21 +178,10 @@ export class LeadMagnetFulfillmentRepository {
 
 export type FulfillResult =
   | { status: "ready"; mode: "redirect"; fulfillmentId: string; redirectUrl: string }
-  | {
-      status: "ready";
-      mode: "download";
-      fulfillmentId: string;
-      /** Raw capability token — present ONLY on first creation. */
-      capabilityToken?: string;
-    }
-  | {
-      status: "email_pending";
-      mode: "email";
-      fulfillmentId: string;
-      /** Raw capability token to embed in the email — present ONLY on first creation. */
-      capabilityToken?: string;
-      recipientEmail: string;
-    }
+  /** Download is ready; the caller mints a capability at RESPONSE time. */
+  | { status: "ready"; mode: "download"; fulfillmentId: string }
+  /** Email is queued for the durable dispatch worker (which mints per attempt). */
+  | { status: "email_pending"; mode: "email"; fulfillmentId: string; fileId: string; recipientEmail: string; emailSubject: string | null }
   | { status: "already_fulfilled"; mode: LeadMagnetMode; fulfillmentId: string }
   | { status: "needs_attention"; mode: LeadMagnetMode; fulfillmentId?: string; reason: string }
   | null;
@@ -201,15 +190,21 @@ export class LeadMagnetFulfillmentService {
   constructor(
     private readonly repo: LeadMagnetFulfillmentRepository,
     private readonly capabilities: LeadMagnetCapabilityService,
-    /** Tenant-scoped check: does this file exist, live, and belong to the org? */
-    private readonly fileExists: (fileId: string) => Promise<boolean>,
+    /**
+     * Tenant-scoped eligibility check: does this file exist, live, belong to the
+     * org, AND satisfy the launch file policy (PDF only)? The wire site
+     * implements it against the file service + magnetFilePolicy.
+     */
+    private readonly fileEligible: (fileId: string) => Promise<boolean>,
     private readonly now: () => number = () => Date.now(),
   ) {}
 
   /**
    * Fulfill the magnet for one submission. Binds to the OWNER config only;
    * `recipientEmail` is the server-derived submission email (for email mode).
-   * Returns null when the form has no enabled magnet.
+   * Returns null when the form has no enabled magnet. Capabilities are NOT
+   * minted here — download mints at response time (issueDownloadCapability), and
+   * the email dispatch worker mints a fresh capability per SMTP attempt.
    */
   async fulfill(input: {
     organizationId: string;
@@ -248,9 +243,9 @@ export class LeadMagnetFulfillmentService {
         reason: v.ok ? null : `redirect_${v.reason}`,
       };
     } else {
-      // email OR download → needs a live, tenant-owned file.
+      // email OR download → needs a live, tenant-owned, POLICY-ELIGIBLE file.
       const fileId = magnet.fileId;
-      const fileOk = fileId ? await this.fileExists(fileId) : false;
+      const fileOk = fileId ? await this.fileEligible(fileId) : false;
       const emailMode = magnet.mode === "email";
       record = {
         ...base,
@@ -295,22 +290,42 @@ export class LeadMagnetFulfillmentService {
         redirectUrl: persisted.redirectUrl!,
       };
     }
-    // email/download → mint ONE capability now (first creation only).
-    const token = await this.capabilities.mint({
-      organizationId: persisted.organizationId,
-      formId: persisted.formId,
-      fulfillmentId: persisted.id,
-      fileId: persisted.fileId!,
-    });
     if (persisted.mode === "email") {
+      // The durable dispatch worker mints a capability per SMTP attempt; nothing
+      // to mint here.
       return {
         status: "email_pending",
         mode: "email",
         fulfillmentId: persisted.id,
-        capabilityToken: token,
+        fileId: persisted.fileId!,
         recipientEmail: persisted.email!,
+        emailSubject: persisted.emailSubject,
       };
     }
-    return { status: "ready", mode: "download", fulfillmentId: persisted.id, capabilityToken: token };
+    // download → the caller mints a capability when producing the response.
+    return { status: "ready", mode: "download", fulfillmentId: persisted.id };
+  }
+
+  /**
+   * Mint a download capability for a READY download fulfillment, at RESPONSE
+   * time. An idempotent client retry (a lost response) mints a bounded
+   * REPLACEMENT sibling — never unlimited tokens. Returns the raw token once, or
+   * null if the fulfillment isn't a ready download for this tenant.
+   */
+  async issueDownloadCapability(
+    fulfillmentId: string,
+    organizationId: string,
+  ): Promise<string | null> {
+    const rec = await this.repo.get(fulfillmentId, organizationId);
+    if (!rec || rec.mode !== "download" || rec.status !== "ready" || !rec.fileId) {
+      return null;
+    }
+    const { token } = await this.capabilities.mint({
+      organizationId: rec.organizationId,
+      formId: rec.formId,
+      fulfillmentId: rec.id,
+      fileId: rec.fileId,
+    });
+    return token;
   }
 }

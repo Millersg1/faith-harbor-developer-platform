@@ -50,11 +50,25 @@ describe("LeadMagnetFulfillmentService", () => {
     expect(r).toMatchObject({ status: "needs_attention", mode: "redirect" });
   });
 
-  it("download mode mints a capability token (opaque)", async () => {
+  it("download mode is ready but mints NO capability at fulfillment time", async () => {
     const { svc } = harness(true);
     const r = await svc.fulfill({ ...baseInput, magnet: DOWNLOAD });
-    expect(r?.status).toBe("ready");
-    expect(r && "capabilityToken" in r && r.capabilityToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(r).toMatchObject({ status: "ready", mode: "download" });
+    expect(r && "capabilityToken" in r).toBe(false); // minted at response time
+  });
+
+  it("issueDownloadCapability mints an opaque token at RESPONSE time (bounded siblings on retry)", async () => {
+    const { svc } = harness(true);
+    const r = await svc.fulfill({ ...baseInput, magnet: DOWNLOAD });
+    const fid = (r && "fulfillmentId" in r && r.fulfillmentId) || "";
+    const t1 = await svc.issueDownloadCapability(fid, "orgA");
+    expect(t1).toMatch(/^[a-f0-9]{64}$/);
+    // A lost-response retry mints a bounded replacement sibling (a new token).
+    const t2 = await svc.issueDownloadCapability(fid, "orgA");
+    expect(t2).toMatch(/^[a-f0-9]{64}$/);
+    expect(t2).not.toBe(t1);
+    // Cross-tenant issuance is refused.
+    expect(await svc.issueDownloadCapability(fid, "orgB")).toBeNull();
   });
 
   it("download/email with an unavailable file → needs_attention (no capability)", async () => {
@@ -63,11 +77,11 @@ describe("LeadMagnetFulfillmentService", () => {
     expect(r).toMatchObject({ status: "needs_attention", reason: "file_unavailable" });
   });
 
-  it("email mode returns email_pending + token + recipient", async () => {
+  it("email mode returns email_pending + recipient (NO token — the worker mints per attempt)", async () => {
     const { svc } = harness(true);
     const r = await svc.fulfill({ ...baseInput, magnet: EMAIL, recipientEmail: "lead@x.com" });
-    expect(r).toMatchObject({ status: "email_pending", mode: "email", recipientEmail: "lead@x.com" });
-    expect(r && "capabilityToken" in r && r.capabilityToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(r).toMatchObject({ status: "email_pending", mode: "email", recipientEmail: "lead@x.com", fileId: "file1" });
+    expect(r && "capabilityToken" in r).toBe(false);
   });
 
   it("email mode with no recipient → needs_attention", async () => {
@@ -76,15 +90,13 @@ describe("LeadMagnetFulfillmentService", () => {
     expect(r).toMatchObject({ status: "needs_attention", reason: "no_recipient" });
   });
 
-  it("is idempotent per submission — a re-run mints no second capability, re-sends nothing", async () => {
-    const { svc } = harness(true);
-    const first = await svc.fulfill({ ...baseInput, magnet: DOWNLOAD });
-    const firstToken = first && "capabilityToken" in first ? first.capabilityToken : undefined;
-    expect(firstToken).toBeTruthy();
+  it("is idempotent per submission — a re-run creates no second fulfillment", async () => {
+    const { svc, repo } = harness(true);
+    await svc.fulfill({ ...baseInput, magnet: DOWNLOAD });
     const second = await svc.fulfill({ ...baseInput, magnet: DOWNLOAD });
     expect(second).toMatchObject({ status: "already_fulfilled", mode: "download" });
-    // No new token in the idempotent response.
-    expect(second && "capabilityToken" in second).toBe(false);
+    const all = await repo.listForOrg("orgA");
+    expect(all.filter((f) => f.submissionId === "sub1")).toHaveLength(1);
   });
 
   it("binds the OWNER config snapshot; the persisted record carries it (not client input)", async () => {
