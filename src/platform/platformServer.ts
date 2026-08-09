@@ -136,6 +136,10 @@ import {
 } from "./marketing/MarketingPauseService";
 import { MarketingWorker } from "./marketing/MarketingWorker";
 import {
+  resolveMarketingDeliveryMode,
+  describeDeliveryMode,
+} from "./marketing/marketingDeliveryMode";
+import {
   createMarketingEligibility,
   createMarketingSend,
 } from "./marketing/marketingSendComposition";
@@ -406,10 +410,16 @@ async function start(): Promise<void> {
   const marketingSender = new MarketingSenderService(
     new MarketingSenderRepository(db),
   );
+  // The ONE authoritative marketing delivery mode. Legacy drip direct-send and
+  // the safeguarded outbox both consult this, so they can never both deliver.
+  const deliveryMode = resolveMarketingDeliveryMode(
+    process.env.MARKETING_DELIVERY_MODE,
+  );
+  const marketingMode = () => deliveryMode.mode;
   const drip = new DripService(
     new DripRepository(db),
     email,
-    { suppression },
+    { suppression, marketingMode },
   );
   // Activity spine + notifications. Recording an event fans out to the
   // notification dispatcher, which notifies the org's active owners/admins.
@@ -874,6 +884,8 @@ async function start(): Promise<void> {
       workerLastTickAt: () =>
         workerLastTickAt,
       workerIntervalMs: DRIP_TICK_MS,
+      marketingDeliveryMode: () =>
+        deliveryMode.mode,
       startedAt,
       version:
         process.env.APP_VERSION ??
@@ -1023,6 +1035,9 @@ async function start(): Promise<void> {
       console.log(
         `All Elite Cloud platform listening on ${host}:${port}`,
       );
+      // Report the active marketing delivery mode (no secrets) so operators can
+      // confirm exactly one path is live before enabling volume.
+      console.log(`All Elite Cloud ${describeDeliveryMode(deliveryMode)}`);
     },
   );
 
@@ -1052,75 +1067,75 @@ async function start(): Promise<void> {
   }, DRIP_TICK_MS);
   dripTimer.unref();
 
-  // Durable marketing worker — env-gated and OFF by default, so production
-  // behaviour is unchanged until a deliberate cutover (the drip direct-send path
-  // and the safeguarded outbox path must not both send the same enrollment).
-  // When enabled it runs: (1) transactional confirmation dispatch, (3) the
-  // safeguarded marketing outbox, plus ready-activation processing.
-  const MARKETING_WORKER_ENABLED =
-    process.env.MARKETING_WORKER_ENABLED === "1";
+  // Marketing/confirmation worker. It ALWAYS runs so the TRANSACTIONAL
+  // double-opt-in confirmation dispatch keeps working in every mode; its
+  // MARKETING processing is gated INTERNALLY by the delivery mode (outbox only).
+  // Ready-activation processing (which seeds outbox marketing work) also runs
+  // only in `outbox` mode. Mutual exclusivity with the legacy drip path is
+  // guaranteed by the single mode: drip.runDue sends only in `legacy`; the
+  // worker's marketing runs only in `outbox`.
   const MARKETING_TICK_MS = Number(process.env.MARKETING_TICK_MS ?? 60_000);
-  let marketingTimer: NodeJS.Timeout | undefined;
-  let marketingWorker: MarketingWorker | undefined;
-  if (MARKETING_WORKER_ENABLED) {
-    const baseDomain =
-      process.env.PLATFORM_BASE_DOMAIN?.trim() || "allelitecloud.com";
-    const unsubscribeBase = `https://${baseDomain}`;
-    const activationGates = createActivationGates({
+  const marketingBaseDomain =
+    process.env.PLATFORM_BASE_DOMAIN?.trim() || "allelitecloud.com";
+  const activationGates = createActivationGates({
+    consent: marketingConsent,
+    suppression,
+    leads,
+    drip,
+    outbox: marketingOutbox,
+  });
+  const marketingWorker: MarketingWorker = new MarketingWorker({
+    outbox: marketingOutboxRepo,
+    limits: marketingLimits,
+    pause: marketingPause,
+    mode: marketingMode,
+    confirmation: {
+      service: confirmationDispatch,
+      eligibility: async (row) => {
+        const d = await suppression.marketingDeliverability(
+          row.organizationId,
+          row.email,
+        );
+        return d.eligible
+          ? { eligible: true }
+          : { eligible: false, reason: d.reason ?? "suppressed" };
+      },
+      send: createConfirmationSend({
+        doubleOptIn,
+        marketingSender,
+        emailProvider,
+      }),
+    },
+    eligibility: createMarketingEligibility({
       consent: marketingConsent,
       suppression,
       leads,
       drip,
-      outbox: marketingOutbox,
-    });
-    marketingWorker = new MarketingWorker({
-      outbox: marketingOutboxRepo,
-      limits: marketingLimits,
-      pause: marketingPause,
-      confirmation: {
-        service: confirmationDispatch,
-        eligibility: async (row) => {
-          const d = await suppression.marketingDeliverability(
-            row.organizationId,
-            row.email,
-          );
-          return d.eligible
-            ? { eligible: true }
-            : { eligible: false, reason: d.reason ?? "suppressed" };
-        },
-        send: createConfirmationSend({
-          doubleOptIn,
-          marketingSender,
-          emailProvider,
-        }),
-      },
-      eligibility: createMarketingEligibility({
-        consent: marketingConsent,
-        suppression,
-        leads,
-        drip,
-        marketingSender,
-      }),
-      send: createMarketingSend({
-        marketingSender,
-        emailProvider,
-        unsubscribe,
-        unsubscribeBase,
-      }),
-    });
-    marketingTimer = setInterval(() => {
-      workerLastTickAt = new Date().toISOString();
-      void (async () => {
-        try {
-          await marketingWorker!.runOnce("platform");
+      marketingSender,
+    }),
+    send: createMarketingSend({
+      marketingSender,
+      emailProvider,
+      unsubscribe,
+      unsubscribeBase: `https://${marketingBaseDomain}`,
+    }),
+  });
+  const marketingTimer: NodeJS.Timeout = setInterval(() => {
+    workerLastTickAt = new Date().toISOString();
+    void (async () => {
+      try {
+        // Confirmation always; marketing only in `outbox` mode (internal gate).
+        await marketingWorker.runOnce("platform");
+        // Activation → enrollment + first outbox step is outbox-only work.
+        if (marketingMode() === "outbox") {
           await marketingActivations.activateReady(activationGates);
-        } catch (error: unknown) {
-          console.error("Marketing worker tick failed.", error);
         }
-      })();
-    }, MARKETING_TICK_MS);
-    marketingTimer.unref();
-  }
+      } catch (error: unknown) {
+        console.error("Marketing worker tick failed.", error);
+      }
+    })();
+  }, MARKETING_TICK_MS);
+  marketingTimer.unref();
 
   let shuttingDown = false;
 

@@ -17,6 +17,11 @@ export interface SystemHealth {
     lastTickAt: string | null;
     intervalMs: number;
   };
+  /**
+   * The single authoritative marketing delivery mode (disabled|legacy|outbox),
+   * so operators can confirm exactly one path is live. No secrets.
+   */
+  marketingDeliveryMode: "disabled" | "legacy" | "outbox";
   startedAt: string;
   uptimeSeconds: number;
   version: string;
@@ -31,6 +36,8 @@ export interface HealthChecks {
   /** The last background-worker tick time (ISO), or null if it hasn't ticked. */
   workerLastTickAt: () => string | null;
   workerIntervalMs: number;
+  /** The active marketing delivery mode (read at snapshot time). */
+  marketingDeliveryMode: () => "disabled" | "legacy" | "outbox";
   startedAt: string;
   version: string;
   now?: () => number;
@@ -94,6 +101,8 @@ export class PlatformHealthService {
         intervalMs:
           this.checks.workerIntervalMs,
       },
+      marketingDeliveryMode:
+        this.checks.marketingDeliveryMode(),
       startedAt:
         this.checks.startedAt,
       uptimeSeconds: Number.isFinite(

@@ -10,6 +10,7 @@ import type {
 } from "./ConfirmationDispatchService";
 import type { MarketingLimitsService } from "./MarketingLimitsService";
 import type { MarketingPauseService } from "./MarketingPauseService";
+import type { MarketingDeliveryMode } from "./marketingDeliveryMode";
 
 /**
  * The durable marketing worker: priority-ordered, fair, rate-limited, and
@@ -118,6 +119,13 @@ export interface MarketingWorkerDeps {
   eligibility: (m: OutboxMessage) => Promise<MarketingSendDecision>;
   /** The marketing send (resolves sender at send time; adds unsubscribe headers). */
   send: (m: OutboxMessage) => Promise<MarketingSendResult>;
+  /**
+   * Authoritative delivery mode. Marketing outbox claims run ONLY in `outbox`
+   * mode; in `legacy`/`disabled` the worker still runs transactional
+   * confirmation dispatch but refuses to claim/send marketing. Defaults to
+   * `outbox` when unset (unit tests exercise the marketing path directly).
+   */
+  mode?: () => MarketingDeliveryMode;
   now?: () => number;
   config?: Partial<MarketingWorkerConfig>;
 }
@@ -129,6 +137,7 @@ export class MarketingWorker {
   private readonly confirmation?: MarketingWorkerDeps["confirmation"];
   private readonly eligibility: MarketingWorkerDeps["eligibility"];
   private readonly send: MarketingWorkerDeps["send"];
+  private readonly mode: () => MarketingDeliveryMode;
   private readonly now: () => number;
   private readonly config: MarketingWorkerConfig;
   private stopping = false;
@@ -140,6 +149,7 @@ export class MarketingWorker {
     this.confirmation = deps.confirmation;
     this.eligibility = deps.eligibility;
     this.send = deps.send;
+    this.mode = deps.mode ?? (() => "outbox");
     this.now = deps.now ?? (() => Date.now());
     this.config = { ...DEFAULT_WORKER_CONFIG, ...deps.config };
   }
@@ -175,7 +185,12 @@ export class MarketingWorker {
     }
 
     // ---- Priority 3: marketing outbox ----
-    await this.processMarketing(owner, health);
+    // Only in `outbox` mode. In `legacy`/`disabled` the worker refuses to claim
+    // or send marketing (the legacy drip path owns marketing in `legacy`, and
+    // nothing sends it in `disabled`) — so the two paths never both deliver.
+    if (this.mode() === "outbox") {
+      await this.processMarketing(owner, health);
+    }
     return health;
   }
 

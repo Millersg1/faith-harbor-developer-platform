@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { runWithTenant } from "../../tenancy/TenantContext";
 import type { PlatformEmailService } from "../email/PlatformEmailService";
 import type { EmailSuppressionService } from "../marketing/EmailSuppressionService";
+import type { MarketingDeliveryMode } from "../marketing/marketingDeliveryMode";
 import { DripRepository } from "./DripRepository";
 import {
   isDripTrigger,
@@ -43,6 +44,8 @@ export class DripService {
 
   private readonly suppression?: EmailSuppressionService;
 
+  private readonly marketingMode: () => MarketingDeliveryMode;
+
   constructor(
     private readonly repository =
       new DripRepository(),
@@ -54,12 +57,21 @@ export class DripService {
        * MARKETING and is rechecked against suppression immediately before send.
        */
       suppression?: EmailSuppressionService;
+      /**
+       * The authoritative marketing delivery mode. This is the LEGACY direct
+       * marketing path, so it only sends/auto-enrolls when the mode is `legacy`.
+       * In `outbox`/`disabled` it refuses — so the legacy and outbox paths can
+       * never both send. Defaults to `legacy` to preserve historical behaviour
+       * when the gate isn't wired (e.g. unit tests).
+       */
+      marketingMode?: () => MarketingDeliveryMode;
     } = {},
   ) {
     this.now =
       options.now ??
       (() => Date.now());
     this.suppression = options.suppression;
+    this.marketingMode = options.marketingMode ?? (() => "legacy");
   }
 
   // ---- Sequences -----------------------------------------------------
@@ -320,6 +332,12 @@ export class DripService {
     email: string | undefined,
     name?: string,
   ): Promise<void> {
+    // LEGACY auto-enroll (e.g. lead_created enrolls immediately, WITHOUT a
+    // consent gate). Disabled outside `legacy` mode so no marketing can bypass
+    // the consent/suppression/metering of the outbox path.
+    if (this.marketingMode() !== "legacy") {
+      return;
+    }
     if (
       !email ||
       !EMAIL_RE.test(
@@ -368,6 +386,12 @@ export class DripService {
   async runDue(
     limit = 100,
   ): Promise<number> {
+    // LEGACY direct marketing send. Only runs in `legacy` mode; in
+    // `outbox`/`disabled` the safeguarded outbox owns marketing, so this refuses
+    // to scan or send — the two paths can never both deliver.
+    if (this.marketingMode() !== "legacy") {
+      return 0;
+    }
     const nowMs = this.now();
     const refs =
       await this.repository.dueRefs(
@@ -409,6 +433,11 @@ export class DripService {
     enrollmentId: string,
     nowMs: number,
   ): Promise<void> {
+    // Defense in depth: even if called directly, the legacy send refuses unless
+    // the authoritative mode is `legacy`.
+    if (this.marketingMode() !== "legacy") {
+      return;
+    }
     const enrollment =
       await this.repository.getEnrollment(
         enrollmentId,

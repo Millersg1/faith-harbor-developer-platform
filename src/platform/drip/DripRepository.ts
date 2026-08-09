@@ -530,6 +530,45 @@ export class DripRepository extends TenantScopedRepository {
           e.organizationId,
       }));
   }
+
+  /**
+   * System-only cross-tenant scan of ALL active enrollments (no time filter),
+   * for the legacy→outbox migration/reconciliation. Returns refs only; the
+   * caller re-fetches each in its own tenant scope. Ordered by created_at for
+   * deterministic, resumable paging.
+   */
+  async activeRefs(
+    limit: number,
+    afterCreatedAt?: string,
+  ): Promise<DueEnrollmentRef[]> {
+    if (this.db) {
+      const result = afterCreatedAt
+        ? await this.db.query(
+            `SELECT id, organization_id FROM drip_enrollments
+              WHERE status = 'active' AND created_at > $1
+              ORDER BY created_at ASC LIMIT $2`,
+            [afterCreatedAt, limit],
+          )
+        : await this.db.query(
+            `SELECT id, organization_id FROM drip_enrollments
+              WHERE status = 'active'
+              ORDER BY created_at ASC LIMIT $1`,
+            [limit],
+          );
+      return (
+        result.rows as unknown as { id: string; organization_id: string }[]
+      ).map((r) => ({ id: r.id, organizationId: r.organization_id }));
+    }
+    return [...this.enrollments.values()]
+      .filter(
+        (e) =>
+          e.status === "active" &&
+          (afterCreatedAt === undefined || e.createdAt > afterCreatedAt),
+      )
+      .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+      .slice(0, limit)
+      .map((e) => ({ id: e.id, organizationId: e.organizationId }));
+  }
 }
 
 function mapSequence(
