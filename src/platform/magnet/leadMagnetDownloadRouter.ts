@@ -1,10 +1,9 @@
-import { createHash, randomBytes } from "node:crypto";
-
 import { Router, type Request, type Response } from "express";
 import express from "express";
 
 import { runWithTenant } from "../../tenancy/TenantContext";
 import type { LeadMagnetCapabilityService } from "./LeadMagnetCapabilityService";
+import type { LeadMagnetDownloadSessionService } from "./LeadMagnetDownloadSessionService";
 import { hasPdfMagic, normalizePdfFilename } from "./magnetFilePolicy";
 
 /**
@@ -24,10 +23,21 @@ import { hasPdfMagic, normalizePdfFilename } from "./magnetFilePolicy";
  *     inline. The browser supplies nothing but the server-issued session cookie —
  *     no org/file/path/mime/redirect/scope is ever accepted from the client.
  *
+ * The download-session cookie is a one-time OPAQUE download-session CAPABILITY
+ * (not "tokenless"): Secure + httpOnly + SameSite=Strict + host-only (no Domain),
+ * short-lived, single-use, hash-only in durable storage, bound server-side to the
+ * exact org/fulfillment/file/purpose, atomically consumed, rotated fresh on every
+ * exchange, and never logged/audited/returned-in-JSON/exposed-to-JS. (`__Host-`
+ * is intentionally NOT used: it mandates Path=/, but we scope the cookie to the
+ * download endpoint for least privilege; host-only is enforced by never setting a
+ * Domain attribute.)
+ *
  * NO RESUME: redemption is one-time. If the download is interrupted or the
  * process restarts, the capability/session is spent and cannot be replayed — the
  * recipient needs a fresh capability (email retry / new submission). Resume is
- * NOT implemented.
+ * NOT implemented. Concurrent tabs each POST separately and receive their OWN
+ * rotated session cookie; a browser keeps only the latest for a given path, so
+ * only the most-recent exchange's download succeeds (documented, tested).
  */
 
 /** The minimal file source this router needs (satisfied by PlatformFileService). */
@@ -36,12 +46,7 @@ export interface MagnetFileSource {
   download(id: string): Promise<{ file: { name: string }; data: Buffer }>;
 }
 
-const SESSION_TTL_MS = 2 * 60 * 1000; // short-lived: the download follows immediately
 const SESSION_COOKIE = "aec_magnet_dl";
-
-function hash(v: string): string {
-  return createHash("sha256").update(v).digest("hex");
-}
 
 function neutralHeaders(res: Response): void {
   res.set("Referrer-Policy", "no-referrer");
@@ -95,15 +100,13 @@ fetch('/magnet',{method:'POST',credentials:'same-origin',headers:{'Content-Type'
 
 export function createLeadMagnetDownloadRouter(deps: {
   capabilities: LeadMagnetCapabilityService;
+  sessions: LeadMagnetDownloadSessionService;
   files: MagnetFileSource;
   now?: () => number;
   /** True in production (https) so the session cookie is marked Secure. */
   secureCookie?: boolean;
 }): Router {
   const router = Router();
-  const now = deps.now ?? (() => Date.now());
-  // Short-lived one-time download sessions (single-process; not resumable).
-  const sessions = new Map<string, { org: string; fileId: string; expiresAt: number }>();
 
   const readCookie = (req: Request, name: string): string | undefined => {
     const raw = req.headers.cookie;
@@ -145,18 +148,19 @@ export function createLeadMagnetDownloadRouter(deps: {
       res.json({ ok: false });
       return;
     }
-    const sessionId = randomBytes(24).toString("hex");
-    sessions.set(hash(sessionId), {
-      org: outcome.organizationId,
+    // Rotate a fresh, durable one-time session (supersedes any fixated cookie).
+    const sessionId = await deps.sessions.issue({
+      organizationId: outcome.organizationId,
+      fulfillmentId: outcome.fulfillmentId,
       fileId: outcome.fileId,
-      expiresAt: now() + SESSION_TTL_MS,
     });
     const attrs = [
       `${SESSION_COOKIE}=${sessionId}`,
       "HttpOnly",
       "SameSite=Strict",
-      "Path=/magnet/file",
-      `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+      "Path=/magnet/file", // least privilege: only the file endpoint sees it
+      "Max-Age=120",
+      // host-only: NO Domain attribute (never Domain=.allelitecloud.com)
     ];
     if (deps.secureCookie) attrs.push("Secure");
     res.set("Set-Cookie", attrs.join("; "));
@@ -170,22 +174,20 @@ export function createLeadMagnetDownloadRouter(deps: {
     const notFound = (): void => {
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Not available." } });
     };
-    if (!sessionId || !/^[a-f0-9]{48}$/.test(sessionId)) {
+    if (!sessionId) {
       notFound();
       return;
     }
-    const key = hash(sessionId);
-    const session = sessions.get(key);
-    // One-time: consume immediately (delete) so it can't be replayed.
-    sessions.delete(key);
-    if (!session || session.expiresAt <= now()) {
+    // Atomically consume the one-time session (durable, single-use).
+    const session = await deps.sessions.consume(sessionId);
+    if (!session.ok) {
       notFound();
       return;
     }
     let bytes: Buffer;
     let name: string;
     try {
-      const dl = await runWithTenant({ organizationId: session.org }, () =>
+      const dl = await runWithTenant({ organizationId: session.organizationId }, () =>
         deps.files.download(session.fileId),
       );
       bytes = dl.data;

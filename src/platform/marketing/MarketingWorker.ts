@@ -2,34 +2,21 @@ import type {
   MarketingOutboxRepository,
   OutboxMessage,
 } from "./MarketingOutboxService";
-import type {
-  ConfirmationDispatchService,
-  DispatchAttempt,
-  DispatchEligibility,
-  DispatchRecord,
-} from "./ConfirmationDispatchService";
 import type { MarketingLimitsService } from "./MarketingLimitsService";
 import type { MarketingPauseService } from "./MarketingPauseService";
 import type { MarketingDeliveryMode } from "./marketingDeliveryMode";
 
 /**
- * The durable marketing worker: priority-ordered, fair, rate-limited, and
- * crash/restart-safe. It NEVER lets marketing volume, pause, throttling, or
- * failure affect transactional email.
+ * The durable MARKETING worker: fair, rate-limited, and crash/restart-safe. It
+ * handles ONLY marketing (the outbox); transactional dispatch (confirmation,
+ * lead-magnet) is driven by the separate {@link TransactionalDispatchWorker} so
+ * that pausing/disabling marketing can never affect transactional mail.
  *
- * Priority per cycle:
- *  1. Transactional confirmation dispatch (double-opt-in) — always runs, never
- *     gated by marketing pause/limits/auto-pause.
- *  2. (reserved for future durable transactional work)
- *  3. Marketing outbox — gated by tenant/sequence pause, durable hourly/daily +
- *     concurrency limits, per-tenant fairness, and a final send-time eligibility
- *     recheck.
- *
- * Honesty: `sent` (SMTP acceptance) is the SINGLE marketing-metering point,
- * counted once. Ambiguous/crashed attempts become `delivery_unknown` and are
- * NEVER auto-resent. A rate-limit / pause / paused-sequence DEFERS a message
- * (lease released, retried later) — it is not a failure and never increments
- * the attempt counter or meters a send.
+ * Marketing runs only in `outbox` mode (gated). Honesty: `sent` (SMTP
+ * acceptance) is the SINGLE marketing-metering point, counted once.
+ * Ambiguous/crashed attempts become `delivery_unknown` and are NEVER
+ * auto-resent. A rate-limit / pause / paused-sequence DEFERS a message (lease
+ * released, retried later) — not a failure, never metered.
  */
 
 /** Pre-send decision for one marketing message (final eligibility). */
@@ -58,8 +45,6 @@ export interface MarketingWorkerConfig {
   leaseMs: number;
   /** How long to defer a rate-limited/paused message before re-claiming. */
   deferMs: number;
-  /** Confirmation-dispatch batch size (transactional priority). */
-  confirmationLimit: number;
 }
 
 export const DEFAULT_WORKER_CONFIG: MarketingWorkerConfig = {
@@ -67,14 +52,12 @@ export const DEFAULT_WORKER_CONFIG: MarketingWorkerConfig = {
   perTenantBatch: 5,
   leaseMs: 60_000,
   deferMs: 60_000,
-  confirmationLimit: 25,
 };
 
 const MAX_ATTEMPTS = 5;
 const BASE_BACKOFF_MS = 5 * 60 * 1000;
 
 export interface MarketingWorkerHealth {
-  confirmation: { sent: number; failed: number; skipped: number; unknown: number };
   marketing: {
     sent: number;
     deferred: number;
@@ -90,7 +73,6 @@ export interface MarketingWorkerHealth {
 
 function zeroHealth(): MarketingWorkerHealth {
   return {
-    confirmation: { sent: 0, failed: 0, skipped: 0, unknown: 0 },
     marketing: {
       sent: 0,
       deferred: 0,
@@ -109,12 +91,6 @@ export interface MarketingWorkerDeps {
   outbox: MarketingOutboxRepository;
   limits: MarketingLimitsService;
   pause: MarketingPauseService;
-  /** Transactional confirmation dispatch (priority 1). Optional. */
-  confirmation?: {
-    service: ConfirmationDispatchService;
-    eligibility: (m: DispatchRecord) => Promise<DispatchEligibility>;
-    send: (m: DispatchRecord) => Promise<DispatchAttempt>;
-  };
   /** Final send-time eligibility for a marketing message (tenant-scoped inside). */
   eligibility: (m: OutboxMessage) => Promise<MarketingSendDecision>;
   /** The marketing send (resolves sender at send time; adds unsubscribe headers). */
@@ -134,7 +110,6 @@ export class MarketingWorker {
   private readonly outbox: MarketingOutboxRepository;
   private readonly limits: MarketingLimitsService;
   private readonly pause: MarketingPauseService;
-  private readonly confirmation?: MarketingWorkerDeps["confirmation"];
   private readonly eligibility: MarketingWorkerDeps["eligibility"];
   private readonly send: MarketingWorkerDeps["send"];
   private readonly mode: () => MarketingDeliveryMode;
@@ -146,7 +121,6 @@ export class MarketingWorker {
     this.outbox = deps.outbox;
     this.limits = deps.limits;
     this.pause = deps.pause;
-    this.confirmation = deps.confirmation;
     this.eligibility = deps.eligibility;
     this.send = deps.send;
     this.mode = deps.mode ?? (() => "outbox");
@@ -167,27 +141,10 @@ export class MarketingWorker {
     const health = zeroHealth();
     if (this.stopping) return health; // claim no new work during shutdown
 
-    // ---- Priority 1: transactional confirmation dispatch ----
-    // Runs unconditionally — marketing pause/limits/auto-pause never touch it.
-    if (this.confirmation) {
-      const c = await this.confirmation.service.runOnce(owner, {
-        eligibility: this.confirmation.eligibility,
-        send: this.confirmation.send,
-        limit: this.config.confirmationLimit,
-        leaseMs: this.config.leaseMs,
-      });
-      health.confirmation = {
-        sent: c.sent,
-        failed: c.failed,
-        skipped: c.skipped,
-        unknown: c.unknown,
-      };
-    }
-
-    // ---- Priority 3: marketing outbox ----
-    // Only in `outbox` mode. In `legacy`/`disabled` the worker refuses to claim
-    // or send marketing (the legacy drip path owns marketing in `legacy`, and
-    // nothing sends it in `disabled`) — so the two paths never both deliver.
+    // Marketing outbox runs ONLY in `outbox` mode. In `legacy`/`disabled` the
+    // worker refuses to claim or send marketing (the legacy drip path owns
+    // marketing in `legacy`, nothing sends it in `disabled`) — so the two paths
+    // never both deliver. Transactional dispatch is a SEPARATE worker.
     if (this.mode() === "outbox") {
       await this.processMarketing(owner, health);
     }

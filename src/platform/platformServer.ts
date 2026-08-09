@@ -135,10 +135,29 @@ import {
   MarketingPauseRepository,
 } from "./marketing/MarketingPauseService";
 import { MarketingWorker } from "./marketing/MarketingWorker";
+import { TransactionalDispatchWorker } from "./marketing/TransactionalDispatchWorker";
 import {
   resolveMarketingDeliveryMode,
   describeDeliveryMode,
 } from "./marketing/marketingDeliveryMode";
+import {
+  LeadMagnetCapabilityService,
+  LeadMagnetCapabilityRepository,
+} from "./magnet/LeadMagnetCapabilityService";
+import {
+  LeadMagnetDownloadSessionService,
+  LeadMagnetDownloadSessionRepository,
+} from "./magnet/LeadMagnetDownloadSessionService";
+import {
+  LeadMagnetDispatchService,
+  LeadMagnetDispatchRepository,
+  createLeadMagnetSend,
+} from "./magnet/LeadMagnetDispatchService";
+import {
+  LeadMagnetFulfillmentService,
+  LeadMagnetFulfillmentRepository,
+} from "./magnet/LeadMagnetFulfillmentService";
+import { checkMagnetFileMeta } from "./magnet/magnetFilePolicy";
 import {
   createMarketingEligibility,
   createMarketingSend,
@@ -597,6 +616,36 @@ async function start(): Promise<void> {
   const marketingPause = new MarketingPauseService(
     new MarketingPauseRepository(db),
   );
+  // Lead-magnet fulfillment (TRANSACTIONAL, independent of marketing). Durable
+  // fulfillment records + download capabilities + one-time download sessions +
+  // the email dispatch queue.
+  const magnetCapabilities = new LeadMagnetCapabilityService(
+    new LeadMagnetCapabilityRepository(db),
+  );
+  const magnetSessions = new LeadMagnetDownloadSessionService(
+    new LeadMagnetDownloadSessionRepository(db),
+  );
+  const magnetDispatch = new LeadMagnetDispatchService(
+    new LeadMagnetDispatchRepository(db),
+  );
+  const magnetFulfillment = new LeadMagnetFulfillmentService(
+    new LeadMagnetFulfillmentRepository(db),
+    magnetCapabilities,
+    // Eligibility: live, tenant-owned, PDF-policy file (metadata check).
+    async (fileId: string) => {
+      try {
+        const f = await files.get(fileId);
+        return checkMagnetFileMeta({
+          mimeType: f.mimeType,
+          name: f.name,
+          size: f.size,
+          deletedAt: f.deletedAt,
+        }).ok;
+      } catch {
+        return false;
+      }
+    },
+  );
   const forms = new PlatformFormService(
     new PlatformFormRepository(db),
     {
@@ -865,6 +914,9 @@ async function start(): Promise<void> {
   let workerLastTickAt:
     | string
     | null = null;
+  // Separate heartbeat for the TRANSACTIONAL dispatch worker (independent of the
+  // marketing worker + marketing mode).
+  let transactionalLastTickAt: string | null = null;
   const DRIP_TICK_MS = Number(
     process.env.DRIP_TICK_MS ??
       60_000,
@@ -884,6 +936,8 @@ async function start(): Promise<void> {
       workerLastTickAt: () =>
         workerLastTickAt,
       workerIntervalMs: DRIP_TICK_MS,
+      transactionalLastTickAt: () =>
+        transactionalLastTickAt,
       marketingDeliveryMode: () =>
         deliveryMode.mode,
       startedAt,
@@ -957,6 +1011,8 @@ async function start(): Promise<void> {
     marketingOutbox,
     marketingPause,
     confirmationDispatch,
+    magnetCapabilities,
+    magnetSessions,
     emailVerification,
     marketingSender,
     emailProvider,
@@ -1067,16 +1123,48 @@ async function start(): Promise<void> {
   }, DRIP_TICK_MS);
   dripTimer.unref();
 
-  // Marketing/confirmation worker. It ALWAYS runs so the TRANSACTIONAL
-  // double-opt-in confirmation dispatch keeps working in every mode; its
-  // MARKETING processing is gated INTERNALLY by the delivery mode (outbox only).
-  // Ready-activation processing (which seeds outbox marketing work) also runs
-  // only in `outbox` mode. Mutual exclusivity with the legacy drip path is
-  // guaranteed by the single mode: drip.runDue sends only in `legacy`; the
-  // worker's marketing runs only in `outbox`.
   const MARKETING_TICK_MS = Number(process.env.MARKETING_TICK_MS ?? 60_000);
   const marketingBaseDomain =
     process.env.PLATFORM_BASE_DOMAIN?.trim() || "allelitecloud.com";
+
+  // TRANSACTIONAL dispatch worker — double-opt-in confirmation + lead-magnet
+  // email. It ALWAYS runs, INDEPENDENT of MARKETING_DELIVERY_MODE, so pausing/
+  // disabling marketing can never stop transactional mail. Its own heartbeat is
+  // exposed separately in health.
+  const transactionalWorker = new TransactionalDispatchWorker({
+    confirmation: {
+      service: confirmationDispatch,
+      eligibility: async (row) => {
+        const d = await suppression.marketingDeliverability(row.organizationId, row.email);
+        return d.eligible ? { eligible: true } : { eligible: false, reason: d.reason ?? "suppressed" };
+      },
+      send: createConfirmationSend({ doubleOptIn, marketingSender, emailProvider }),
+    },
+    magnet: {
+      service: magnetDispatch,
+      // Magnet email uses the configured, authenticated TRANSACTIONAL sender
+      // (never the marketing sender). Fail closed if none is configured.
+      send: transactionalFrom
+        ? createLeadMagnetSend({
+            capabilities: magnetCapabilities,
+            emailProvider,
+            transactionalFrom,
+          })
+        : async () => ({ classification: "pre_acceptance_failure" as const, reason: "no_transactional_sender" }),
+    },
+  });
+  const transactionalTimer: NodeJS.Timeout = setInterval(() => {
+    transactionalLastTickAt = new Date().toISOString();
+    void transactionalWorker.runOnce("platform").catch((error: unknown) => {
+      console.error("Transactional dispatch worker tick failed.", error);
+    });
+  }, MARKETING_TICK_MS);
+  transactionalTimer.unref();
+
+  // MARKETING worker — marketing outbox ONLY, gated to `outbox` mode. Ready-
+  // activation processing (which seeds outbox marketing work) also runs only in
+  // `outbox`. Mutual exclusivity with the legacy drip path holds via the single
+  // mode: drip.runDue sends only in `legacy`; this runs only in `outbox`.
   const activationGates = createActivationGates({
     consent: marketingConsent,
     suppression,
@@ -1089,23 +1177,6 @@ async function start(): Promise<void> {
     limits: marketingLimits,
     pause: marketingPause,
     mode: marketingMode,
-    confirmation: {
-      service: confirmationDispatch,
-      eligibility: async (row) => {
-        const d = await suppression.marketingDeliverability(
-          row.organizationId,
-          row.email,
-        );
-        return d.eligible
-          ? { eligible: true }
-          : { eligible: false, reason: d.reason ?? "suppressed" };
-      },
-      send: createConfirmationSend({
-        doubleOptIn,
-        marketingSender,
-        emailProvider,
-      }),
-    },
     eligibility: createMarketingEligibility({
       consent: marketingConsent,
       suppression,
@@ -1124,9 +1195,7 @@ async function start(): Promise<void> {
     workerLastTickAt = new Date().toISOString();
     void (async () => {
       try {
-        // Confirmation always; marketing only in `outbox` mode (internal gate).
         await marketingWorker.runOnce("platform");
-        // Activation → enrollment + first outbox step is outbox-only work.
         if (marketingMode() === "outbox") {
           await marketingActivations.activateReady(activationGates);
         }
@@ -1152,10 +1221,12 @@ async function start(): Promise<void> {
     );
 
     clearInterval(dripTimer);
-    // Marketing worker: stop claiming new work; any in-flight lease completes or
-    // safely expires (recovered as delivery_unknown on next start, never resent).
-    if (marketingTimer) clearInterval(marketingTimer);
-    marketingWorker?.beginShutdown();
+    // Workers: stop claiming new work; any in-flight lease completes or safely
+    // expires (recovered as delivery_unknown on next start, never resent).
+    clearInterval(marketingTimer);
+    marketingWorker.beginShutdown();
+    clearInterval(transactionalTimer);
+    transactionalWorker.beginShutdown();
 
     server.close(() => {
       void db

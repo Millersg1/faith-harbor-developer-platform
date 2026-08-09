@@ -6,11 +6,6 @@ import {
   type OutboxMessage,
 } from "./MarketingOutboxService";
 import {
-  ConfirmationDispatchRepository,
-  ConfirmationDispatchService,
-  type DispatchAttempt,
-} from "./ConfirmationDispatchService";
-import {
   DEFAULT_MARKETING_LIMITS,
   MarketingLimitsService,
   MarketingMeterRepository,
@@ -32,7 +27,6 @@ function harness(opts: {
   workerConfig?: MarketingWorkerDeps["config"];
   eligibility?: MarketingWorkerDeps["eligibility"];
   send?: MarketingWorkerDeps["send"];
-  withConfirmation?: boolean;
   startMs?: number;
 } = {}) {
   const clock = { ms: opts.startMs ?? 1_700_000_000_000 };
@@ -49,10 +43,6 @@ function harness(opts: {
     new Date(clock.ms).toISOString(),
   );
 
-  const confirmationRepo = new ConfirmationDispatchRepository();
-  const confirmation = new ConfirmationDispatchService(confirmationRepo, now);
-  const confSends: DispatchAttempt[] = [];
-
   const deps: MarketingWorkerDeps = {
     outbox: outboxRepo,
     limits,
@@ -63,22 +53,9 @@ function harness(opts: {
       (async () => ({ classification: "accepted", providerId: "mid" } as const)),
     now,
     config: opts.workerConfig,
-    ...(opts.withConfirmation
-      ? {
-          confirmation: {
-            service: confirmation,
-            eligibility: async () => ({ eligible: true as const }),
-            send: async (): Promise<DispatchAttempt> => {
-              const a: DispatchAttempt = { classification: "accepted", providerId: "c" };
-              confSends.push(a);
-              return a;
-            },
-          },
-        }
-      : {}),
   };
   const worker = new MarketingWorker(deps);
-  return { worker, outbox, outboxRepo, limits, pause, meter, confirmation, clock, now };
+  return { worker, outbox, outboxRepo, limits, pause, meter, clock, now };
 }
 
 let seq = 0;
@@ -153,7 +130,7 @@ describe("MarketingWorker — claiming & metering", () => {
 describe("MarketingWorker — fairness & isolation", () => {
   it("caps sends per tenant per cycle and still serves other tenants", async () => {
     const { worker, outbox, meter, now } = harness({
-      workerConfig: { perTenantBatch: 3, batchLimit: 50, leaseMs: 60_000, deferMs: 60_000, confirmationLimit: 25 },
+      workerConfig: { perTenantBatch: 3, batchLimit: 50, leaseMs: 60_000, deferMs: 60_000 },
     });
     await enqueue(outbox, "orgA", 10);
     await enqueue(outbox, "orgB", 2);
@@ -179,25 +156,6 @@ describe("MarketingWorker — fairness & isolation", () => {
     const day = await meterRow(meter, "orgA", now());
     expect(day.sent_count).toBe(1); // only one allowed this hour
     expect(day.attempt_count).toBe(1); // deferred ones never attempted
-  });
-});
-
-describe("MarketingWorker — transactional priority", () => {
-  it("transactional confirmation proceeds while ALL marketing is paused", async () => {
-    const { worker, outbox, confirmation, pause, meter, now } = harness({
-      withConfirmation: true,
-    });
-    await pause.pauseTenant("orgA", { actor: "owner" });
-    await enqueue(outbox, "orgA", 2);
-    await confirmation.enqueue({
-      organizationId: "orgA",
-      activationId: "act-1",
-      email: "c@x.com",
-      confirmBase: "https://a.example",
-    });
-    const health = await worker.runOnce("w");
-    expect(health.confirmation.sent).toBe(1); // transactional unaffected by pause
-    expect(await sentCount(meter, "orgA", now())).toBe(0); // marketing paused
   });
 });
 

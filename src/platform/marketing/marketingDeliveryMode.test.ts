@@ -8,11 +8,6 @@ import {
   MarketingOutboxRepository,
   MarketingOutboxService,
 } from "./MarketingOutboxService";
-import {
-  ConfirmationDispatchRepository,
-  ConfirmationDispatchService,
-  type DispatchAttempt,
-} from "./ConfirmationDispatchService";
 import { MarketingMeterRepository, MarketingLimitsService } from "./MarketingLimitsService";
 import { MarketingPauseRepository, MarketingPauseService } from "./MarketingPauseService";
 import { MarketingWorker, type MarketingSendResult } from "./MarketingWorker";
@@ -118,28 +113,20 @@ describe("legacy drip path is gated by mode", () => {
   });
 });
 
-// A worker harness whose marketing send + confirmation send are observable.
+// A MARKETING worker harness (marketing send observable). The marketing worker
+// is marketing-only now; transactional dispatch is a separate worker.
 function workerHarness(mode: MarketingDeliveryMode) {
   const now = () => 1_700_000_000_000;
   const outboxRepo = new MarketingOutboxRepository();
   const outbox = new MarketingOutboxService(outboxRepo, now);
   const limits = new MarketingLimitsService(new MarketingMeterRepository(), undefined, now);
   const pause = new MarketingPauseService(new MarketingPauseRepository());
-  const confirmation = new ConfirmationDispatchService(new ConfirmationDispatchRepository(), now);
-  const counts = { marketing: 0, confirmation: 0 };
+  const counts = { marketing: 0 };
   const worker = new MarketingWorker({
     outbox: outboxRepo,
     limits,
     pause,
     mode: () => mode,
-    confirmation: {
-      service: confirmation,
-      eligibility: async () => ({ eligible: true }),
-      send: async (): Promise<DispatchAttempt> => {
-        counts.confirmation += 1;
-        return { classification: "accepted", providerId: "c" };
-      },
-    },
     eligibility: async () => ({ kind: "send" }),
     send: async (): Promise<MarketingSendResult> => {
       counts.marketing += 1;
@@ -147,10 +134,10 @@ function workerHarness(mode: MarketingDeliveryMode) {
     },
     now,
   });
-  return { worker, outbox, confirmation, counts };
+  return { worker, outbox, counts };
 }
 
-describe("outbox worker is gated by mode; confirmation is independent", () => {
+describe("outbox worker is gated by mode (marketing only)", () => {
   it("marketing sends only in outbox mode", async () => {
     for (const mode of ["disabled", "legacy", "outbox"] as const) {
       const h = workerHarness(mode);
@@ -165,22 +152,6 @@ describe("outbox worker is gated by mode; confirmation is independent", () => {
       });
       await h.worker.runOnce("w");
       expect(h.counts.marketing).toBe(mode === "outbox" ? 1 : 0);
-    }
-  });
-
-  it("transactional confirmation dispatch runs in EVERY mode", async () => {
-    for (const mode of ["disabled", "legacy", "outbox"] as const) {
-      const h = workerHarness(mode);
-      await h.confirmation.enqueue({
-        organizationId: "orgA",
-        activationId: `act-${mode}`,
-        email: "c@x.com",
-        confirmBase: "https://a.example",
-      });
-      await h.worker.runOnce("w");
-      expect(h.counts.confirmation).toBe(1); // transactional unaffected by mode
-      // marketing only in outbox (no outbox rows enqueued here, so 0 anyway)
-      expect(h.counts.marketing).toBe(0);
     }
   });
 });

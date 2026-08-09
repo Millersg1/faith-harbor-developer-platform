@@ -54,6 +54,9 @@ import type { MarketingOutboxService } from "./marketing/MarketingOutboxService"
 import type { MarketingPauseService } from "./marketing/MarketingPauseService";
 import type { ConfirmationDispatchService } from "./marketing/ConfirmationDispatchService";
 import { createMarketingOpsRouter } from "./marketing/marketingOpsRouter";
+import type { LeadMagnetCapabilityService } from "./magnet/LeadMagnetCapabilityService";
+import type { LeadMagnetDownloadSessionService } from "./magnet/LeadMagnetDownloadSessionService";
+import { createLeadMagnetDownloadRouter } from "./magnet/leadMagnetDownloadRouter";
 import type { EmailVerificationService } from "./auth/EmailVerificationService";
 import type { MarketingSenderService } from "./marketing/MarketingSenderService";
 import type { EmailDeliveryProvider } from "./email/EmailDeliveryProvider";
@@ -144,6 +147,10 @@ export interface PlatformAppDependencies {
   marketingPause?: MarketingPauseService;
   /** Confirmation dispatch (owner/admin visibility of stuck confirmations). */
   confirmationDispatch?: ConfirmationDispatchService;
+  /** Lead-magnet download capabilities (public capability-gated download). */
+  magnetCapabilities?: LeadMagnetCapabilityService;
+  /** Lead-magnet one-time download sessions (the hardened cookie exchange). */
+  magnetSessions?: LeadMagnetDownloadSessionService;
   /** Account-email verification (platform transactional). */
   emailVerification?: EmailVerificationService;
   /** Tenant marketing sender resolution (for the labeled test email). */
@@ -1771,6 +1778,19 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
       preferences: deps.preferences,
     }),
   );
+
+  // Public, capability-gated lead-magnet download (GET/POST /magnet, GET
+  // /magnet/file). No auth: the capability + one-time session ARE the proof.
+  if (deps.magnetCapabilities && deps.magnetSessions && deps.files) {
+    app.use(
+      createLeadMagnetDownloadRouter({
+        capabilities: deps.magnetCapabilities,
+        sessions: deps.magnetSessions,
+        files: deps.files,
+        secureCookie: deps.secureCookie,
+      }),
+    );
+  }
 
   app.use((_req, res) => {
     res.status(404).json({

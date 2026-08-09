@@ -18,6 +18,15 @@ export interface SystemHealth {
     intervalMs: number;
   };
   /**
+   * The TRANSACTIONAL dispatch worker (double-opt-in confirmation + lead-magnet
+   * email). Reported SEPARATELY from the marketing mode so operators can see
+   * transactional mail is processing even when marketing is disabled. No secrets.
+   */
+  transactionalWorker: {
+    running: boolean;
+    lastTickAt: string | null;
+  };
+  /**
    * The single authoritative marketing delivery mode (disabled|legacy|outbox),
    * so operators can confirm exactly one path is live. No secrets.
    */
@@ -36,6 +45,8 @@ export interface HealthChecks {
   /** The last background-worker tick time (ISO), or null if it hasn't ticked. */
   workerLastTickAt: () => string | null;
   workerIntervalMs: number;
+  /** The last TRANSACTIONAL-worker tick time (ISO), or null. */
+  transactionalLastTickAt: () => string | null;
   /** The active marketing delivery mode (read at snapshot time). */
   marketingDeliveryMode: () => "disabled" | "legacy" | "outbox";
   startedAt: string;
@@ -100,6 +111,16 @@ export class PlatformHealthService {
         lastTickAt,
         intervalMs:
           this.checks.workerIntervalMs,
+      },
+      transactionalWorker: {
+        lastTickAt: this.checks.transactionalLastTickAt(),
+        running: (() => {
+          const t = this.checks.transactionalLastTickAt();
+          return t
+            ? this.now() - Date.parse(t) <
+                this.checks.workerIntervalMs * 3
+            : false;
+        })(),
       },
       marketingDeliveryMode:
         this.checks.marketingDeliveryMode(),

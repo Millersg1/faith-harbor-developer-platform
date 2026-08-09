@@ -6,6 +6,10 @@ import {
   LeadMagnetCapabilityRepository,
   LeadMagnetCapabilityService,
 } from "./LeadMagnetCapabilityService";
+import {
+  LeadMagnetDownloadSessionRepository,
+  LeadMagnetDownloadSessionService,
+} from "./LeadMagnetDownloadSessionService";
 import { createLeadMagnetDownloadRouter, type MagnetFileSource } from "./leadMagnetDownloadRouter";
 
 const PDF = Buffer.from("%PDF-1.7\n%����\n1 0 obj<<>>endobj\n", "latin1");
@@ -35,11 +39,17 @@ function harness(startMs = 1_700_000_000_000) {
     new LeadMagnetCapabilityRepository(),
     () => clock.ms,
   );
+  const sessions = new LeadMagnetDownloadSessionService(
+    new LeadMagnetDownloadSessionRepository(),
+    () => clock.ms,
+  );
   const files = makeFiles();
   files.store.set("file1", { name: "The Guide.pdf", data: PDF });
   const app = express();
-  app.use(createLeadMagnetDownloadRouter({ capabilities, files, now: () => clock.ms }));
-  return { app, capabilities, files, clock };
+  app.use(
+    createLeadMagnetDownloadRouter({ capabilities, sessions, files, now: () => clock.ms, secureCookie: true }),
+  );
+  return { app, capabilities, sessions, files, clock };
 }
 
 async function mint(capabilities: LeadMagnetCapabilityService, over: Record<string, string> = {}) {
@@ -70,6 +80,21 @@ describe("lead-magnet download route", () => {
     expect(res.headers["content-security-policy"]).toMatch(/frame-ancestors 'none'/);
     expect(res.text).toMatch(/history\.replaceState/);
     expect(res.text).not.toMatch(/https?:\/\//); // no third-party assets
+  });
+
+  it("the download-session cookie is a hardened one-time capability (Secure/HttpOnly/SameSite/host-only, no wildcard Domain)", async () => {
+    const { app, capabilities } = harness();
+    const token = await mint(capabilities);
+    const post = await request(app).post("/magnet").send({ token });
+    const setCookie = (post.headers["set-cookie"] as unknown as string[])[0];
+    expect(setCookie).toMatch(/HttpOnly/i);
+    expect(setCookie).toMatch(/Secure/i);
+    expect(setCookie).toMatch(/SameSite=Strict/i);
+    expect(setCookie).toMatch(/Path=\/magnet\/file/i);
+    expect(setCookie).toMatch(/Max-Age=120/i);
+    expect(setCookie).not.toMatch(/Domain=/i); // host-only: never a wildcard domain
+    // The capability/session id never appears in the JSON body.
+    expect(JSON.stringify(post.body)).not.toMatch(/[a-f0-9]{48}/);
   });
 
   it("valid capability → session cookie → PDF served as a hardened attachment", async () => {
@@ -127,6 +152,25 @@ describe("lead-magnet download route", () => {
     const { app } = harness();
     expect((await request(app).get("/magnet/file")).status).toBe(404);
     expect((await request(app).get("/magnet/file").set("Cookie", "aec_magnet_dl=" + "a".repeat(48))).status).toBe(404);
+  });
+
+  it("a fixated (attacker-preset) cookie is superseded by the rotated exchange cookie", async () => {
+    const { app, capabilities } = harness();
+    const token = await mint(capabilities);
+    // Attacker pre-sets a cookie; the exchange must rotate a fresh one.
+    const post = await request(app).post("/magnet").set("Cookie", "aec_magnet_dl=" + "b".repeat(48)).send({ token });
+    const fresh = cookieFrom(post);
+    // The attacker's value is NOT valid; only the rotated cookie downloads.
+    expect((await request(app).get("/magnet/file").set("Cookie", "aec_magnet_dl=" + "b".repeat(48))).status).toBe(404);
+    expect((await request(app).get("/magnet/file").set("Cookie", fresh)).status).toBe(200);
+  });
+
+  it("an expired download session fails closed", async () => {
+    const { app, capabilities, clock } = harness();
+    const token = await mint(capabilities);
+    const cookie = cookieFrom(await request(app).post("/magnet").send({ token }));
+    clock.ms += 3 * 60 * 1000; // past the 2-minute session TTL
+    expect((await request(app).get("/magnet/file").set("Cookie", cookie)).status).toBe(404);
   });
 
   it("a file that is no longer a PDF (bytes) is refused at serve time", async () => {

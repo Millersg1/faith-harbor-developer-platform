@@ -94,6 +94,7 @@ async function build() {
             1_000_000,
           ).toISOString(),
         workerIntervalMs: 60_000,
+        transactionalLastTickAt: () => null,
         marketingDeliveryMode: () => "legacy",
         startedAt: new Date(
           0,
@@ -320,6 +321,7 @@ describe("PlatformHealthService", () => {
             100_000,
           ).toISOString(),
         workerIntervalMs: 60_000,
+        transactionalLastTickAt: () => null,
         marketingDeliveryMode: () => "legacy",
         startedAt: new Date(
           40_000,
@@ -348,6 +350,7 @@ describe("PlatformHealthService", () => {
         workerLastTickAt: () =>
           new Date(0).toISOString(),
         workerIntervalMs: 60_000,
+        transactionalLastTickAt: () => null,
         marketingDeliveryMode: () => "legacy",
         startedAt: new Date(
           0,
@@ -376,6 +379,7 @@ describe("PlatformHealthService", () => {
         stripeConnected: false,
         workerLastTickAt: () => null,
         workerIntervalMs: 60_000,
+        transactionalLastTickAt: () => null,
         marketingDeliveryMode: () => "legacy",
         startedAt: new Date(
           0,

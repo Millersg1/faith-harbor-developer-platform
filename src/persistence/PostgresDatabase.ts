@@ -909,6 +909,23 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS lead_magnet_dispatch_due_idx
         ON lead_magnet_dispatch (status, next_attempt_at);
     `);
+    // One-time, opaque DOWNLOAD-SESSION capabilities (the httpOnly cookie issued
+    // by the fragment exchange). Hash-only, short-TTL, single-use, atomically
+    // consumed, bound to org/fulfillment/file/purpose. Durable so it survives a
+    // restart within its short window and is multi-worker-safe.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS lead_magnet_download_sessions (
+        session_hash     TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL
+                           REFERENCES organizations (id) ON DELETE CASCADE,
+        fulfillment_id   TEXT NOT NULL,
+        file_id          TEXT NOT NULL,
+        purpose          TEXT NOT NULL,
+        expires_at       TEXT NOT NULL,
+        used             BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at       TEXT NOT NULL
+      );
+    `);
     // Double-opt-in confirmation tokens (hash-only, single-use, time-limited).
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS double_optin_tokens (
