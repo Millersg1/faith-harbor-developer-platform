@@ -65,6 +65,11 @@ export function buildAad(ctx: EncryptionContext): Buffer {
 export class EnvelopeCipher {
   constructor(private readonly keyring: Keyring) {}
 
+  /** The active key version new writes are sealed under (for storage metadata). */
+  activeKeyVersion(): number {
+    return this.keyring.encActiveVersion;
+  }
+
   encrypt(plaintext: string, ctx: EncryptionContext): string {
     const key = this.keyring.encKey(this.keyring.encActiveVersion);
     const nonce = randomBytes(NONCE_BYTES);
