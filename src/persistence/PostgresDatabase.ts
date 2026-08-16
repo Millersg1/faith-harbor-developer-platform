@@ -1626,6 +1626,269 @@ export class PostgresDatabase
         created_at       TEXT NOT NULL
       );
     `);
+
+    // ===================================================================
+    // Domain registration subsystem (Stage 3). Additive + idempotent.
+    //
+    // OWNERSHIP EXCEPTION — deliberate departure from the platform's usual
+    // `organization_id ... ON DELETE CASCADE`: a customer domain is EXTERNAL
+    // PROPERTY the customer legally owns. Confirmed registrations, orders,
+    // contacts, provider attempts, terms acceptances, transfers, lifecycle
+    // history, and support actions therefore reference organizations with
+    // `ON DELETE RESTRICT` — deleting an organization FAILS CLOSED while any of
+    // these exist, forcing an explicit domain-disposition process first. Only
+    // `domain_quotes` (disposable, unpaid advisory data) cascades. Tables that
+    // are children of a registration cascade from `domain_registrations` (so a
+    // properly-dispositioned registration takes its own children with it) while
+    // still being blocked at the organization level by the registration's own
+    // RESTRICT. Money is BIGINT minor units + an explicit ISO currency; no
+    // floating point, no implicit FX. Encrypted PII lives only in
+    // `domain_contacts` as an authenticated envelope; audit/attempt tables hold
+    // compact ids + enums only. States are application-enforced TEXT (project
+    // convention) — no PG enum types, for forward-compatible migrations.
+    // ===================================================================
+
+    // Immutable pricing-rule versions (global). A quote/order references the
+    // version it was priced under; changing rules never rewrites old rows.
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS domain_pricing_versions (
+        version       INTEGER PRIMARY KEY,
+        rule          JSONB NOT NULL,
+        note          TEXT,
+        created_at    TEXT NOT NULL
+      );
+
+      -- Advisory quotes (disposable; may cascade on org deletion / retention).
+      CREATE TABLE IF NOT EXISTS domain_quotes (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
+        ascii_domain        TEXT NOT NULL,
+        unicode_domain      TEXT NOT NULL,
+        tld                 TEXT NOT NULL,
+        is_premium          BOOLEAN NOT NULL DEFAULT FALSE,
+        years               INTEGER NOT NULL,
+        provider            TEXT NOT NULL,
+        currency            TEXT NOT NULL,
+        provider_cost_minor BIGINT NOT NULL,
+        markup_minor        BIGINT NOT NULL,
+        customer_price_minor BIGINT NOT NULL,
+        renewal_cost_minor  BIGINT,
+        renewal_price_minor BIGINT,
+        transfer_price_minor BIGINT,
+        pricing_version     INTEGER NOT NULL,
+        status              TEXT NOT NULL DEFAULT 'active',
+        created_at          TEXT NOT NULL,
+        expires_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_quotes_org ON domain_quotes (organization_id);
+      CREATE INDEX IF NOT EXISTS idx_domain_quotes_domain ON domain_quotes (organization_id, ascii_domain);
+
+      -- The purchase saga. RESTRICT: an order is money + a registration attempt.
+      CREATE TABLE IF NOT EXISTS domain_orders (
+        id                    TEXT PRIMARY KEY,
+        organization_id       TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        quote_id              TEXT REFERENCES domain_quotes (id) ON DELETE SET NULL,
+        ascii_domain          TEXT NOT NULL,
+        unicode_domain        TEXT NOT NULL,
+        tld                   TEXT NOT NULL,
+        is_premium            BOOLEAN NOT NULL DEFAULT FALSE,
+        years                 INTEGER NOT NULL,
+        provider              TEXT NOT NULL,
+        currency              TEXT NOT NULL,
+        provider_cost_minor   BIGINT NOT NULL,
+        markup_minor          BIGINT NOT NULL,
+        customer_price_minor  BIGINT NOT NULL,
+        pricing_version       INTEGER NOT NULL,
+        enable_privacy        BOOLEAN NOT NULL DEFAULT TRUE,
+        auto_renew_choice     BOOLEAN NOT NULL DEFAULT FALSE,
+        status                TEXT NOT NULL DEFAULT 'quoted',
+        idempotency_key       TEXT NOT NULL,
+        stripe_checkout_id    TEXT,
+        stripe_payment_intent_id TEXT,
+        charged_minor         BIGINT,
+        refunded_minor        BIGINT,
+        attempts              INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at       TEXT,
+        lease_owner           TEXT,
+        lease_until           TEXT,
+        reason                TEXT,
+        provider_correlation_id TEXT,
+        created_at            TEXT NOT NULL,
+        updated_at            TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_orders_idem_uniq ON domain_orders (idempotency_key);
+      CREATE INDEX IF NOT EXISTS idx_domain_orders_org ON domain_orders (organization_id);
+      CREATE INDEX IF NOT EXISTS domain_orders_claim_idx ON domain_orders (status, next_attempt_at);
+      -- At most ONE active purchase attempt per (org, domain).
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_orders_active_uniq
+        ON domain_orders (organization_id, ascii_domain)
+        WHERE status IN ('quoted','payment_pending','paid','registration_queued','registration_processing');
+
+      -- Confirmed ownership (external property). RESTRICT at the org level.
+      CREATE TABLE IF NOT EXISTS domain_registrations (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        order_id            TEXT REFERENCES domain_orders (id) ON DELETE RESTRICT,
+        ascii_domain        TEXT NOT NULL,
+        unicode_domain      TEXT NOT NULL,
+        tld                 TEXT NOT NULL,
+        provider            TEXT NOT NULL,
+        provider_domain_id  TEXT,
+        registered_at       TEXT NOT NULL,
+        expires_at          TEXT,
+        status              TEXT NOT NULL DEFAULT 'active',
+        disposition         TEXT NOT NULL DEFAULT 'retained_active',
+        locked              BOOLEAN,
+        privacy_state       TEXT,
+        autorenew_enabled   BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      -- One confirmed registration per registry identity (provider guarantees it).
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_registrations_provider_domain_uniq
+        ON domain_registrations (provider, ascii_domain);
+      CREATE INDEX IF NOT EXISTS idx_domain_registrations_org ON domain_registrations (organization_id);
+
+      -- Encrypted registrant/admin/tech/billing contacts, WITH version history.
+      -- Rows are immutable evidence; a correction inserts a new version and
+      -- flips is_current on the prior row (the ciphertext/actor/effective_at of
+      -- an accepted version is never altered).
+      CREATE TABLE IF NOT EXISTS domain_contacts (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        contact_role        TEXT NOT NULL,
+        version             INTEGER NOT NULL,
+        is_current          BOOLEAN NOT NULL DEFAULT TRUE,
+        contact_ciphertext  TEXT NOT NULL,
+        enc_alg             TEXT NOT NULL,
+        key_version         INTEGER NOT NULL,
+        email_blind_index   TEXT,
+        phone_blind_index   TEXT,
+        effective_at        TEXT NOT NULL,
+        actor_id            TEXT,
+        reason              TEXT,
+        provider_correlation_id TEXT,
+        pending_provider_verification BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at          TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_contacts_current_uniq
+        ON domain_contacts (registration_id, contact_role) WHERE is_current;
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_contacts_version_uniq
+        ON domain_contacts (registration_id, contact_role, version);
+      CREATE INDEX IF NOT EXISTS idx_domain_contacts_email_bi
+        ON domain_contacts (organization_id, email_blind_index);
+
+      -- Append-only provider-attempt history (compact ids + enums only).
+      CREATE TABLE IF NOT EXISTS domain_provider_attempts (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        order_id            TEXT REFERENCES domain_orders (id) ON DELETE RESTRICT,
+        registration_id     TEXT REFERENCES domain_registrations (id) ON DELETE RESTRICT,
+        operation           TEXT NOT NULL,
+        outcome             TEXT NOT NULL,
+        attempt_no          INTEGER NOT NULL DEFAULT 1,
+        error_category      TEXT,
+        provider_correlation_id TEXT,
+        created_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_attempts_order ON domain_provider_attempts (order_id);
+
+      -- Immutable terms-acceptance evidence (references, not bodies).
+      CREATE TABLE IF NOT EXISTS domain_terms_acceptances (
+        id                       TEXT PRIMARY KEY,
+        organization_id          TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        user_id                  TEXT,
+        order_id                 TEXT REFERENCES domain_orders (id) ON DELETE RESTRICT,
+        aec_terms_version        INTEGER NOT NULL,
+        registrar_agreement_ref  TEXT NOT NULL,
+        registrar_agreement_fingerprint TEXT,
+        pricing_version          INTEGER NOT NULL,
+        quote_id                 TEXT,
+        years                    INTEGER NOT NULL,
+        auto_renew_choice        BOOLEAN NOT NULL DEFAULT FALSE,
+        accepted_at              TEXT NOT NULL,
+        source                   TEXT,
+        ip                       TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_terms_org ON domain_terms_acceptances (organization_id);
+
+      -- Append-only lifecycle history (registered/renewed/expiring/etc.).
+      CREATE TABLE IF NOT EXISTS domain_lifecycle_events (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        event_type          TEXT NOT NULL,
+        detail              TEXT,
+        actor_id            TEXT,
+        provider_correlation_id TEXT,
+        occurred_at         TEXT NOT NULL,
+        created_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_lifecycle_reg ON domain_lifecycle_events (registration_id, occurred_at DESC);
+
+      -- De-duplicated lifecycle notices (durable outbox; one per type per reg).
+      CREATE TABLE IF NOT EXISTS domain_notices (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        notice_type         TEXT NOT NULL,
+        status              TEXT NOT NULL DEFAULT 'queued',
+        attempts            INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at     TEXT,
+        lease_owner         TEXT,
+        lease_until         TEXT,
+        provider_id         TEXT,
+        reason              TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_notices_dedup_uniq
+        ON domain_notices (registration_id, notice_type);
+      CREATE INDEX IF NOT EXISTS domain_notices_claim_idx ON domain_notices (status, next_attempt_at);
+
+      -- Transfer requests (outgoing/incoming). Never stores a raw EPP code.
+      CREATE TABLE IF NOT EXISTS domain_transfer_requests (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT REFERENCES domain_registrations (id) ON DELETE RESTRICT,
+        direction           TEXT NOT NULL,
+        ascii_domain        TEXT NOT NULL,
+        state               TEXT NOT NULL DEFAULT 'pending',
+        provider_correlation_id TEXT,
+        epp_capability_id   TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_transfers_org ON domain_transfer_requests (organization_id);
+
+      -- DNS/nameserver provisioning state, kept SEPARATE from registration status.
+      CREATE TABLE IF NOT EXISTS domain_dns_state (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        mode                TEXT NOT NULL DEFAULT 'registrar_default',
+        nameservers         TEXT,
+        provisioning_status TEXT NOT NULL DEFAULT 'none',
+        hosting_account_id  TEXT REFERENCES hosting_accounts (id) ON DELETE SET NULL,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_dns_state_reg_uniq ON domain_dns_state (registration_id);
+
+      -- Append-only platform-admin support/reconciliation actions (no PII).
+      CREATE TABLE IF NOT EXISTS domain_support_actions (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT REFERENCES organizations (id) ON DELETE RESTRICT,
+        order_id            TEXT REFERENCES domain_orders (id) ON DELETE RESTRICT,
+        registration_id     TEXT REFERENCES domain_registrations (id) ON DELETE RESTRICT,
+        action              TEXT NOT NULL,
+        actor_admin_id      TEXT,
+        outcome             TEXT,
+        created_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_support_order ON domain_support_actions (order_id);
+    `);
   }
 
   /**
