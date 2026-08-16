@@ -8,8 +8,9 @@ binary's behavior is unchanged), and live purchasing remains disabled by design.
 
 ## Files changed (all new, additive; nothing else touched)
 
-- `src/platform/domains/domainName.ts` — safe IDNA/Punycode normalization +
-  confusable defence.
+- `src/platform/domains/domainName.ts` — IDNA/Punycode normalization + strict
+  validity checking + a mixed-script **warning** heuristic. (This is NOT full
+  Unicode confusable/UTS #39 detection — see the "IDN security" note below.)
 - `src/platform/domains/RegistrarContact.ts` — registrant/admin/tech/billing
   contact shape (PII).
 - `src/platform/domains/RegistrarProvider.ts` — the provider-neutral interface,
@@ -98,14 +99,55 @@ string and any `ApiKey=/ApiUser=/UserName=/ClientIp=/Password=/Token=` value fro
 any diagnostic string, and transport errors are re-thrown **without** the URL. A
 test asserts the raw wire URL contains the key but the redactor removes it.
 
-## XML parser safety
+## XML parsing safety
 
-No general XML parser is used. We do **bounded, targeted attribute extraction**
-only, so responses are structurally immune to XXE and entity-expansion ("billion
-laughs") — nothing resolves entities or DTDs — and input is size-bounded (2 MB
-guard) before scanning. Money is parsed from decimal strings **without floating
-point** (`decimalToMinor`, string arithmetic, half-up on sub-cent). Provider text
-is sanitized (printable-ASCII, newline-stripped, length-bounded).
+Namecheap responses are parsed by a **rigorously bounded, purpose-specific
+tokenizer** (`parseNamecheap` in `namecheapXml.ts`) — not a general XML parser
+and not regex-scraping. Guarantees:
+
+- **DOCTYPE, `<!ENTITY>`, any `<!` markup declaration, CDATA, and stray
+  processing instructions are rejected before parsing** → no DTD, no entity
+  declarations, no external-entity resolution. Only the five predefined XML
+  entities + bounded numeric character references are decoded; **any other
+  `&name;` is rejected** (fail closed), so XXE / entity-expansion ("billion
+  laughs") is structurally impossible.
+- **No network or filesystem access** — the tokenizer only reads the in-memory
+  string.
+- **Hard limits:** max bytes (1 MB), element count (5 000), attributes/element
+  (64), attribute length (8 KB), text length (16 KB), nesting depth (32).
+- **Duplicate attribute names are rejected** (defends against security-sensitive
+  attribute smuggling).
+- **XML namespaces handled** — a leading `xmlns`/prefix is tolerated and callers
+  match on the local element name.
+- **Escaped text/attribute values are decoded** correctly.
+- **Malformed / truncated / oversized / unexpected input throws
+  `NamecheapParseError`**, which the adapter turns into `ambiguous_unknown` for a
+  mutating request — never a "definitive failure".
+- Raw response bodies are never logged/audited; only bounded, sanitized fields
+  are surfaced. Money is parsed from decimal strings **without floating point**
+  (`decimalToMinor`).
+
+Authentic-fixture tests cover: success + namespaces, provider errors (single +
+multiple), premium results, non-real-time create, escaped characters, unknown
+response elements, and the hostile set (DOCTYPE, `<!ENTITY>`/XXE, unknown
+entity, duplicate attributes, deep nesting, oversized, truncated, unclosed,
+stray PI).
+
+## IDN security (honest characterization)
+
+`domainToASCII()` provides IDNA/ASCII conversion and invalid-domain rejection —
+**it is not, by itself, Unicode confusable/homoglyph detection.** This build
+therefore does **not** claim "confusable defence." It provides: canonical ASCII
+(Punycode) + a separate normalized Unicode display form; rejection of invalid
+conversion, disallowed control/format/invisible code points, bad hyphen
+placement, over-length, and inconsistent round-trip; and a **mixed-script
+warning heuristic** (Latin mixed with Cyrillic/Greek) that is explicitly a
+warning, not full detection. A **single-script homograph** (e.g. an all-Cyrillic
+lookalike) converts and validates cleanly and is **not** flagged — a regression
+test asserts this and documents the limitation. Callers MUST show BOTH the
+Unicode and ASCII forms of a non-ASCII domain on the final review screen and
+require explicit confirmation before purchase. Full confusable detection, if
+added later, will be based on a **pinned Unicode UTS #39 data version**.
 
 ## Error / outcome classification
 
@@ -124,7 +166,7 @@ id, order id, transaction id — safe for storage/admin display.
 ## Verification results
 
 - **Typecheck:** PASS (`tsc -p tsconfig.json --noEmit`).
-- **Focused offline tests:** **52 passed / 3 skipped** across 5 files
+- **Focused offline tests (after Stage 2 corrections):** **68 passed / 3 skipped** across 5 files
   (`vitest run src/platform/domains/`). The 3 skipped are the opt-in sandbox
   contract cases.
 - **Production build:** PASS (`npm run build`); modules compiled to

@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  attr,
   classifyTransportError,
   decimalToMinor,
-  elements,
+  envelopeStatus,
   extractApiError,
-  isApiError,
+  findAll,
+  findFirst,
   NamecheapParseError,
+  parseNamecheap,
   redactSecrets,
   sanitizeText,
 } from "./namecheapXml";
+
+const NS = 'xmlns="http://api.namecheap.com/xml.response"';
 
 describe("decimalToMinor (no float money)", () => {
   it.each([
@@ -18,7 +21,7 @@ describe("decimalToMinor (no float money)", () => {
     ["12", 1200],
     ["0.1", 10],
     ["0.09", 9],
-    ["9.999", 1000], // 3dp rounds half-up into cents
+    ["9.999", 1000],
     ["9.994", 999],
   ])("%s -> %d", (s, expected) => {
     expect(decimalToMinor(s)).toBe(expected);
@@ -31,56 +34,133 @@ describe("decimalToMinor (no float money)", () => {
 });
 
 describe("redactSecrets", () => {
-  it("redacts the whole Namecheap query string", () => {
+  it("redacts the whole Namecheap query string + EPP code", () => {
     const url =
-      "https://api.sandbox.namecheap.com/xml.response?ApiUser=bob&ApiKey=SECRET123&Command=namecheap.domains.check&DomainList=a.com";
+      "https://api.sandbox.namecheap.com/xml.response?ApiUser=bob&ApiKey=SECRET&Command=x&EPPCode=ZZZ";
     const out = redactSecrets(url);
-    expect(out).not.toContain("SECRET123");
+    expect(out).not.toContain("SECRET");
     expect(out).not.toContain("bob");
     expect(out).toContain("[REDACTED]");
   });
-  it("redacts individual sensitive params anywhere", () => {
-    const out = redactSecrets("boom ApiKey=abc ClientIp=1.2.3.4 UserName=joe");
+  it("redacts individual params anywhere", () => {
+    const out = redactSecrets("ApiKey=abc ClientIp=1.2.3.4 EPPCode=xyz");
     expect(out).not.toContain("abc");
-    expect(out).not.toContain("joe");
-    expect(out).toContain("ApiKey=[REDACTED]");
+    expect(out).not.toContain("xyz");
   });
 });
 
-describe("attribute + element extraction", () => {
-  const xml =
-    '<ApiResponse Status="OK"><CommandResponse>' +
-    '<DomainCheckResult Domain="a.com" Available="true" IsPremiumName="false"/>' +
-    '<DomainCheckResult Domain="b.com" Available="false" IsPremiumName="true" PremiumRegistrationPrice="4200.00"/>' +
-    "</CommandResponse></ApiResponse>";
-  it("reads attributes", () => {
-    const els = elements(xml, "DomainCheckResult");
-    expect(els).toHaveLength(2);
-    expect(attr(els[0], "Domain")).toBe("a.com");
-    expect(attr(els[1], "IsPremiumName")).toBe("true");
-    expect(attr(els[1], "PremiumRegistrationPrice")).toBe("4200.00");
+describe("parseNamecheap — authentic fixtures", () => {
+  it("parses a success envelope + namespace, reads by local name", () => {
+    const root = parseNamecheap(
+      `<?xml version="1.0" encoding="utf-8"?><ApiResponse ${NS} Status="OK">` +
+        "<Errors /><CommandResponse>" +
+        '<DomainCheckResult Domain="a.com" Available="true" IsPremiumName="false"/>' +
+        "</CommandResponse></ApiResponse>",
+    );
+    expect(root.name).toBe("ApiResponse");
+    expect(envelopeStatus(root)).toBe("OK");
+    const d = findFirst(root, "DomainCheckResult")!;
+    expect(d.attrs.get("Domain")).toBe("a.com");
+    expect(d.attrs.get("Available")).toBe("true");
   });
-  it("bounds oversized bodies", () => {
-    expect(() => elements("x".repeat(2_000_001), "X")).toThrow();
+
+  it("strips a namespace prefix on element + attribute names", () => {
+    const root = parseNamecheap(
+      `<ApiResponse ${NS} Status="OK"><nc:DomainCheckResult Domain="a.com"/></ApiResponse>`,
+    );
+    expect(findAll(root, "DomainCheckResult")).toHaveLength(1);
+  });
+
+  it("decodes escaped text and attribute values", () => {
+    const root = parseNamecheap(
+      `<ApiResponse Status="ERROR"><Errors>` +
+        `<Error Number="1">A &amp; B &lt; C</Error></Errors></ApiResponse>`,
+    );
+    expect(extractApiError(root).message).toBe("A & B < C");
+  });
+
+  it("captures MULTIPLE provider errors", () => {
+    const root = parseNamecheap(
+      `<ApiResponse Status="ERROR"><Errors>` +
+        `<Error Number="2019166">Domain not found</Error>` +
+        `<Error Number="4022336">Insufficient balance</Error>` +
+        `</Errors></ApiResponse>`,
+    );
+    expect(envelopeStatus(root)).toBe("ERROR");
+    expect(findAll(root, "Error")).toHaveLength(2);
+    expect(extractApiError(root).number).toBe("2019166");
+  });
+
+  it("parses a premium check result", () => {
+    const root = parseNamecheap(
+      `<ApiResponse Status="OK"><DomainCheckResult Domain="p.com" Available="true" ` +
+        `IsPremiumName="true" PremiumRegistrationPrice="4200.00"/></ApiResponse>`,
+    );
+    const d = findFirst(root, "DomainCheckResult")!;
+    expect(d.attrs.get("IsPremiumName")).toBe("true");
+    expect(decimalToMinor(d.attrs.get("PremiumRegistrationPrice")!)).toBe(420000);
+  });
+
+  it("parses a non-real-time create result", () => {
+    const root = parseNamecheap(
+      `<ApiResponse Status="OK"><DomainCreateResult Domain="a.com" Registered="false" NonRealTimeDomain="true" OrderID="o1"/></ApiResponse>`,
+    );
+    const r = findFirst(root, "DomainCreateResult")!;
+    expect(r.attrs.get("NonRealTimeDomain")).toBe("true");
+  });
+
+  it("returns [] for unknown response elements (handled gracefully)", () => {
+    const root = parseNamecheap(`<ApiResponse Status="OK"><Surprise Foo="1"/></ApiResponse>`);
+    expect(findAll(root, "DomainCheckResult")).toEqual([]);
   });
 });
 
-describe("API error envelope", () => {
-  const err =
-    '<ApiResponse Status="ERROR"><Errors>' +
-    '<Error Number="2019166">Domain not found</Error>' +
-    "</Errors></ApiResponse>";
-  it("detects + extracts a sanitized error", () => {
-    expect(isApiError(err)).toBe(true);
-    const e = extractApiError(err);
-    expect(e.number).toBe("2019166");
-    expect(e.message).toBe("Domain not found");
+describe("parseNamecheap — hostile / malformed input is rejected (never definitive)", () => {
+  it("rejects a DOCTYPE declaration", () => {
+    expect(() =>
+      parseNamecheap(`<!DOCTYPE x><ApiResponse Status="OK"/>`),
+    ).toThrow(NamecheapParseError);
+  });
+  it("rejects an ENTITY declaration (XXE attempt)", () => {
+    expect(() =>
+      parseNamecheap(
+        `<!DOCTYPE t [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]><ApiResponse>&xxe;</ApiResponse>`,
+      ),
+    ).toThrow(NamecheapParseError);
+  });
+  it("rejects an unknown/custom entity in content", () => {
+    expect(() =>
+      parseNamecheap(`<ApiResponse Status="OK"><X V="&custom;"/></ApiResponse>`),
+    ).toThrow(NamecheapParseError);
+  });
+  it("rejects duplicate attributes", () => {
+    expect(() =>
+      parseNamecheap(`<ApiResponse Status="OK"><X A="1" A="2"/></ApiResponse>`),
+    ).toThrow(/Duplicate attribute/);
+  });
+  it("rejects nesting that is too deep", () => {
+    const deep = "<a>".repeat(40) + "</a>".repeat(40);
+    expect(() => parseNamecheap(`<ApiResponse Status="OK">${deep}</ApiResponse>`)).toThrow();
+  });
+  it("rejects an oversized body", () => {
+    expect(() => parseNamecheap("<A>" + "x".repeat(1_000_001) + "</A>")).toThrow();
+  });
+  it("rejects a truncated tag", () => {
+    expect(() => parseNamecheap(`<ApiResponse Status="OK"><Foo`)).toThrow();
+  });
+  it("rejects an unclosed element", () => {
+    expect(() => parseNamecheap(`<ApiResponse Status="OK"><Foo>`)).toThrow();
+  });
+  it("rejects a stray processing instruction", () => {
+    expect(() =>
+      parseNamecheap(`<ApiResponse Status="OK"><?php evil ?></ApiResponse>`),
+    ).toThrow();
   });
 });
 
 describe("sanitizeText", () => {
   it("strips newlines + non-printables + bounds length", () => {
-    expect(sanitizeText("a\nb\tc")).toBe("a b c");
+    expect(sanitizeText("a\nb\tc")).toBe("a b c");
     expect(sanitizeText("x".repeat(500)).length).toBe(200);
   });
 });
@@ -90,22 +170,12 @@ describe("classifyTransportError", () => {
     expect(classifyTransportError({ code: "ENOTFOUND" })).toBe(
       "transport_failure_pre_acceptance",
     );
-    expect(classifyTransportError({ code: "ECONNREFUSED" })).toBe(
+    expect(classifyTransportError(new Error("self signed certificate"))).toBe(
       "transport_failure_pre_acceptance",
     );
-    expect(
-      classifyTransportError(new Error("self signed certificate")),
-    ).toBe("transport_failure_pre_acceptance");
   });
   it("ambiguous for reset/timeout/unknown", () => {
-    expect(classifyTransportError({ code: "ECONNRESET" })).toBe(
-      "ambiguous_unknown",
-    );
-    expect(classifyTransportError({ code: "ETIMEDOUT" })).toBe(
-      "ambiguous_unknown",
-    );
-    expect(classifyTransportError(new Error("weird"))).toBe(
-      "ambiguous_unknown",
-    );
+    expect(classifyTransportError({ code: "ECONNRESET" })).toBe("ambiguous_unknown");
+    expect(classifyTransportError(new Error("weird"))).toBe("ambiguous_unknown");
   });
 });

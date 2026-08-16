@@ -3,24 +3,29 @@
  *
  * Server-side only. The API key/user/username/client-IP live in config and are
  * NEVER returned, thrown, or logged — every diagnostic string is passed through
- * {@link redactSecrets} and the full query string is redacted. State-changing
- * calls are mode-guarded (disabled / sandbox / live) and gated by explicit
- * fail-closed feature flags for purchasing, premium purchasing, and incoming
- * transfers. Every write returns an honest {@link RegistrarOutcome}; an
- * ambiguous result is NEVER auto-repeated by this layer.
+ * {@link redactSecrets} and the full query string is redacted. Responses are
+ * parsed by the bounded {@link parseNamecheap} tokenizer (no regex-scraping, no
+ * DTD/entity/network access). State-changing calls are mode-guarded
+ * (disabled / sandbox / live) and gated by explicit fail-closed feature flags
+ * for purchasing, premium purchasing, and incoming transfers. Every write
+ * returns an honest {@link RegistrarOutcome}; an ambiguous result is NEVER
+ * auto-repeated by this layer.
  */
 
 import type { RegistrarContact } from "./RegistrarContact";
 import {
-  attr,
   classifyTransportError,
   decimalToMinor,
-  elements,
+  envelopeStatus,
   extractApiError,
-  isApiError,
+  findAll,
+  findFirst,
   NamecheapApiError,
-  redactSecrets,
+  NamecheapHttpError,
+  NamecheapTransportError,
+  parseNamecheap,
   sanitizeText,
+  type XmlNode,
 } from "./namecheapXml";
 import {
   RegistrarModeError,
@@ -43,13 +48,9 @@ export interface NamecheapConfig {
   apiKey: string;
   userName: string;
   clientIp: string;
-  /** Full endpoint, e.g. https://api.sandbox.namecheap.com/xml.response */
   baseUrl: string;
-  /** Fail-closed: live registration/renewal purchases require this true. */
   purchasingEnabled: boolean;
-  /** Separate fail-closed flag: premium purchases require this true (default false). */
   premiumPurchasingEnabled: boolean;
-  /** Separate fail-closed flag: incoming transfers require this true (default false). */
   incomingTransfersEnabled: boolean;
 }
 
@@ -71,11 +72,9 @@ export class NamecheapRegistrarProvider
     fetcher?: Fetcher,
   ) {
     this.mode = config.mode;
-    this.fetcher =
-      fetcher ?? ((url) => fetch(url) as ReturnType<Fetcher>);
+    this.fetcher = fetcher ?? ((url) => fetch(url) as ReturnType<Fetcher>);
   }
 
-  // ---- capability matrix (tied to official API commands) -----------------
   capabilities(): CapabilityMatrix {
     const docs = (
       status: CapabilityMatrix[keyof CapabilityMatrix]["status"],
@@ -111,7 +110,7 @@ export class NamecheapRegistrarProvider
       eppAuthCode: docs(
         "supported",
         "namecheap.domains.getInfo",
-        "EPP retrieval flow is owner-only + reauth; never logged",
+        "EPP retrieval is owner-only + reauth; never logged",
       ),
       privacy: docs(
         "supported",
@@ -128,7 +127,7 @@ export class NamecheapRegistrarProvider
       autoRenewControl: docs(
         "limited",
         "n/a",
-        "Namecheap domain API has no reliable tenant auto-renew toggle; our renewal worker must call domains.renew explicitly",
+        "No reliable tenant auto-renew toggle; renewal worker must call domains.renew explicitly",
       ),
       providerEvents: docs(
         "unsupported",
@@ -138,7 +137,7 @@ export class NamecheapRegistrarProvider
     };
   }
 
-  // ---- URL + transport ----------------------------------------------------
+  // ---- transport ----------------------------------------------------------
   private url(command: string, params: Record<string, string>): string {
     const q = new URLSearchParams({
       ApiUser: this.config.apiUser,
@@ -151,37 +150,30 @@ export class NamecheapRegistrarProvider
     return `${this.config.baseUrl}?${q.toString()}`;
   }
 
-  /** Raw call; returns the body or throws a redacted error. */
+  /** Calls Namecheap and returns the parsed root, or throws a typed error. */
   private async rawCall(
     command: string,
     params: Record<string, string>,
-  ): Promise<string> {
+  ): Promise<XmlNode> {
     let res: Awaited<ReturnType<Fetcher>>;
     try {
       res = await this.fetcher(this.url(command, params));
     } catch (err) {
-      // Re-throw WITHOUT the URL; preserve code for classification.
-      const e = new Error(
-        redactSecrets(`Namecheap transport error (${command}).`),
-      ) as Error & { code?: string; transport: true };
-      e.code = (err as { code?: string })?.code;
-      (e as { transport: boolean }).transport = true;
-      throw e;
+      throw new NamecheapTransportError((err as { code?: string })?.code);
     }
     const body = await res.text();
     if (!res.ok) {
-      throw new NamecheapApiError(
-        redactSecrets(`Namecheap HTTP ${res.status} (${command}).`),
-      );
+      throw new NamecheapHttpError(res.status);
     }
-    if (isApiError(body)) {
-      throw extractApiError(body);
+    const root = parseNamecheap(body);
+    if (envelopeStatus(root) === "ERROR") {
+      throw extractApiError(root);
     }
-    return body;
+    return root;
   }
 
   private assertEnabled(): void {
-    if (this.mode === ("disabled" as RegistrarMode)) {
+    if ((this.mode as RegistrarMode) === "disabled") {
       throw new RegistrarModeError("Registrar is disabled.");
     }
   }
@@ -196,22 +188,20 @@ export class NamecheapRegistrarProvider
   }
 
   // ---- reads --------------------------------------------------------------
-  async checkAvailability(
-    domains: string[],
-  ): Promise<AvailabilityResult[]> {
+  async checkAvailability(domains: string[]): Promise<AvailabilityResult[]> {
     this.assertEnabled();
     if (domains.length === 0) return [];
-    const body = await this.rawCall("namecheap.domains.check", {
+    const root = await this.rawCall("namecheap.domains.check", {
       DomainList: domains.join(","),
     });
-    return elements(body, "DomainCheckResult").map((a) => {
-      const domain = (attr(a, "Domain") ?? "").toLowerCase();
-      const isPremium = attr(a, "IsPremiumName") === "true";
-      const premReg = attr(a, "PremiumRegistrationPrice");
-      const premRenew = attr(a, "PremiumRenewalPrice");
+    return findAll(root, "DomainCheckResult").map((el) => {
+      const domain = (el.attrs.get("Domain") ?? "").toLowerCase();
+      const isPremium = el.attrs.get("IsPremiumName") === "true";
+      const premReg = el.attrs.get("PremiumRegistrationPrice");
+      const premRenew = el.attrs.get("PremiumRenewalPrice");
       return {
         domain,
-        available: attr(a, "Available") === "true",
+        available: el.attrs.get("Available") === "true",
         isPremium,
         premiumRegisterPrice:
           isPremium && premReg && premReg !== "0"
@@ -231,18 +221,18 @@ export class NamecheapRegistrarProvider
     years: number,
   ): Promise<PriceResult> {
     this.assertEnabled();
-    const body = await this.rawCall("namecheap.users.getPricing", {
+    const root = await this.rawCall("namecheap.users.getPricing", {
       ProductType: "DOMAIN",
       ProductCategory: category,
       ActionName: category,
       ProductName: tld.replace(/^\./, ""),
     });
-    for (const a of elements(body, "Price")) {
+    for (const p of findAll(root, "Price")) {
       if (
-        attr(a, "Duration") === String(years) &&
-        (attr(a, "DurationType") ?? "YEAR").toUpperCase() === "YEAR"
+        p.attrs.get("Duration") === String(years) &&
+        (p.attrs.get("DurationType") ?? "YEAR").toUpperCase() === "YEAR"
       ) {
-        const your = attr(a, "YourPrice") ?? attr(a, "Price");
+        const your = p.attrs.get("YourPrice") ?? p.attrs.get("Price");
         if (!your) break;
         return {
           tld: tld.replace(/^\./, ""),
@@ -269,21 +259,23 @@ export class NamecheapRegistrarProvider
 
   async getRegistrationStatus(domain: string): Promise<DomainStatus> {
     this.assertEnabled();
-    const body = await this.rawCall("namecheap.domains.getInfo", {
+    const root = await this.rawCall("namecheap.domains.getInfo", {
       DomainName: domain,
     });
-    const info = elements(body, "DomainGetInfoResult")[0] ?? "";
-    const wg = elements(body, "Whoisguard")[0];
-    const ns = elements(body, "Nameserver").map((_a, i) =>
-      nthNameserver(body, i),
-    );
+    const info = findFirst(root, "DomainGetInfoResult");
+    const wg = findFirst(root, "Whoisguard");
+    const expired = findFirst(root, "ExpiredDate");
+    const ns = findAll(root, "Nameserver")
+      .map((el) => sanitizeText(el.text))
+      .filter(Boolean);
     return {
       domain,
-      registered: (attr(info, "Status") ?? "").toLowerCase() === "ok",
-      expiresAt: firstTagText(body, "ExpiredDate"),
-      privacyEnabled: wg ? attr(wg, "Enabled") === "True" : undefined,
-      nameservers: ns.filter(Boolean) as string[],
-      lifecycleState: attr(info, "Status"),
+      registered:
+        (info?.attrs.get("Status") ?? "").toLowerCase() === "ok",
+      expiresAt: expired ? sanitizeText(expired.text) : undefined,
+      privacyEnabled: wg ? wg.attrs.get("Enabled") === "True" : undefined,
+      nameservers: ns,
+      lifecycleState: info?.attrs.get("Status"),
     };
   }
 
@@ -291,11 +283,8 @@ export class NamecheapRegistrarProvider
     return this.getRegistrationStatus(domain);
   }
 
-  async getContacts(
-    domain: string,
-  ): Promise<Record<string, RegistrarContact>> {
+  async getContacts(domain: string): Promise<Record<string, RegistrarContact>> {
     this.assertEnabled();
-    // Retrieval is supported; full mapping is Stage 5. Returns raw-free shell.
     await this.rawCall("namecheap.domains.getContacts", { DomainName: domain });
     return {};
   }
@@ -307,25 +296,25 @@ export class NamecheapRegistrarProvider
 
   async getRegistrarLock(domain: string): Promise<boolean> {
     this.assertEnabled();
-    const body = await this.rawCall("namecheap.domains.getRegistrarLock", {
+    const root = await this.rawCall("namecheap.domains.getRegistrarLock", {
       DomainName: domain,
     });
-    const r = elements(body, "DomainGetRegistrarLockResult")[0] ?? "";
-    return (attr(r, "RegistrarLockStatus") ?? "").toLowerCase() === "true";
+    const r = findFirst(root, "DomainGetRegistrarLockResult");
+    return (r?.attrs.get("RegistrarLockStatus") ?? "").toLowerCase() === "true";
   }
 
   async getAccountBalance(): Promise<Money> {
     this.assertEnabled();
-    const body = await this.rawCall("namecheap.users.getBalances", {});
-    const r = elements(body, "UserGetBalancesResult")[0] ?? "";
-    const bal = attr(r, "AvailableBalance");
+    const root = await this.rawCall("namecheap.users.getBalances", {});
+    const r = findFirst(root, "UserGetBalancesResult");
+    const bal = r?.attrs.get("AvailableBalance");
     return {
       amountMinor: bal ? decimalToMinor(bal) : 0,
-      currency: attr(r, "Currency") ?? CURRENCY,
+      currency: r?.attrs.get("Currency") ?? CURRENCY,
     };
   }
 
-  // ---- writes (mode + flag guarded, honest outcomes) ----------------------
+  // ---- writes -------------------------------------------------------------
   async register(input: RegisterInput): Promise<RegisterResult> {
     this.assertPurchasing();
     if (input.premiumAcknowledged && !this.config.premiumPurchasingEnabled) {
@@ -341,9 +330,7 @@ export class NamecheapRegistrarProvider
       ...contactParams("Admin", input.contacts.admin),
       ...contactParams("AuxBilling", input.contacts.billing),
     };
-    if (input.nameservers?.length) {
-      params.Nameservers = input.nameservers.join(",");
-    }
+    if (input.nameservers?.length) params.Nameservers = input.nameservers.join(",");
     if (input.enablePrivacy) {
       params.AddFreeWhoisguard = "yes";
       params.WGEnabled = "yes";
@@ -353,49 +340,38 @@ export class NamecheapRegistrarProvider
       params.PremiumPrice = (input.acceptedPremiumMinor / 100).toFixed(2);
     }
 
-    let body: string;
+    let root: XmlNode;
     try {
-      body = await this.rawCall("namecheap.domains.create", params);
+      root = await this.rawCall("namecheap.domains.create", params);
     } catch (err) {
-      if (isTransport(err)) {
-        return failure(classifyTransportError(err), sanitizeCategory(err));
-      }
-      // A parsed API error is a definitive provider rejection.
-      if (err instanceof NamecheapApiError) {
-        return failure("provider_rejection", err.number ?? "api_error");
-      }
-      // Anything else mid-mutation is ambiguous — never auto-repeat.
-      return failure("ambiguous_unknown", "unclassified");
+      return this.classifyWriteError(err);
     }
-
-    const r = elements(body, "DomainCreateResult")[0];
+    const r = findFirst(root, "DomainCreateResult");
     if (!r) {
-      // Got a 200 but couldn't parse the result -> ambiguous, reconcile later.
       return failure("ambiguous_unknown", "unparsable_create_result");
     }
-    const registered = attr(r, "Registered") === "true";
-    const nonRealtime = attr(r, "NonRealTimeDomain") === "true";
+    const registered = r.attrs.get("Registered") === "true";
+    const nonRealtime = r.attrs.get("NonRealTimeDomain") === "true";
     const correlation = {
-      chargedMinor: attr(r, "ChargedAmount")
-        ? decimalToMinor(attr(r, "ChargedAmount")!)
+      chargedMinor: r.attrs.get("ChargedAmount")
+        ? decimalToMinor(r.attrs.get("ChargedAmount")!)
         : undefined,
       currency: CURRENCY,
-      domainId: attr(r, "DomainID"),
-      orderId: attr(r, "OrderID"),
-      transactionId: attr(r, "TransactionID"),
+      domainId: r.attrs.get("DomainID"),
+      orderId: r.attrs.get("OrderID"),
+      transactionId: r.attrs.get("TransactionID"),
     };
     if (registered && !nonRealtime) {
       return {
         outcome: "definitive_success",
         registered: true,
         privacyEnabled:
-          attr(r, "WhoisguardEnable") === "true" ? true : input.enablePrivacy,
+          r.attrs.get("WhoisguardEnable") === "true" ? true : input.enablePrivacy,
         correlation,
         providerCorrelationId: correlation.orderId,
       };
     }
     if (nonRealtime) {
-      // Not real-time: outcome is genuinely unknown until reconciled.
       return {
         outcome: "ambiguous_unknown",
         registered: false,
@@ -419,37 +395,43 @@ export class NamecheapRegistrarProvider
     _idempotencyKey: string,
   ): Promise<RegisterResult> {
     this.assertPurchasing();
-    let body: string;
+    let root: XmlNode;
     try {
-      body = await this.rawCall("namecheap.domains.renew", {
+      root = await this.rawCall("namecheap.domains.renew", {
         DomainName: domain,
         Years: String(years),
       });
     } catch (err) {
-      if (isTransport(err)) {
-        return failure(classifyTransportError(err), sanitizeCategory(err));
-      }
-      if (err instanceof NamecheapApiError) {
-        return failure("provider_rejection", err.number ?? "api_error");
-      }
-      return failure("ambiguous_unknown", "unclassified");
+      return this.classifyWriteError(err);
     }
-    const r = elements(body, "DomainRenewResult")[0] ?? "";
-    const ok = attr(r, "Renew") === "true";
+    const r = findFirst(root, "DomainRenewResult");
+    const ok = r?.attrs.get("Renew") === "true";
     return {
       outcome: ok ? "definitive_success" : "definitive_failure",
-      registered: ok,
+      registered: Boolean(ok),
       correlation: {
-        chargedMinor: attr(r, "ChargedAmount")
-          ? decimalToMinor(attr(r, "ChargedAmount")!)
+        chargedMinor: r?.attrs.get("ChargedAmount")
+          ? decimalToMinor(r.attrs.get("ChargedAmount")!)
           : undefined,
         currency: CURRENCY,
-        domainId: attr(r, "DomainID"),
-        orderId: attr(r, "OrderID"),
-        transactionId: attr(r, "TransactionID"),
+        domainId: r?.attrs.get("DomainID"),
+        orderId: r?.attrs.get("OrderID"),
+        transactionId: r?.attrs.get("TransactionID"),
       },
       errorCategory: ok ? undefined : "renew_false",
     };
+  }
+
+  /** Maps a thrown call error to an honest write outcome (ambiguous by default). */
+  private classifyWriteError(err: unknown): RegisterResult {
+    if (err instanceof NamecheapTransportError) {
+      return failure(classifyTransportError(err), sanitizeCategory(err.code));
+    }
+    if (err instanceof NamecheapApiError) {
+      return failure("provider_rejection", err.number ?? "api_error");
+    }
+    // HTTP error, parse error, or anything else mid-mutation -> ambiguous.
+    return failure("ambiguous_unknown", "unclassified");
   }
 
   async initiateInboundTransfer(
@@ -463,35 +445,36 @@ export class NamecheapRegistrarProvider
         "Incoming transfers are disabled (separate fail-closed flag).",
       );
     }
-    // The raw EPP code is used transiently for this call only and never stored
-    // or logged; it exists solely as this parameter's value here.
-    const body = await this.rawCall("namecheap.domains.transfer.create", {
+    // The raw EPP code is used transiently for this call only; never stored/logged.
+    const root = await this.rawCall("namecheap.domains.transfer.create", {
       DomainName: domain,
       Years: "1",
       EPPCode: eppCode,
     });
-    const r = elements(body, "DomainTransferCreateResult")[0] ?? "";
+    const r = findFirst(root, "DomainTransferCreateResult");
     return {
       domain,
-      state: mapTransferState(attr(r, "TransferStatus") ?? attr(r, "Transfer")),
+      state: mapTransferState(
+        r?.attrs.get("TransferStatus") ?? r?.attrs.get("Transfer"),
+      ),
       correlation: {
-        orderId: attr(r, "OrderID"),
-        transactionId: attr(r, "TransactionID"),
-        domainId: attr(r, "TransferID"),
+        orderId: r?.attrs.get("OrderID"),
+        transactionId: r?.attrs.get("TransactionID"),
+        domainId: r?.attrs.get("TransferID"),
       },
     };
   }
 
   async getTransferStatus(domain: string): Promise<TransferStatusResult> {
     this.assertEnabled();
-    const body = await this.rawCall("namecheap.domains.transfer.getStatus", {
+    const root = await this.rawCall("namecheap.domains.transfer.getStatus", {
       DomainName: domain,
     });
-    const r = elements(body, "DomainTransferGetStatusResult")[0] ?? "";
+    const r = findFirst(root, "DomainTransferGetStatusResult");
     return {
       domain,
-      state: mapTransferState(attr(r, "Status")),
-      correlation: { domainId: attr(r, "TransferID") },
+      state: mapTransferState(r?.attrs.get("Status")),
+      correlation: { domainId: r?.attrs.get("TransferID") },
     };
   }
 }
@@ -525,12 +508,7 @@ function failure(
   return { outcome, registered: false, correlation: {}, errorCategory };
 }
 
-function isTransport(err: unknown): boolean {
-  return Boolean((err as { transport?: boolean } | undefined)?.transport);
-}
-
-function sanitizeCategory(err: unknown): string {
-  const code = (err as { code?: string } | undefined)?.code;
+function sanitizeCategory(code: string | undefined): string {
   return code ? sanitizeText(code) : "transport";
 }
 
@@ -540,19 +518,6 @@ function mapTransferState(raw: string | undefined): TransferState {
   if (s.includes("pending") || s.includes("in progress")) return "pending";
   if (s.includes("approv")) return "approved";
   if (s.includes("reject") || s.includes("declin")) return "rejected";
-  if (s.includes("fail") || s === "false" || s.includes("error"))
-    return "failed";
+  if (s.includes("fail") || s === "false" || s.includes("error")) return "failed";
   return "unknown";
-}
-
-function firstTagText(body: string, tag: string): string | undefined {
-  const m = new RegExp(`<${tag}>([^<]{0,64})</${tag}>`, "i").exec(body);
-  return m ? sanitizeText(m[1]) : undefined;
-}
-
-function nthNameserver(body: string, i: number): string | undefined {
-  const all = [
-    ...body.matchAll(/<Nameserver>([^<]{0,255})<\/Nameserver>/gi),
-  ];
-  return all[i]?.[1] ? sanitizeText(all[i][1]) : undefined;
 }
