@@ -103,9 +103,12 @@ pre-deployment integration run.
   **provisional/test-config** (no production customer pricing approved).
 
 ## Test totals / typecheck / build
-- Saga tests: **26 passed**. Full domain suite: **167 passed / 3 skipped**
-  (3 = opt-in Namecheap sandbox contract). **Typecheck + build PASS.**
-- **Linux CI:** _pending — see the run for commit `6e03866`._
+- Saga tests: **26 passed**. Full local suite: **1628 passed / 9 skipped**
+  (the lone local failure is the documented Windows-only `createPlatformApp`
+  ECONNRESET flake, which passes on Linux). **Typecheck + build PASS.**
+- **Linux CI: GREEN** — commit `845f5b7`, run 32058382836. (The first push failed
+  only because the `/legal` index correctly shows the new domain-registration
+  terms as "being finalized"; the assertion was updated to expect that.)
 
 ## Residual risks / not-in-scope
 - **HTTP webhook route + management UI/API** for the owner reconciliation controls
