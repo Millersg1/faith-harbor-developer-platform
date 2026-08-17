@@ -67,8 +67,14 @@ describe("legal routes — published vs draft visibility", () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain("Cookie Policy");
     expect(res.text).toContain("Terms of Service");
-    // All eight are published — none is a "being finalized" placeholder.
-    expect(res.text).not.toContain("being finalized");
+    // The 8 core policies are published (no placeholder). The domain-registration
+    // terms are an INTENTIONAL draft (pending legal review), so the index shows
+    // exactly one "being finalized" entry, for Domain Registration Terms.
+    const finalized = res.text.match(/being finalized/g) ?? [];
+    expect(finalized).toHaveLength(1);
+    expect(res.text).toMatch(
+      /Domain Registration Terms<\/a>\s*<span class="meta">\(being finalized\)/,
+    );
   });
 
   it("serves each published document with metadata and no internal markers", async () => {
