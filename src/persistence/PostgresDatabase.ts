@@ -1725,6 +1725,47 @@ export class PostgresDatabase
       CREATE UNIQUE INDEX IF NOT EXISTS domain_orders_active_uniq
         ON domain_orders (organization_id, ascii_domain)
         WHERE status IN ('quoted','payment_pending','paid','registration_queued','registration_processing');
+      -- Stage 6: SEPARATE durable payment / registrar / refund state (never
+      -- overload the status column), plus binding + timing evidence.
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS payment_state TEXT NOT NULL DEFAULT 'none';
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS registrar_state TEXT NOT NULL DEFAULT 'none';
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS refund_state TEXT NOT NULL DEFAULT 'none';
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS stripe_charge_id TEXT;
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS user_id TEXT;
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS terms_acceptance_id TEXT;
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS contact_ref TEXT;
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS captured_at TEXT;
+      ALTER TABLE domain_orders ADD COLUMN IF NOT EXISTS registered_at TEXT;
+      -- One active purchase saga per accepted quote (a quote is single-use).
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_orders_quote_uniq
+        ON domain_orders (quote_id) WHERE quote_id IS NOT NULL;
+      -- One captured payment (payment intent) maps to exactly one order.
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_orders_pi_uniq
+        ON domain_orders (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL;
+
+      -- Refund intents — one per order, deterministic idempotency key. A failed
+      -- refund stays visible (state='failed') for needs_attention.
+      CREATE TABLE IF NOT EXISTS domain_refunds (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        order_id            TEXT NOT NULL REFERENCES domain_orders (id) ON DELETE RESTRICT,
+        stripe_charge_id    TEXT,
+        stripe_refund_id    TEXT,
+        amount_minor        BIGINT NOT NULL,
+        currency            TEXT NOT NULL,
+        reason              TEXT NOT NULL,
+        state               TEXT NOT NULL DEFAULT 'queued',
+        idempotency_key     TEXT NOT NULL,
+        attempts            INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at     TEXT,
+        lease_owner         TEXT,
+        lease_until         TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_refunds_order_uniq ON domain_refunds (order_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_refunds_idem_uniq ON domain_refunds (idempotency_key);
+      CREATE INDEX IF NOT EXISTS domain_refunds_claim_idx ON domain_refunds (state, next_attempt_at);
 
       -- Confirmed ownership (external property). RESTRICT at the org level.
       CREATE TABLE IF NOT EXISTS domain_registrations (
