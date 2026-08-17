@@ -1667,6 +1667,7 @@ export class PostgresDatabase
         tld                 TEXT NOT NULL,
         is_premium          BOOLEAN NOT NULL DEFAULT FALSE,
         years               INTEGER NOT NULL,
+        operation           TEXT NOT NULL DEFAULT 'register',
         provider            TEXT NOT NULL,
         currency            TEXT NOT NULL,
         provider_cost_minor BIGINT NOT NULL,
@@ -1680,6 +1681,7 @@ export class PostgresDatabase
         created_at          TEXT NOT NULL,
         expires_at          TEXT NOT NULL
       );
+      ALTER TABLE domain_quotes ADD COLUMN IF NOT EXISTS operation TEXT NOT NULL DEFAULT 'register';
       CREATE INDEX IF NOT EXISTS idx_domain_quotes_org ON domain_quotes (organization_id);
       CREATE INDEX IF NOT EXISTS idx_domain_quotes_domain ON domain_quotes (organization_id, ascii_domain);
 

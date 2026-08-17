@@ -31,6 +31,8 @@ export interface FakeConfig {
   status?: Record<string, DomainStatus>;
   balanceMinor?: number;
   capabilities?: Partial<CapabilityMatrix>;
+  /** Override the currency returned by pricing (default USD) — for FX tests. */
+  currency?: string;
 }
 
 const cap = (
@@ -99,7 +101,7 @@ export class FakeRegistrarProvider
     return {
       tld,
       years,
-      cost: { amountMinor: per * years, currency: "USD" },
+      cost: { amountMinor: per * years, currency: this.cfg.currency ?? "USD" },
       isPremium: false,
     };
   }
