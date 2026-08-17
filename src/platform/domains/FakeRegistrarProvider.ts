@@ -47,6 +47,7 @@ const DEFAULT_CAPS = (): CapabilityMatrix => ({
   registration: cap("supported"),
   nonRealtimeRegistration: cap("supported"),
   renewal: cap("supported"),
+  restoration: cap("supported"),
   incomingTransfer: cap("supported"),
   transferStatus: cap("supported"),
   contactManagement: cap("supported"),
@@ -111,6 +112,9 @@ export class FakeRegistrarProvider
   }
   async getTransferPrice(tld: string, years: number) {
     return this.price(tld, years);
+  }
+  async getRestorePrice(tld: string) {
+    return this.price(tld, 1);
   }
 
   async register(input: RegisterInput): Promise<RegisterResult> {

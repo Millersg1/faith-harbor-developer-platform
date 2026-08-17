@@ -305,15 +305,20 @@ export function sanitizeText(s: string): string {
     .slice(0, 200);
 }
 
-/** Redacts credentials from any diagnostic string before it is logged/audited. */
+/**
+ * Redacts credentials from any diagnostic string before it is logged/audited.
+ * Provider-neutral: covers Namecheap's `xml.response?...` and NameSilo's
+ * `/api/<op>?...` query strings wholesale, plus individual sensitive params
+ * (including NameSilo's `key=` and any `auth=`/`EPPCode=` transfer secret).
+ */
 export function redactSecrets(s: string): string {
   let out = String(s);
   out = out.replace(
-    /(https?:\/\/[^?\s]*xml\.response)\?[^\s"']*/gi,
+    /(https?:\/\/[^?\s]*(?:xml\.response|namesilo\.com\/api\/[^?\s]*))\?[^\s"']*/gi,
     "$1?[REDACTED]",
   );
   out = out.replace(
-    /\b(ApiKey|ApiUser|UserName|ClientIp|Password|Token|EPPCode)=([^&\s"']*)/gi,
+    /\b(ApiKey|ApiUser|UserName|ClientIp|Password|Token|EPPCode|auth|key)=([^&\s"']*)/gi,
     "$1=[REDACTED]",
   );
   return out;

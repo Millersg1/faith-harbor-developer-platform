@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { NamecheapRegistrarProvider } from "./NamecheapRegistrarProvider";
+import { NameSiloRegistrarProvider } from "./NameSiloRegistrarProvider";
 import {
   createRegistrarProvider,
   DisconnectedRegistrarProvider,
@@ -42,5 +43,19 @@ describe("createRegistrarProvider (fail-closed)", () => {
     const caps = new DisconnectedRegistrarProvider().capabilities();
     expect(caps.registration.status).toBe("unknown");
     expect(caps.registration.evidence).toBe("none");
+  });
+
+  it("builds a NameSilo sandbox provider (launch provider) when the key is present", () => {
+    const p = createRegistrarProvider({
+      DOMAIN_REGISTRAR_MODE: "namesilo_sandbox",
+      NAMESILO_SANDBOX_API_KEY: "k",
+    });
+    expect(p).toBeInstanceOf(NameSiloRegistrarProvider);
+    expect(p.mode).toBe("namesilo_sandbox");
+  });
+
+  it("stays disconnected in NameSilo mode when the key is missing (fail closed)", () => {
+    const p = createRegistrarProvider({ DOMAIN_REGISTRAR_MODE: "namesilo_sandbox" });
+    expect(p).toBeInstanceOf(DisconnectedRegistrarProvider);
   });
 });

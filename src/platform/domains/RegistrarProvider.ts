@@ -28,6 +28,7 @@ export type CapabilityKey =
   | "registration"
   | "nonRealtimeRegistration"
   | "renewal"
+  | "restoration"
   | "incomingTransfer"
   | "transferStatus"
   | "contactManagement"
@@ -194,6 +195,8 @@ export interface DomainRegistrarProvider {
   getRegisterPrice(tld: string, years: number): Promise<PriceResult>;
   getRenewPrice(tld: string, years: number): Promise<PriceResult>;
   getTransferPrice(tld: string, years: number): Promise<PriceResult>;
+  /** Redemption/restore price. May be `unsupported` on some providers. */
+  getRestorePrice(tld: string): Promise<PriceResult>;
 
   register(input: RegisterInput): Promise<RegisterResult>;
   /** Reconcile an uncertain registration by looking the domain/order up. */
@@ -218,11 +221,17 @@ export interface DomainRegistrarProvider {
 
 export type RegistrarMode =
   | "disabled"
+  | "namesilo_sandbox"
+  | "namesilo_live"
   | "namecheap_sandbox"
   | "namecheap_live";
 
 export function parseRegistrarMode(raw: string | undefined): RegistrarMode {
   switch ((raw ?? "").trim()) {
+    case "namesilo_sandbox":
+      return "namesilo_sandbox";
+    case "namesilo_live":
+      return "namesilo_live";
     case "namecheap_sandbox":
       return "namecheap_sandbox";
     case "namecheap_live":

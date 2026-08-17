@@ -28,6 +28,7 @@ import {
   type XmlNode,
 } from "./namecheapXml";
 import {
+  CapabilityUnsupportedError,
   RegistrarModeError,
   type AvailabilityResult,
   type CapabilityMatrix,
@@ -96,6 +97,11 @@ export class NamecheapRegistrarProvider
         "NonRealTimeDomain=true possible; handled as ambiguous until reconciled",
       ),
       renewal: docs("supported", "namecheap.domains.renew"),
+      restoration: docs(
+        "unknown",
+        "n/a",
+        "RGP/redemption restore not exposed by the basic pricing/registration API; verify before offering restore",
+      ),
       incomingTransfer: docs("supported", "namecheap.domains.transfer.create"),
       transferStatus: docs("supported", "namecheap.domains.transfer.getStatus"),
       contactManagement: docs("supported", "namecheap.domains.setContacts"),
@@ -255,6 +261,10 @@ export class NamecheapRegistrarProvider
   }
   getTransferPrice(tld: string, years: number) {
     return this.pricing("TRANSFER", tld, years);
+  }
+  getRestorePrice(_tld: string): Promise<PriceResult> {
+    // Not exposed by Namecheap's basic pricing API — honest capability signal.
+    return Promise.reject(new CapabilityUnsupportedError("restoration"));
   }
 
   async getRegistrationStatus(domain: string): Promise<DomainStatus> {
