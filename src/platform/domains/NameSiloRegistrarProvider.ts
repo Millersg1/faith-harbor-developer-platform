@@ -38,6 +38,7 @@ import {
   type XmlNode,
 } from "./namecheapXml";
 import type { RegistrarContact } from "./RegistrarContact";
+import { createHardenedFetcher } from "./transport/hardenedFetch";
 import {
   CapabilityUnsupportedError,
   RegistrarModeError,
@@ -83,7 +84,9 @@ export class NameSiloRegistrarProvider
     fetcher?: Fetcher,
   ) {
     this.mode = config.mode;
-    this.fetcher = fetcher ?? ((url) => fetch(url) as ReturnType<Fetcher>);
+    this.fetcher =
+      fetcher ??
+      createHardenedFetcher({ allowedHosts: [hostOf(config.baseUrl)] });
   }
 
   // Capabilities from NameSilo's documented operation set. Evidence "docs";
@@ -427,6 +430,14 @@ function fail(
   errorCategory: string,
 ): RegisterResult {
   return { outcome, registered: false, correlation: {}, errorCategory };
+}
+
+function hostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return ""; // misconfig -> hardened fetcher fails closed (host-not-allowed)
+  }
 }
 
 function mapTransferState(raw: string | undefined): TransferState {

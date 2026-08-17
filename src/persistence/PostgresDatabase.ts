@@ -1780,6 +1780,8 @@ export class PostgresDatabase
         ON domain_contacts (registration_id, contact_role, version);
       CREATE INDEX IF NOT EXISTS idx_domain_contacts_email_bi
         ON domain_contacts (organization_id, email_blind_index);
+      ALTER TABLE domain_contacts ADD COLUMN IF NOT EXISTS accuracy_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE domain_contacts ADD COLUMN IF NOT EXISTS authorized_confirmed BOOLEAN NOT NULL DEFAULT FALSE;
 
       -- Append-only provider-attempt history (compact ids + enums only).
       CREATE TABLE IF NOT EXISTS domain_provider_attempts (
@@ -1814,6 +1816,12 @@ export class PostgresDatabase
         ip                       TEXT
       );
       CREATE INDEX IF NOT EXISTS idx_domain_terms_org ON domain_terms_acceptances (organization_id);
+      ALTER TABLE domain_terms_acceptances ADD COLUMN IF NOT EXISTS ascii_domain TEXT;
+      ALTER TABLE domain_terms_acceptances ADD COLUMN IF NOT EXISTS operation TEXT;
+      ALTER TABLE domain_terms_acceptances ADD COLUMN IF NOT EXISTS final_price_minor BIGINT;
+      ALTER TABLE domain_terms_acceptances ADD COLUMN IF NOT EXISTS currency TEXT;
+      ALTER TABLE domain_terms_acceptances ADD COLUMN IF NOT EXISTS premium_acknowledged BOOLEAN NOT NULL DEFAULT FALSE;
+      CREATE INDEX IF NOT EXISTS idx_domain_terms_user ON domain_terms_acceptances (organization_id, user_id);
 
       -- Append-only lifecycle history (registered/renewed/expiring/etc.).
       CREATE TABLE IF NOT EXISTS domain_lifecycle_events (

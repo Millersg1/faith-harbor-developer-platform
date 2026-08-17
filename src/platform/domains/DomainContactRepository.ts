@@ -36,6 +36,8 @@ export interface StoredContactRow {
   phoneBlindIndex?: string;
   effectiveAt: string;
   actorId?: string;
+  accuracyConfirmed: boolean;
+  authorizedConfirmed: boolean;
   createdAt: string;
 }
 
@@ -62,6 +64,8 @@ export class DomainContactRepository extends TenantScopedRepository {
     contact: RegistrarContact;
     actorId?: string;
     effectiveAt: string;
+    accuracyConfirmed?: boolean;
+    authorizedConfirmed?: boolean;
   }): Promise<StoredContactRow> {
     const organizationId = this.tenantId();
     const ctx = {
@@ -88,6 +92,8 @@ export class DomainContactRepository extends TenantScopedRepository {
       phoneBlindIndex: phoneBi,
       effectiveAt: args.effectiveAt,
       actorId: args.actorId,
+      accuracyConfirmed: Boolean(args.accuracyConfirmed),
+      authorizedConfirmed: Boolean(args.authorizedConfirmed),
       createdAt: args.effectiveAt,
     };
     if (this.db) {
@@ -100,8 +106,9 @@ export class DomainContactRepository extends TenantScopedRepository {
         `INSERT INTO domain_contacts
            (id, organization_id, registration_id, contact_role, version, is_current,
             contact_ciphertext, enc_alg, key_version, email_blind_index,
-            phone_blind_index, effective_at, actor_id, created_at)
-         VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,$9,$10,$11,$12,$11)`,
+            phone_blind_index, effective_at, actor_id, accuracy_confirmed,
+            authorized_confirmed, created_at)
+         VALUES ($1,$2,$3,$4,$5,true,$6,$7,$8,$9,$10,$11,$12,$13,$14,$11)`,
         [
           row.id,
           organizationId,
@@ -115,6 +122,8 @@ export class DomainContactRepository extends TenantScopedRepository {
           row.phoneBlindIndex ?? null,
           row.effectiveAt,
           row.actorId ?? null,
+          row.accuracyConfirmed,
+          row.authorizedConfirmed,
         ],
       );
     } else {
@@ -219,6 +228,8 @@ function mapContactRow(row: Record<string, unknown>): StoredContactRow {
       : undefined,
     effectiveAt: String(row.effective_at),
     actorId: row.actor_id ? String(row.actor_id) : undefined,
+    accuracyConfirmed: Boolean(row.accuracy_confirmed),
+    authorizedConfirmed: Boolean(row.authorized_confirmed),
     createdAt: String(row.created_at),
   };
 }

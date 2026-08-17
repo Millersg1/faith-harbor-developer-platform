@@ -13,6 +13,7 @@
  */
 
 import type { RegistrarContact } from "./RegistrarContact";
+import { createHardenedFetcher } from "./transport/hardenedFetch";
 import {
   classifyTransportError,
   decimalToMinor,
@@ -73,7 +74,11 @@ export class NamecheapRegistrarProvider
     fetcher?: Fetcher,
   ) {
     this.mode = config.mode;
-    this.fetcher = fetcher ?? ((url) => fetch(url) as ReturnType<Fetcher>);
+    this.fetcher =
+      fetcher ??
+      createHardenedFetcher({
+        allowedHosts: [ncHostOf(config.baseUrl)],
+      });
   }
 
   capabilities(): CapabilityMatrix {
@@ -520,6 +525,14 @@ function failure(
 
 function sanitizeCategory(code: string | undefined): string {
   return code ? sanitizeText(code) : "transport";
+}
+
+function ncHostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return "";
+  }
 }
 
 function mapTransferState(raw: string | undefined): TransferState {
