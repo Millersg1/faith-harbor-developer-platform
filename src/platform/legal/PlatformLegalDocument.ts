@@ -20,6 +20,7 @@ export const LEGAL_KINDS = [
   "ai-policy",
   "subprocessors",
   "accessibility",
+  "domain-registration",
 ] as const;
 
 export type LegalKind = (typeof LEGAL_KINDS)[number];
@@ -120,6 +121,12 @@ export const LEGAL_KIND_META: Record<LegalKind, LegalKindMeta> = {
     slug: "accessibility",
     title: "Accessibility Statement",
     order: 8,
+  },
+  "domain-registration": {
+    kind: "domain-registration",
+    slug: "domain-registration",
+    title: "Domain Registration Terms",
+    order: 9,
   },
 };
 
