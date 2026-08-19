@@ -191,7 +191,9 @@ unchanged at 74 tables in both runs.**
   multi-tenant tests and Stage 8 DNS tests (14) included.
 - Full local suite: **1651 passed | 9 skipped | 0 failed** (606 suites, exit 0).
 - Typecheck: clean.
-- Linux CI: **_(filled after push)_**.
+- Linux CI: **GREEN** — "Validate Faith Harbor OS" run `32293616267` at
+  `9ad066b` completed with conclusion _success_ (the full suite is typechecked +
+  run on Linux, per the validate-before-push discipline).
 
 ---
 
