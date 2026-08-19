@@ -145,6 +145,64 @@ export interface DomainStatus {
   lifecycleState?: string;
 }
 
+// ---- DNS & nameservers (Stage 8) -----------------------------------------
+
+/** Nameserver delegation mode for a confirmed registration. */
+export type NameserverMode = "allelite" | "registrar_default" | "custom";
+
+/** DNS record types the platform manages. Provider support varies by TLD. */
+export type DnsRecordType =
+  | "A"
+  | "AAAA"
+  | "CNAME"
+  | "MX"
+  | "TXT"
+  | "NS"
+  | "SRV"
+  | "CAA"
+  | "ALIAS";
+
+export interface DnsRecord {
+  /** Provider record id, when the provider assigns one (for update/delete). */
+  providerRecordId?: string;
+  type: DnsRecordType;
+  /** Host label relative to the zone apex ("@" = apex). */
+  host: string;
+  value: string;
+  /** Seconds. */
+  ttl: number;
+  /** MX / SRV priority. */
+  priority?: number;
+}
+
+/** A requested change to a zone. Providers map these to their own API shape. */
+export type DnsRecordChange =
+  | { op: "upsert"; record: DnsRecord }
+  | {
+      op: "delete";
+      record: Pick<DnsRecord, "type" | "host" | "value" | "providerRecordId">;
+    };
+
+/**
+ * The outcome of a DNS mutation. Carries the same five-way honesty contract as
+ * registration: an `ambiguous_unknown` DNS change is NEVER blindly retried and
+ * the platform makes NO automatic-rollback promise — it reconciles by reading
+ * the live zone.
+ */
+export interface DnsMutationResult {
+  outcome: RegistrarOutcome;
+  applied: boolean;
+  providerCorrelationId?: string;
+  errorCategory?: string;
+}
+
+export interface DnssecInfo {
+  supported: boolean;
+  enabled: boolean;
+  /** Sanitized status label only; DS/key material is never surfaced here. */
+  status?: string;
+}
+
 export type TransferState =
   | "pending"
   | "approved"
@@ -209,6 +267,24 @@ export interface DomainRegistrarProvider {
   getRegistrarLock(domainAscii: string): Promise<boolean>;
   getExpiry(domainAscii: string): Promise<DomainStatus>;
   getAccountBalance(): Promise<Money>;
+
+  // ---- DNS & nameservers (only reachable AFTER confirmed registration) ----
+  /** Sets the domain's nameservers. Mutation → five-way outcome. */
+  setNameservers(
+    domainAscii: string,
+    nameservers: string[],
+    idempotencyKey: string,
+  ): Promise<DnsMutationResult>;
+  /** Reads the live zone records (read-only reconciliation source of truth). */
+  getDnsRecords(domainAscii: string): Promise<DnsRecord[]>;
+  /** Applies a bounded set of zone changes. Mutation → five-way outcome. */
+  applyDnsRecords(
+    domainAscii: string,
+    changes: DnsRecordChange[],
+    idempotencyKey: string,
+  ): Promise<DnsMutationResult>;
+  /** Reads DNSSEC status (never returns DS/key material). */
+  getDnssec(domainAscii: string): Promise<DnssecInfo>;
 
   /** Incoming transfer (kept behind its own fail-closed flag by callers). */
   initiateInboundTransfer(

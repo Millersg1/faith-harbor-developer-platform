@@ -9,6 +9,10 @@ import type { RegistrarContact } from "./RegistrarContact";
 import {
   type AvailabilityResult,
   type CapabilityMatrix,
+  type DnsMutationResult,
+  type DnsRecord,
+  type DnsRecordChange,
+  type DnssecInfo,
   type DomainRegistrarProvider,
   type DomainStatus,
   type Money,
@@ -35,6 +39,16 @@ export interface FakeConfig {
   currency?: string;
   /** When true, getRegistrationStatus throws (models a provider timeout). */
   throwOnStatus?: boolean;
+  /** When true, DNS mutations/reads throw (models a DNS provider timeout). */
+  throwOnDns?: boolean;
+  /** ascii-domain -> forced DNS mutation result (to script ambiguous/failure). */
+  dnsResult?: Record<string, DnsMutationResult>;
+  /** ascii-domain -> seed live zone records (reconciliation source). */
+  dnsRecords?: Record<string, DnsRecord[]>;
+  /** ascii-domain -> seed nameservers. */
+  nameserversByDomain?: Record<string, string[]>;
+  /** ascii-domain -> DNSSEC status. */
+  dnssec?: Record<string, DnssecInfo>;
 }
 
 const cap = (
@@ -74,10 +88,19 @@ export class FakeRegistrarProvider
   readonly providerId = "fake";
   readonly mode: RegistrarMode;
   private readonly cfg: FakeConfig;
+  /** Mutable in-memory zones + nameservers, so applied changes are observable. */
+  private readonly zones = new Map<string, DnsRecord[]>();
+  private readonly ns = new Map<string, string[]>();
 
   constructor(cfg: FakeConfig = {}) {
     this.cfg = cfg;
     this.mode = cfg.mode ?? "namecheap_sandbox";
+    for (const [d, recs] of Object.entries(cfg.dnsRecords ?? {})) {
+      this.zones.set(d, recs.map((r) => ({ ...r })));
+    }
+    for (const [d, n] of Object.entries(cfg.nameserversByDomain ?? {})) {
+      this.ns.set(d, [...n]);
+    }
   }
 
   capabilities(): CapabilityMatrix {
@@ -172,8 +195,61 @@ export class FakeRegistrarProvider
   async getContacts(): Promise<Record<string, RegistrarContact>> {
     return {};
   }
-  async getNameservers(): Promise<string[]> {
-    return [];
+  async getNameservers(domain: string): Promise<string[]> {
+    return this.ns.get(domain) ?? [];
+  }
+
+  // ---- DNS (Stage 8) ------------------------------------------------------
+  async setNameservers(
+    domain: string,
+    nameservers: string[],
+    _idempotencyKey: string,
+  ): Promise<DnsMutationResult> {
+    if (this.cfg.throwOnDns) throw new Error("dns provider timeout");
+    const forced = this.cfg.dnsResult?.[domain];
+    if (forced) return forced;
+    this.ns.set(domain, [...nameservers]);
+    return { outcome: "definitive_success", applied: true, providerCorrelationId: `fake-ns-${domain}` };
+  }
+
+  async getDnsRecords(domain: string): Promise<DnsRecord[]> {
+    if (this.cfg.throwOnDns) throw new Error("dns provider timeout");
+    return (this.zones.get(domain) ?? []).map((r) => ({ ...r }));
+  }
+
+  async applyDnsRecords(
+    domain: string,
+    changes: DnsRecordChange[],
+    _idempotencyKey: string,
+  ): Promise<DnsMutationResult> {
+    if (this.cfg.throwOnDns) throw new Error("dns provider timeout");
+    const forced = this.cfg.dnsResult?.[domain];
+    if (forced) return forced; // scripted ambiguous/failure — do NOT mutate the zone
+    const zone = this.zones.get(domain) ?? [];
+    const same = (a: DnsRecord, b: Pick<DnsRecord, "type" | "host" | "value">) =>
+      a.type === b.type && a.host === b.host && a.value === b.value;
+    for (const change of changes) {
+      if (change.op === "delete") {
+        const idx = zone.findIndex((r) => same(r, change.record));
+        if (idx >= 0) zone.splice(idx, 1);
+      } else {
+        const idx = zone.findIndex(
+          (r) => r.type === change.record.type && r.host === change.record.host,
+        );
+        if (idx >= 0 && change.record.type !== "MX" && change.record.type !== "TXT") {
+          zone[idx] = { ...change.record };
+        } else if (!zone.some((r) => same(r, change.record))) {
+          zone.push({ ...change.record });
+        }
+      }
+    }
+    this.zones.set(domain, zone);
+    return { outcome: "definitive_success", applied: true, providerCorrelationId: `fake-dns-${domain}` };
+  }
+
+  async getDnssec(domain: string): Promise<DnssecInfo> {
+    if (this.cfg.throwOnDns) throw new Error("dns provider timeout");
+    return this.cfg.dnssec?.[domain] ?? { supported: true, enabled: false, status: "unsigned" };
   }
   async getRegistrarLock(): Promise<boolean> {
     return true;

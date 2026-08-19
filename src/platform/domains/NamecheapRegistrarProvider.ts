@@ -33,6 +33,9 @@ import {
   RegistrarModeError,
   type AvailabilityResult,
   type CapabilityMatrix,
+  type DnsMutationResult,
+  type DnsRecord,
+  type DnssecInfo,
   type DomainRegistrarProvider,
   type DomainStatus,
   type Money,
@@ -491,6 +494,32 @@ export class NamecheapRegistrarProvider
       state: mapTransferState(r?.attrs.get("Status")),
       correlation: { domainId: r?.attrs.get("TransferID") },
     };
+  }
+
+  // ---- DNS (Stage 8) ------------------------------------------------------
+  // Namecheap DNS (domains.dns.setHosts / getHosts / setCustom) is a replace-all
+  // API. Live wiring is DEFERRED until sandbox proof exists; fail closed so no
+  // production zone can be mutated through this adapter.
+  private dnsDeferred(): never {
+    throw new RegistrarModeError(
+      "Namecheap live DNS management is not enabled in this build (sandbox wiring pending).",
+    );
+  }
+  async setNameservers(): Promise<DnsMutationResult> {
+    this.assertEnabled();
+    return this.dnsDeferred();
+  }
+  async getDnsRecords(): Promise<DnsRecord[]> {
+    this.assertEnabled();
+    return this.dnsDeferred();
+  }
+  async applyDnsRecords(): Promise<DnsMutationResult> {
+    this.assertEnabled();
+    return this.dnsDeferred();
+  }
+  async getDnssec(): Promise<DnssecInfo> {
+    this.assertEnabled();
+    return this.dnsDeferred();
   }
 }
 

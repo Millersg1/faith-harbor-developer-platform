@@ -44,6 +44,9 @@ import {
   RegistrarModeError,
   type AvailabilityResult,
   type CapabilityMatrix,
+  type DnsMutationResult,
+  type DnsRecord,
+  type DnssecInfo,
   type DomainRegistrarProvider,
   type DomainStatus,
   type Money,
@@ -383,6 +386,35 @@ export class NameSiloRegistrarProvider
       state: mapTransferState(findFirst(reply, "status")?.text),
       correlation: {},
     };
+  }
+
+  // ---- DNS (Stage 8) ------------------------------------------------------
+  // NameSilo DNS is documented and applicable (see capabilities():
+  // changeNameServers / dnsListRecords / dnsAddRecord / dnsUpdateRecord /
+  // dnsDeleteRecord / dnsSec*). Live HTTP wiring is DELIBERATELY DEFERRED until
+  // NameSilo OTE (sandbox) credentials exist so it can be proven end-to-end in
+  // the sandbox before any real zone is ever touched. Until then these fail
+  // closed — a production DNS mutation is impossible through this adapter.
+  private dnsDeferred(): never {
+    throw new RegistrarModeError(
+      "NameSilo live DNS management is not enabled in this build (OTE sandbox wiring pending).",
+    );
+  }
+  async setNameservers(): Promise<DnsMutationResult> {
+    this.assertEnabled();
+    return this.dnsDeferred();
+  }
+  async getDnsRecords(): Promise<DnsRecord[]> {
+    this.assertEnabled();
+    return this.dnsDeferred();
+  }
+  async applyDnsRecords(): Promise<DnsMutationResult> {
+    this.assertEnabled();
+    return this.dnsDeferred();
+  }
+  async getDnssec(): Promise<DnssecInfo> {
+    this.assertEnabled();
+    return this.dnsDeferred();
   }
 }
 

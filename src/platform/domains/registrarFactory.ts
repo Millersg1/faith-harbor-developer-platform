@@ -95,6 +95,10 @@ export class DisconnectedRegistrarProvider
   getAccountBalance() { return this.fail(); }
   initiateInboundTransfer() { return this.fail(); }
   getTransferStatus() { return this.fail(); }
+  setNameservers() { return this.fail(); }
+  getDnsRecords() { return this.fail(); }
+  applyDnsRecords() { return this.fail(); }
+  getDnssec() { return this.fail(); }
 }
 
 /**

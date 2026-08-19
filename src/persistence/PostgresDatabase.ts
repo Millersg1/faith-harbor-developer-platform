@@ -1930,6 +1930,47 @@ export class PostgresDatabase
         updated_at          TEXT NOT NULL
       );
       CREATE UNIQUE INDEX IF NOT EXISTS domain_dns_state_reg_uniq ON domain_dns_state (registration_id);
+      -- Stage 8: DNSSEC status + provider-sync freshness (cached DNS facts are
+      -- never presented as current provider truth without a sync timestamp).
+      ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS dnssec_status TEXT NOT NULL DEFAULT 'unknown';
+      ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS last_provider_sync_at TEXT;
+      ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS sync_state TEXT NOT NULL DEFAULT 'unknown';
+
+      -- Stage 8: the managed desired zone (labels + values). Diffed for preview
+      -- and reconciled against the live provider zone. CASCADE on registration.
+      CREATE TABLE IF NOT EXISTS domain_dns_records (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        record_type         TEXT NOT NULL,
+        host                TEXT NOT NULL,
+        value               TEXT NOT NULL,
+        ttl                 INTEGER NOT NULL DEFAULT 3600,
+        priority            INTEGER,
+        protected           BOOLEAN NOT NULL DEFAULT FALSE,
+        provider_record_id  TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_dns_records_reg ON domain_dns_records (registration_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_dns_records_uniq
+        ON domain_dns_records (registration_id, record_type, host, value);
+
+      -- Stage 8: append-only, PII-minimised DNS change audit. Stores change type
+      -- + record type + host LABEL + a value FINGERPRINT — never the value body.
+      CREATE TABLE IF NOT EXISTS domain_dns_changes (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        change_type         TEXT NOT NULL,
+        record_type         TEXT,
+        host                TEXT,
+        value_fingerprint   TEXT,
+        outcome             TEXT NOT NULL,
+        actor_user_id       TEXT,
+        created_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_dns_changes_reg ON domain_dns_changes (registration_id);
 
       -- Append-only platform-admin support/reconciliation actions (no PII).
       CREATE TABLE IF NOT EXISTS domain_support_actions (
