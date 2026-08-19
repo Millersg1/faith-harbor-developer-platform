@@ -75,6 +75,11 @@ const LEASE_MS = 60_000;
 export class DomainSagaRepository extends TenantScopedRepository {
   private readonly orders = new Map<string, SagaOrder>();
   private readonly refunds = new Map<string, SagaRefund>();
+  private readonly attempts: {
+    organizationId: string;
+    operation: string;
+    outcome: string;
+  }[] = [];
 
   constructor(db?: PgQueryable) {
     super(db);
@@ -280,6 +285,96 @@ export class DomainSagaRepository extends TenantScopedRepository {
       (x) => (x.state === "queued" || x.state === "pending") &&
         (!x.nextAttemptAt || x.nextAttemptAt <= nowIso),
     ).slice(0, limit);
+  }
+
+  // ---- Stage 7: crash recovery + reconciliation claiming + attempt audit ----
+
+  /**
+   * Recovers orders stuck in `registering` with an EXPIRED lease (a worker
+   * crashed mid-registration). The registrar MAY have acted, so the outcome is
+   * ambiguous → `registration_unknown` (never re-registered).
+   */
+  async recoverExpiredFulfillment(nowIso: string): Promise<number> {
+    if (this.db) {
+      const r = await this.db.query(
+        `UPDATE domain_orders
+           SET status='registration_unknown', registrar_state='unknown',
+               reason='crash_lease_recovery', lease_owner=NULL, lease_until=NULL,
+               updated_at=$1
+         WHERE status='registering' AND lease_until IS NOT NULL AND lease_until < $1`,
+        [nowIso],
+      );
+      return r.rowCount ?? 0;
+    }
+    let n = 0;
+    for (const o of this.orders.values()) {
+      if (o.status === "registering" && o.leaseUntil && o.leaseUntil < nowIso) {
+        o.status = "registration_unknown";
+        o.registrarState = "unknown";
+        o.reason = "crash_lease_recovery";
+        o.leaseOwner = undefined;
+        o.leaseUntil = undefined;
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** Claims aged `registration_unknown` orders for read-only reconciliation. */
+  async claimUnknownForReconcile(owner: string, nowIso: string, limit = 5): Promise<SagaOrder[]> {
+    const until = new Date(Date.parse(nowIso) + LEASE_MS).toISOString();
+    if (this.db) {
+      const r = await this.db.query(
+        `UPDATE domain_orders SET lease_owner=$1, lease_until=$2, updated_at=$2
+         WHERE id IN (
+           SELECT id FROM domain_orders
+             WHERE status='registration_unknown'
+               AND (next_attempt_at IS NULL OR next_attempt_at <= $3)
+             ORDER BY created_at ASC LIMIT $4 FOR UPDATE SKIP LOCKED)
+         RETURNING *`,
+        [owner, until, nowIso, limit],
+      );
+      return r.rows.map(mapOrder);
+    }
+    return [...this.orders.values()].filter(
+      (o) => o.status === "registration_unknown" &&
+        (!o.nextAttemptAt || o.nextAttemptAt <= nowIso),
+    ).slice(0, limit);
+  }
+
+  /** Append-only provider-attempt record (compact ids + enums only, no PII). */
+  async appendProviderAttempt(a: {
+    id: string;
+    orderId?: string;
+    registrationId?: string;
+    operation: string;
+    outcome: string;
+    attemptNo: number;
+    errorCategory?: string;
+    providerCorrelationId?: string;
+    createdAt: string;
+  }): Promise<void> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      await this.db.query(
+        `INSERT INTO domain_provider_attempts
+           (id, organization_id, order_id, registration_id, operation, outcome,
+            attempt_no, error_category, provider_correlation_id, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [
+          a.id, organizationId, a.orderId ?? null, a.registrationId ?? null,
+          a.operation, a.outcome, a.attemptNo, a.errorCategory ?? null,
+          a.providerCorrelationId ?? null, a.createdAt,
+        ],
+      );
+    } else {
+      this.attempts.push({ organizationId, operation: a.operation, outcome: a.outcome });
+    }
+  }
+
+  /** Test/inspection accessor for the in-memory attempt log. */
+  listAttempts(): { operation: string; outcome: string }[] {
+    return this.attempts.map((a) => ({ operation: a.operation, outcome: a.outcome }));
   }
 }
 

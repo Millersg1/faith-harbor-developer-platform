@@ -33,6 +33,8 @@ export interface FakeConfig {
   capabilities?: Partial<CapabilityMatrix>;
   /** Override the currency returned by pricing (default USD) — for FX tests. */
   currency?: string;
+  /** When true, getRegistrationStatus throws (models a provider timeout). */
+  throwOnStatus?: boolean;
 }
 
 const cap = (
@@ -143,6 +145,9 @@ export class FakeRegistrarProvider
   }
 
   async getRegistrationStatus(domain: string): Promise<DomainStatus> {
+    if (this.cfg.throwOnStatus) {
+      throw new Error("provider timeout");
+    }
     return (
       this.cfg.status?.[domain] ?? {
         domain,

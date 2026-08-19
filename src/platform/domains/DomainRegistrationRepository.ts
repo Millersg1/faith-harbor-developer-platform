@@ -118,6 +118,28 @@ export class DomainRegistrationRepository extends TenantScopedRepository {
     );
   }
 
+  /**
+   * Records the last successful provider synchronization + freshness of the
+   * cached registrar facts. `state` ∈ fresh|stale|unknown|needs_attention.
+   * Cached data is never presented as current registrar truth without this.
+   */
+  async markSync(id: string, state: string, at: string): Promise<void> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      await this.db.query(
+        `UPDATE domain_registrations SET sync_state = $1, last_provider_sync_at = $2,
+           updated_at = $2 WHERE id = $3 AND organization_id = $4`,
+        [state, at, id, organizationId],
+      );
+      return;
+    }
+    const rec = this.mem.get(id);
+    if (rec && rec.organizationId === organizationId) {
+      (rec as unknown as { syncState: string; lastProviderSyncAt: string }).syncState = state;
+      (rec as unknown as { lastProviderSyncAt: string }).lastProviderSyncAt = at;
+    }
+  }
+
   async setDisposition(id: string, disposition: string): Promise<void> {
     const organizationId = this.tenantId();
     if (this.db) {

@@ -1791,6 +1791,10 @@ export class PostgresDatabase
       CREATE UNIQUE INDEX IF NOT EXISTS domain_registrations_provider_domain_uniq
         ON domain_registrations (provider, ascii_domain);
       CREATE INDEX IF NOT EXISTS idx_domain_registrations_org ON domain_registrations (organization_id);
+      -- Stage 7: provider-truth freshness. Cached facts are never presented as
+      -- current registrar truth; sync_state ∈ fresh|stale|unknown|needs_attention.
+      ALTER TABLE domain_registrations ADD COLUMN IF NOT EXISTS last_provider_sync_at TEXT;
+      ALTER TABLE domain_registrations ADD COLUMN IF NOT EXISTS sync_state TEXT NOT NULL DEFAULT 'unknown';
 
       -- Encrypted registrant/admin/tech/billing contacts, WITH version history.
       -- Rows are immutable evidence; a correction inserts a new version and

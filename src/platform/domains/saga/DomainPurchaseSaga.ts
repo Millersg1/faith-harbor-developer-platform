@@ -15,6 +15,7 @@
  *    resolves it, and no path issues a blind duplicate registration.
  */
 
+import { runWithTenant } from "../../../tenancy/TenantContext";
 import {
   authorizeDomainAction,
   type AuthContext,
@@ -26,8 +27,7 @@ import {
 import type { DomainQuoteService } from "../DomainQuoteService";
 import type { DomainTermsService } from "../DomainTermsService";
 import type { DomainRegistrarProvider, RegisterInput } from "../RegistrarProvider";
-import type { RegistrarContact } from "../RegistrarContact";
-import { DomainSagaRepository, type SagaOrder } from "./DomainSagaRepository";
+import { DomainSagaRepository, type SagaOrder, type SagaRefund } from "./DomainSagaRepository";
 import type { DomainStripeGateway } from "./DomainStripeGateway";
 import { transition, type SagaStatus } from "./domainSagaState";
 
@@ -210,9 +210,17 @@ export class DomainPurchaseSaga {
   // ---- 3. fulfillment worker ---------------------------------------------
   async runFulfillmentOnce(owner: string): Promise<{ processed: number }> {
     const nowIso = this.d.now();
+    // The claim is a GLOBAL platform sweep (no org filter): a single worker
+    // drains every tenant's queue. Each claimed order is then processed inside
+    // ITS OWN tenant context so all tenant-scoped repositories (attempts,
+    // registrations, contacts, order reads) resolve to the order's org — never
+    // the ambient/first tenant. Proven against real PostgreSQL (multi-tenant).
     const claimed = await this.d.repo.claimFulfillment(owner, nowIso);
     for (const claimedOrder of claimed) {
-      await this.fulfillOne(claimedOrder);
+      await runWithTenant(
+        { organizationId: claimedOrder.organizationId },
+        () => this.fulfillOne(claimedOrder),
+      );
     }
     return { processed: claimed.length };
   }
@@ -251,9 +259,10 @@ export class DomainPurchaseSaga {
       idempotencyKey: `register:${order.id}`,
     };
     const result = await this.d.registrar.register(registerInput);
+    await this.recordAttempt(order, "register", result.outcome, result.errorCategory, result.providerCorrelationId);
 
     if (result.outcome === "definitive_success" && result.registered) {
-      await this.d.registrations.create({
+      const reg = await this.d.registrations.create({
         id: this.d.newId(),
         orderId: order.id,
         asciiDomain: order.asciiDomain,
@@ -263,6 +272,8 @@ export class DomainPurchaseSaga {
         providerDomainId: result.correlation.domainId,
         registeredAt: this.d.now(),
       });
+      // The registration record is fresh registrar truth at this moment.
+      await this.d.registrations.markSync(reg.id, "fresh", this.d.now());
       const done = this.move(order, "registered", "registered");
       await this.d.repo.updateOrder(order.id, {
         status: done.status,
@@ -368,32 +379,40 @@ export class DomainPurchaseSaga {
     const nowIso = this.d.now();
     const claimed = await this.d.repo.claimRefunds(owner, nowIso);
     for (const refund of claimed) {
-      if (refund.state === "queued") {
-        const view = await this.d.stripe.createRefund({
-          chargeId: refund.stripeChargeId ?? "",
-          amountMinor: refund.amountMinor,
-          reason: refund.reason,
-          idempotencyKey: refund.idempotencyKey, // deterministic
-        });
-        await this.d.repo.updateRefund(refund.id, {
-          state: view.status === "failed" ? "failed" : "pending",
-          stripeRefundId: view.id,
-          updatedAt: this.d.now(),
-        });
-        await this.syncOrderRefund(refund.orderId, view.status === "failed" ? "refund_failed" : "refund_pending");
-      } else if (refund.state === "pending" && refund.stripeRefundId) {
-        // Only Stripe confirmation flips to refunded/failed.
-        const view = await this.d.stripe.getRefund(refund.stripeRefundId);
-        if (view.status === "succeeded") {
-          await this.d.repo.updateRefund(refund.id, { state: "refunded", updatedAt: this.d.now() });
-          await this.syncOrderRefund(refund.orderId, "refunded");
-        } else if (view.status === "failed") {
-          await this.d.repo.updateRefund(refund.id, { state: "failed", updatedAt: this.d.now() });
-          await this.syncOrderRefund(refund.orderId, "refund_failed");
-        }
-      }
+      await runWithTenant(
+        { organizationId: refund.organizationId },
+        () => this.processRefund(refund),
+      );
     }
     return { processed: claimed.length };
+  }
+
+  /** Processes one claimed refund. MUST run inside the refund's tenant context. */
+  private async processRefund(refund: SagaRefund): Promise<void> {
+    if (refund.state === "queued") {
+      const view = await this.d.stripe.createRefund({
+        chargeId: refund.stripeChargeId ?? "",
+        amountMinor: refund.amountMinor,
+        reason: refund.reason,
+        idempotencyKey: refund.idempotencyKey, // deterministic
+      });
+      await this.d.repo.updateRefund(refund.id, {
+        state: view.status === "failed" ? "failed" : "pending",
+        stripeRefundId: view.id,
+        updatedAt: this.d.now(),
+      });
+      await this.syncOrderRefund(refund.orderId, view.status === "failed" ? "refund_failed" : "refund_pending");
+    } else if (refund.state === "pending" && refund.stripeRefundId) {
+      // Only Stripe confirmation flips to refunded/failed.
+      const view = await this.d.stripe.getRefund(refund.stripeRefundId);
+      if (view.status === "succeeded") {
+        await this.d.repo.updateRefund(refund.id, { state: "refunded", updatedAt: this.d.now() });
+        await this.syncOrderRefund(refund.orderId, "refunded");
+      } else if (view.status === "failed") {
+        await this.d.repo.updateRefund(refund.id, { state: "failed", updatedAt: this.d.now() });
+        await this.syncOrderRefund(refund.orderId, "refund_failed");
+      }
+    }
   }
 
   private async syncOrderRefund(orderId: string, to: SagaStatus): Promise<void> {
@@ -472,6 +491,78 @@ export class DomainPurchaseSaga {
     const order = await this.d.repo.getOrder(orderId);
     if (!order || order.status !== "registration_unknown") throw new SagaGateError("not_unknown");
     await this.enqueueRefund(order, "owner_resolved_not_registered");
+  }
+
+  // ---- Stage 7: scheduled reconciliation worker (read-only provider lookup) --
+  async runReconciliationOnce(owner: string): Promise<{ processed: number }> {
+    const nowIso = this.d.now();
+    await this.d.repo.recoverExpiredFulfillment(nowIso); // crashed leases -> unknown
+    // Global claim, per-order tenant re-entry (see runFulfillmentOnce).
+    const claimed = await this.d.repo.claimUnknownForReconcile(owner, nowIso);
+    for (const order of claimed) {
+      await runWithTenant(
+        { organizationId: order.organizationId },
+        () => this.reconcileClaimed(order),
+      );
+    }
+    return { processed: claimed.length };
+  }
+
+  private async reconcileClaimed(order: SagaOrder): Promise<void> {
+    let status;
+    try {
+      status = await this.d.registrar.getRegistrationStatus(order.asciiDomain);
+    } catch {
+      // Provider timeout/malformed -> never fabricate. Reschedule; after bounded
+      // attempts escalate to needs_attention (owner review). No blind re-register.
+      await this.recordAttempt(order, "reconcile", "ambiguous_unknown", "provider_unreachable");
+      const attempts = order.attempts + 1;
+      const max = this.d.maxFulfillAttempts ?? 5;
+      if (attempts >= max) {
+        const na = this.move(order, "needs_attention", "reconcile_exhausted");
+        await this.d.repo.updateOrder(order.id, {
+          status: na.status, attempts, reason: "reconcile_unresolved",
+          leaseOwner: undefined, leaseUntil: undefined, updatedAt: this.d.now(),
+        });
+        return;
+      }
+      const backoff = (this.d.backoffMs ?? 300_000) * 2 ** (attempts - 1);
+      await this.d.repo.updateOrder(order.id, {
+        attempts, nextAttemptAt: new Date(Date.parse(this.d.now()) + backoff).toISOString(),
+        leaseOwner: undefined, leaseUntil: undefined, updatedAt: this.d.now(),
+      });
+      return;
+    }
+    await this.recordAttempt(order, "reconcile", status.registered ? "definitive_success" : "definitive_failure");
+    if (status.registered) {
+      await this.ensureRegistrationRecord(order);
+      const done = this.move(order, "registered", "reconciled_registered");
+      await this.d.repo.updateOrder(order.id, {
+        status: done.status, registrarState: "registered", registeredAt: this.d.now(),
+        leaseOwner: undefined, leaseUntil: undefined, updatedAt: this.d.now(),
+      });
+      return;
+    }
+    await this.enqueueRefund(order, "reconciled_not_registered");
+  }
+
+  private async recordAttempt(
+    order: SagaOrder,
+    operation: string,
+    outcome: string,
+    category?: string,
+    corr?: string,
+  ): Promise<void> {
+    await this.d.repo.appendProviderAttempt({
+      id: this.d.newId(),
+      orderId: order.id,
+      operation,
+      outcome,
+      attemptNo: order.attempts + 1,
+      errorCategory: category ? safeReason(category) : undefined,
+      providerCorrelationId: corr,
+      createdAt: this.d.now(),
+    });
   }
 }
 
