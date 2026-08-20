@@ -1935,6 +1935,14 @@ export class PostgresDatabase
       ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS dnssec_status TEXT NOT NULL DEFAULT 'unknown';
       ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS last_provider_sync_at TEXT;
       ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS sync_state TEXT NOT NULL DEFAULT 'unknown';
+      -- Stage 8 boundary reconciliation: which DNS service is AUTHORITATIVE for
+      -- the zone (namesilo | cpanel | external | unknown) + freshness of that
+      -- determination. Zone-record mutation is permitted ONLY when a managed
+      -- provider is authoritative AND freshly verified; cPanel/external domains
+      -- are externally managed until a dedicated adapter is built.
+      ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS authority_provider TEXT NOT NULL DEFAULT 'unknown';
+      ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS authority_state TEXT NOT NULL DEFAULT 'unknown';
+      ALTER TABLE domain_dns_state ADD COLUMN IF NOT EXISTS authority_verified_at TEXT;
 
       -- Stage 8: the managed desired zone (labels + values). Diffed for preview
       -- and reconciled against the live provider zone. CASCADE on registration.

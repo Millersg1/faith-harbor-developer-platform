@@ -223,6 +223,46 @@ unchanged at 74 tables in both runs.**
 
 ---
 
+## §Stage-8 DNS boundary reconciliation (correction commit)
+
+The initial Stage 8 did **not** model DNS *authority*: `applyRecordChanges`
+called the registrar's `applyDnsRecords` regardless of whether the domain was
+actually using that registrar's authoritative DNS. This was **corrected** in a
+separate commit; the boundaries are now enforced and proven:
+
+- **Three capabilities are separate** — registrar **nameserver delegation**
+  (`setNameservers`), registry **DS/glue** (DNSSEC is READ-ONLY via `getDnssec`;
+  no DS/glue mutation is offered), and authoritative **zone-record** management
+  (`applyDnsRecords`). Documented in `dns/dnsAuthority.ts` header.
+- **Records only when we own the zone, freshly** — `DomainDnsService.
+  applyRecordChanges` calls `verifyAuthority()` first, which READS the live
+  nameservers (`registrar.getNameservers`) and classifies them
+  (`classifyAuthority`) against an INJECTED provider→NS-suffix map (never
+  hard-coded). Mutation proceeds only when the authority equals the registrar's
+  authoritative provider (`namesilo`) with `recordManagement: "supported"`;
+  otherwise it throws `DnsAuthorityError`. Persisted to `domain_dns_state`
+  (`authority_provider`, `authority_state`, `authority_verified_at`).
+- **cPanel / All Elite Hosting = externally managed** — a domain on
+  `allelitehosting.com` nameservers classifies as `cpanel` /
+  `externally_managed`; record mutation is refused until a dedicated cPanel DNS
+  adapter is built and tested. `recordCapability()` surfaces this honestly.
+- **Never auto-switch nameservers** — the only path that changes nameservers is
+  the explicit `setNameserverMode`; register / hosting-attach / record-edit call
+  it never. Proven by the hosting-attach test asserting nameservers are
+  unchanged.
+- **Hosting attach touches neither nameservers nor records** — `attachHosting`
+  only sets `hosting_account_id`; a test asserts NS and the record set are
+  byte-for-byte unchanged across an attach.
+- **Deterministic tests** (`dns/domainDns.test.ts`, "DNS authority boundary"):
+  NameSilo-authoritative→allowed; cPanel-authoritative→refused; unknown (no NS)
+  →refused; provider timeout→refused (authority `unknown`, never assumed ours);
+  cross-provider (foreign NS)→refused; hosting-attach→NS+records unchanged.
+- **Schema** (additive, idempotent): `domain_dns_state += authority_provider,
+  authority_state, authority_verified_at`. Re-proven on disposable PostgreSQL
+  (**18/18**, incl. authority persistence + upsert), public unchanged at 74.
+
+Full domain suite after the correction: **200 passed** (DNS file 20 tests).
+
 ## §GO / NO-GO
 
 **GO to keep Stages 7 & 8 committed on-branch as sandbox/test-only cores.**

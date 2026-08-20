@@ -33,6 +33,11 @@ import type {
   NameserverMode,
 } from "../RegistrarProvider";
 import {
+  classifyAuthority,
+  type AuthoritativeDnsProvider,
+  type AuthorityClassification,
+} from "./dnsAuthority";
+import {
   protectionReason,
   validateNameservers,
   validateRecord,
@@ -56,6 +61,23 @@ export class DnsProtectedError extends Error {
   constructor(readonly conflicts: ProtectedConflict[]) {
     super(`Change would alter ${conflicts.length} protected record(s); explicit authorization required.`);
     this.name = "DnsProtectedError";
+  }
+}
+/**
+ * Refuses a zone-record mutation because the domain is NOT using a managed
+ * provider's authoritative DNS (or that authority is not freshly verified).
+ */
+export class DnsAuthorityError extends Error {
+  constructor(
+    readonly authorityProvider: string,
+    readonly recordManagement: string,
+  ) {
+    super(
+      `Zone-record management is unavailable: authoritative DNS is "${authorityProvider}" ` +
+        `(record management: ${recordManagement}). Records can only be edited when the ` +
+        `domain uses a managed provider's authoritative DNS, freshly verified.`,
+    );
+    this.name = "DnsAuthorityError";
   }
 }
 
@@ -98,6 +120,18 @@ export interface DomainDnsServiceDeps {
   newId: () => string;
   /** The All Elite Cloud nameservers (injected, never hard-coded/fabricated). */
   alleliteNameservers: string[];
+  /**
+   * How live nameservers map to an authoritative-DNS provider (injected, never
+   * fabricated). e.g. NameSilo DNS = dnsowl.com (records supported); All Elite
+   * cPanel = allelitehosting.com (externally managed until an adapter exists).
+   */
+  authoritativeDnsProviders: AuthoritativeDnsProvider[];
+  /**
+   * The authoritative-DNS provider id whose zone THIS registrar can mutate. For
+   * a NameSilo registrar this is "namesilo". Record mutation is refused unless
+   * the domain's authority matches this AND is freshly verified.
+   */
+  registrarAuthoritativeProvider: string;
 }
 
 export class DomainDnsService {
@@ -123,9 +157,47 @@ export class DomainDnsService {
       provisioningStatus: "none",
       dnssecStatus: "unknown",
       syncState: "unknown",
+      authorityProvider: "unknown",
+      authorityState: "unknown",
       createdAt: now,
       updatedAt: now,
     });
+  }
+
+  // ---- authority: WHO owns the zone (records only when we do, freshly) -----
+  /**
+   * Reads the LIVE nameservers and classifies which DNS service is authoritative
+   * for the zone, persisting the result with a verification timestamp. This is
+   * the freshness proof gating record mutation — a provider throw yields
+   * `unknown` (never assumed as ours).
+   */
+  async verifyAuthority(registrationId: string): Promise<AuthorityClassification & { state: string }> {
+    const reg = await this.requireConfirmed(registrationId);
+    const state = await this.ensureState(registrationId);
+    const now = this.d.now();
+    let nameservers: string[];
+    try {
+      nameservers = await this.d.registrar.getNameservers(reg.asciiDomain);
+    } catch {
+      await this.d.dns.putState({ ...state, authorityProvider: "unknown", authorityState: "unknown", authorityVerifiedAt: now, updatedAt: now });
+      return { provider: "unknown", recordManagement: "unknown", state: "unknown" };
+    }
+    const cls = classifyAuthority(nameservers, this.d.authoritativeDnsProviders);
+    const authState = cls.provider === "unknown" ? "unknown" : "fresh";
+    await this.d.dns.putState({ ...state, authorityProvider: cls.provider, authorityState: authState, authorityVerifiedAt: now, updatedAt: now });
+    return { ...cls, state: authState };
+  }
+
+  /**
+   * Reports whether the platform can manage zone records for this domain today.
+   * cPanel/external-authoritative domains are `externally_managed`; unresolved
+   * authority is `unknown`. UI uses this to represent the domain honestly.
+   */
+  async recordCapability(registrationId: string): Promise<{ manageable: boolean; authorityProvider: string; recordManagement: string }> {
+    const authority = await this.verifyAuthority(registrationId);
+    const manageable =
+      authority.provider === this.d.registrarAuthoritativeProvider && authority.recordManagement === "supported";
+    return { manageable, authorityProvider: authority.provider, recordManagement: authority.recordManagement };
   }
 
   // ---- nameservers --------------------------------------------------------
@@ -171,6 +243,14 @@ export class DomainDnsService {
 
     const success = outcome === "definitive_success";
     const provisioningStatus = success ? "active" : outcome === "ambiguous_unknown" ? "unknown" : "needs_attention";
+    // A delegation change changes WHO is authoritative for the zone. When we know
+    // the new nameservers (allelite/custom) classify from them; registrar_default
+    // leaves it unknown until a live verification reads the registrar's NS.
+    const authority =
+      success && mode !== "registrar_default"
+        ? classifyAuthority(nameservers, this.d.authoritativeDnsProviders)
+        : { provider: "unknown" as string, recordManagement: "unknown" as string };
+    const authorityState = authority.provider === "unknown" ? "unknown" : "fresh";
     await this.d.dns.putState({
       ...state,
       mode,
@@ -178,6 +258,9 @@ export class DomainDnsService {
       provisioningStatus,
       syncState: success ? "fresh" : "unknown",
       lastProviderSyncAt: success ? now : state.lastProviderSyncAt,
+      authorityProvider: success ? authority.provider : state.authorityProvider,
+      authorityState: success ? authorityState : state.authorityState,
+      authorityVerifiedAt: success ? now : state.authorityVerifiedAt,
       updatedAt: now,
     });
     await this.d.dns.appendChange({
@@ -242,6 +325,14 @@ export class DomainDnsService {
     opts: { authorizeProtected?: boolean; actorUserId: string },
   ): Promise<DnsMutationView> {
     const reg = await this.requireConfirmed(registrationId);
+    // AUTHORITY GATE: never edit a zone we do not authoritatively serve. Verify
+    // (freshly, from the live nameservers) that a managed provider is
+    // authoritative; refuse for cPanel/external/unknown — this also blocks any
+    // cross-provider mutation attempt.
+    const authority = await this.verifyAuthority(registrationId);
+    if (authority.provider !== this.d.registrarAuthoritativeProvider || authority.recordManagement !== "supported") {
+      throw new DnsAuthorityError(authority.provider, authority.recordManagement);
+    }
     const preview = await this.previewRecordChanges(registrationId, changes);
     if (preview.issues.length) throw new DnsValidationError(preview.issues);
     if (preview.protectedConflicts.length && !opts.authorizeProtected) {

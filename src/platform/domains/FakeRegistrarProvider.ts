@@ -196,6 +196,7 @@ export class FakeRegistrarProvider
     return {};
   }
   async getNameservers(domain: string): Promise<string[]> {
+    if (this.cfg.throwOnDns) throw new Error("dns provider timeout");
     return this.ns.get(domain) ?? [];
   }
 

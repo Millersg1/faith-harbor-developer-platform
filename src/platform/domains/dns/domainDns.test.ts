@@ -6,6 +6,7 @@ import { FakeRegistrarProvider, type FakeConfig } from "../FakeRegistrarProvider
 import type { DnsRecord, DnsRecordChange } from "../RegistrarProvider";
 import { DomainDnsRepository } from "./DomainDnsRepository";
 import {
+  DnsAuthorityError,
   DnsGateError,
   DnsProtectedError,
   DnsValidationError,
@@ -17,10 +18,20 @@ import {
   validateRecord,
 } from "./dnsValidation";
 
-const ALLELITE_NS = ["ns1.allelitecloud.com", "ns2.allelitecloud.com"];
+const ALLELITE_NS = ["ns1.allelitehosting.com", "ns2.allelitehosting.com"];
+const NAMESILO_NS = ["ns1.dnsowl.com", "ns2.dnsowl.com"];
+const AUTH_PROVIDERS = [
+  { provider: "namesilo", nsSuffixes: ["dnsowl.com"], recordManagement: "supported" as const },
+  { provider: "cpanel", nsSuffixes: ["allelitehosting.com"], recordManagement: "externally_managed" as const },
+];
 
 function build(fake: FakeConfig = {}) {
-  const registrar = new FakeRegistrarProvider(fake);
+  // Default: the domain is on NameSilo's authoritative DNS (records manageable),
+  // unless a test overrides nameserversByDomain.
+  const registrar = new FakeRegistrarProvider({
+    nameserversByDomain: { "acme.com": NAMESILO_NS },
+    ...fake,
+  });
   const dns = new DomainDnsRepository();
   const registrations = new DomainRegistrationRepository();
   let seq = 0;
@@ -29,6 +40,8 @@ function build(fake: FakeConfig = {}) {
     now: () => "2026-08-19T00:00:00Z",
     newId: () => `id${++seq}`,
     alleliteNameservers: ALLELITE_NS,
+    authoritativeDnsProviders: AUTH_PROVIDERS,
+    registrarAuthoritativeProvider: "namesilo",
   });
   return { service, dns, registrations, registrar };
 }
@@ -190,6 +203,85 @@ describe("Stage 8 — record management (preview + apply + protection)", () => {
       expect(view.autoRollback).toBe(false);
       expect((await h.dns.listRecords(reg)).length).toBe(0); // not fabricated as applied
       expect((await h.dns.getState(reg))!.provisioningStatus).toBe("unknown");
+    });
+  });
+});
+
+describe("Stage 8 — DNS authority boundary (records only when we own the zone, freshly)", () => {
+  it("NameSilo-authoritative + fresh -> record management supported + apply allowed", async () => {
+    const h = build(); // acme.com nameservers = dnsowl (NameSilo DNS)
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const reg = await confirmReg(h);
+      const cap = await h.service.recordCapability(reg);
+      expect(cap).toMatchObject({ manageable: true, authorityProvider: "namesilo" });
+      const view = await h.service.applyRecordChanges(reg, [upsert({ type: "A", host: "@", value: "1.2.3.4", ttl: 3600 })], { actorUserId: "u1" });
+      expect(view.outcome).toBe("definitive_success");
+      const st = (await h.dns.getState(reg))!;
+      expect(st.authorityProvider).toBe("namesilo");
+      expect(st.authorityState).toBe("fresh");
+      expect(st.authorityVerifiedAt).toBeTruthy();
+    });
+  });
+
+  it("cPanel-authoritative -> externally managed, record mutation refused", async () => {
+    const h = build({ nameserversByDomain: { "acme.com": ALLELITE_NS } });
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const reg = await confirmReg(h);
+      const cap = await h.service.recordCapability(reg);
+      expect(cap).toMatchObject({ manageable: false, authorityProvider: "cpanel", recordManagement: "externally_managed" });
+      await expect(
+        h.service.applyRecordChanges(reg, [upsert({ type: "A", host: "@", value: "1.2.3.4", ttl: 3600 })], { actorUserId: "u1" }),
+      ).rejects.toBeInstanceOf(DnsAuthorityError);
+    });
+  });
+
+  it("unknown authority (no nameservers) -> refused", async () => {
+    const h = build({ nameserversByDomain: { "acme.com": [] } });
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const reg = await confirmReg(h);
+      const cap = await h.service.recordCapability(reg);
+      expect(cap.manageable).toBe(false);
+      expect(cap.authorityProvider).toBe("unknown");
+      await expect(
+        h.service.applyRecordChanges(reg, [upsert({ type: "A", host: "@", value: "1.2.3.4", ttl: 3600 })], { actorUserId: "u1" }),
+      ).rejects.toBeInstanceOf(DnsAuthorityError);
+    });
+  });
+
+  it("unresolved authority via provider timeout -> refused, never assumed ours", async () => {
+    const h = build({ throwOnDns: true });
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const reg = await confirmReg(h);
+      await expect(
+        h.service.applyRecordChanges(reg, [upsert({ type: "A", host: "@", value: "1.2.3.4", ttl: 3600 })], { actorUserId: "u1" }),
+      ).rejects.toBeInstanceOf(DnsAuthorityError);
+      expect((await h.dns.getState(reg))!.authorityProvider).toBe("unknown");
+    });
+  });
+
+  it("cross-provider mutation (NameSilo registrar, domain on foreign NS) -> refused", async () => {
+    const h = build({ nameserversByDomain: { "acme.com": ["ns1.someoneelse.net", "ns2.someoneelse.net"] } });
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const reg = await confirmReg(h);
+      expect((await h.service.recordCapability(reg)).authorityProvider).toBe("external");
+      await expect(
+        h.service.applyRecordChanges(reg, [upsert({ type: "A", host: "@", value: "1.2.3.4", ttl: 3600 })], { actorUserId: "u1" }),
+      ).rejects.toBeInstanceOf(DnsAuthorityError);
+    });
+  });
+
+  it("hosting attach never switches nameservers or replaces records", async () => {
+    const h = build(); // NameSilo-authoritative
+    await runWithTenant({ organizationId: "orgA" }, async () => {
+      const reg = await confirmReg(h);
+      await h.service.applyRecordChanges(reg, [upsert({ type: "A", host: "@", value: "1.2.3.4", ttl: 3600 })], { actorUserId: "u1" });
+      const nsBefore = await h.registrar.getNameservers("acme.com");
+      const recsBefore = await h.dns.listRecords(reg);
+      h.dns.seedHostingAccount("host-A", "orgA");
+      await h.service.attachHosting(reg, "host-A", "u1");
+      expect(await h.registrar.getNameservers("acme.com")).toEqual(nsBefore); // NS untouched
+      expect(await h.dns.listRecords(reg)).toEqual(recsBefore); // records untouched
+      expect((await h.dns.getState(reg))!.hostingAccountId).toBe("host-A");
     });
   });
 });

@@ -28,6 +28,10 @@ export interface DnsState {
   hostingAccountId?: string;
   lastProviderSyncAt?: string;
   syncState: string; // fresh|stale|unknown|needs_attention
+  /** Which DNS service is authoritative for the zone (namesilo|cpanel|external|unknown). */
+  authorityProvider: string;
+  authorityState: string; // fresh|stale|unknown
+  authorityVerifiedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,20 +80,27 @@ export class DomainDnsRepository extends TenantScopedRepository {
         `INSERT INTO domain_dns_state
            (id, organization_id, registration_id, mode, nameservers,
             provisioning_status, dnssec_status, hosting_account_id,
-            last_provider_sync_at, sync_state, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)
+            last_provider_sync_at, sync_state, authority_provider,
+            authority_state, authority_verified_at, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
          ON CONFLICT (registration_id) DO UPDATE SET
            mode=EXCLUDED.mode, nameservers=EXCLUDED.nameservers,
            provisioning_status=EXCLUDED.provisioning_status,
            dnssec_status=EXCLUDED.dnssec_status,
            hosting_account_id=EXCLUDED.hosting_account_id,
            last_provider_sync_at=EXCLUDED.last_provider_sync_at,
-           sync_state=EXCLUDED.sync_state, updated_at=EXCLUDED.updated_at`,
+           sync_state=EXCLUDED.sync_state,
+           authority_provider=EXCLUDED.authority_provider,
+           authority_state=EXCLUDED.authority_state,
+           authority_verified_at=EXCLUDED.authority_verified_at,
+           updated_at=EXCLUDED.updated_at`,
         [
           full.id, organizationId, full.registrationId, full.mode,
           JSON.stringify(full.nameservers), full.provisioningStatus,
           full.dnssecStatus, full.hostingAccountId ?? null,
-          full.lastProviderSyncAt ?? null, full.syncState, full.createdAt,
+          full.lastProviderSyncAt ?? null, full.syncState,
+          full.authorityProvider, full.authorityState,
+          full.authorityVerifiedAt ?? null, full.createdAt,
         ],
       );
       return (await this.getState(full.registrationId))!;
@@ -239,6 +250,9 @@ function mapState(row: Record<string, unknown>): DnsState {
     hostingAccountId: row.hosting_account_id ? String(row.hosting_account_id) : undefined,
     lastProviderSyncAt: row.last_provider_sync_at ? String(row.last_provider_sync_at) : undefined,
     syncState: String(row.sync_state ?? "unknown"),
+    authorityProvider: String(row.authority_provider ?? "unknown"),
+    authorityState: String(row.authority_state ?? "unknown"),
+    authorityVerifiedAt: row.authority_verified_at ? String(row.authority_verified_at) : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
