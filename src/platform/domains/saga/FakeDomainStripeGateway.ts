@@ -8,6 +8,7 @@
 import type {
   CheckoutResult,
   DomainStripeGateway,
+  OffSessionChargeInput,
   OneTimeCheckoutInput,
   PaymentIntentView,
   RefundInput,
@@ -62,6 +63,32 @@ export class FakeDomainStripeGateway implements DomainStripeGateway {
   tamperPaymentIntent(piId: string, patch: Partial<PaymentIntentView>): void {
     const v = this.paymentIntents.get(piId);
     if (v) Object.assign(v, patch);
+  }
+
+  /** Scriptable off-session outcome (default: succeeds). */
+  private offSessionStatus: "succeeded" | "requires_action" | "failed" = "succeeded";
+  setOffSessionResult(status: "succeeded" | "requires_action" | "failed"): void {
+    this.offSessionStatus = status;
+  }
+
+  async chargeOffSession(input: OffSessionChargeInput): Promise<PaymentIntentView> {
+    // Idempotent: same key returns the same PaymentIntent.
+    for (const v of this.paymentIntents.values()) {
+      if ((v as PaymentIntentView & { _idem?: string })._idem === input.idempotencyKey) {
+        return { ...v };
+      }
+    }
+    const id = `pi_offs_${++this.seq}`;
+    const view: PaymentIntentView & { _idem?: string } = {
+      id,
+      amountMinor: input.amountMinor,
+      currency: input.currency,
+      status: this.offSessionStatus,
+      chargeId: this.offSessionStatus === "succeeded" ? `ch_offs_${id}` : undefined,
+      _idem: input.idempotencyKey,
+    };
+    this.paymentIntents.set(id, view);
+    return { ...view };
   }
 
   verifyWebhook(): boolean {

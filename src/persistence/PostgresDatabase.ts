@@ -1992,6 +1992,109 @@ export class PostgresDatabase
         created_at          TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_domain_support_order ON domain_support_actions (order_id);
+
+      -- ===== Stage 9: RENEWALS (separate billing lifecycle) =================
+      -- Renewal saga orders. RESTRICT on org + registration (money + a domain
+      -- lifecycle action). Renewal price is quoted SEPARATELY from registration.
+      CREATE TABLE IF NOT EXISTS domain_renewal_orders (
+        id                    TEXT PRIMARY KEY,
+        organization_id       TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id       TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE RESTRICT,
+        user_id               TEXT,
+        ascii_domain          TEXT NOT NULL,
+        tld                   TEXT NOT NULL,
+        term_years            INTEGER NOT NULL,
+        provider              TEXT NOT NULL,
+        currency              TEXT NOT NULL,
+        provider_cost_minor   BIGINT NOT NULL,
+        markup_minor          BIGINT NOT NULL,
+        customer_price_minor  BIGINT NOT NULL,
+        pricing_version       INTEGER NOT NULL,
+        current_expires_at    TEXT NOT NULL,
+        new_expires_at        TEXT,
+        mode                  TEXT NOT NULL,               -- manual | auto
+        charge_path           TEXT NOT NULL,               -- checkout | off_session
+        terms_acceptance_id   TEXT,
+        status                TEXT NOT NULL DEFAULT 'quote_ready',
+        payment_state         TEXT NOT NULL DEFAULT 'none',
+        renewal_state         TEXT NOT NULL DEFAULT 'none',
+        refund_state          TEXT NOT NULL DEFAULT 'none',
+        idempotency_key       TEXT NOT NULL,
+        stripe_checkout_id    TEXT,
+        stripe_payment_intent_id TEXT,
+        stripe_charge_id      TEXT,
+        charged_minor         BIGINT,
+        attempts              INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at       TEXT,
+        lease_owner           TEXT,
+        lease_until           TEXT,
+        reason                TEXT,
+        provider_correlation_id TEXT,
+        captured_at           TEXT,
+        renewed_at            TEXT,
+        created_at            TEXT NOT NULL,
+        updated_at            TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_renewal_orders_idem_uniq ON domain_renewal_orders (idempotency_key);
+      CREATE INDEX IF NOT EXISTS idx_domain_renewal_orders_org ON domain_renewal_orders (organization_id);
+      CREATE INDEX IF NOT EXISTS domain_renewal_orders_claim_idx ON domain_renewal_orders (status, next_attempt_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_renewal_orders_pi_uniq
+        ON domain_renewal_orders (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL;
+      -- At most ONE in-flight/successful renewal per (registration, expiration
+      -- cycle, term) — prevents a duplicate renewal for the same cycle.
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_renewal_active_uniq
+        ON domain_renewal_orders (registration_id, current_expires_at, term_years)
+        WHERE status IN ('quote_ready','checkout_created','off_session_authorized',
+          'awaiting_payment','payment_captured','renewal_queued','renewing',
+          'renewal_unknown','renewed');
+
+      -- Renewal refunds — one per renewal order, deterministic idempotency key.
+      CREATE TABLE IF NOT EXISTS domain_renewal_refunds (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        renewal_order_id    TEXT NOT NULL REFERENCES domain_renewal_orders (id) ON DELETE RESTRICT,
+        stripe_charge_id    TEXT,
+        stripe_refund_id    TEXT,
+        amount_minor        BIGINT NOT NULL,
+        currency            TEXT NOT NULL,
+        reason              TEXT NOT NULL,
+        state               TEXT NOT NULL DEFAULT 'queued',
+        idempotency_key     TEXT NOT NULL,
+        attempts            INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at     TEXT,
+        lease_owner         TEXT,
+        lease_until         TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_renewal_refunds_order_uniq ON domain_renewal_refunds (renewal_order_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_renewal_refunds_idem_uniq ON domain_renewal_refunds (idempotency_key);
+      CREATE INDEX IF NOT EXISTS domain_renewal_refunds_claim_idx ON domain_renewal_refunds (state, next_attempt_at);
+
+      -- Per-registration auto-renew AUTHORIZATION. Opt-in, OFF by default
+      -- (absence = off). Stores the durable off-session authorization + the
+      -- eligible saved payment method reference (never card data).
+      CREATE TABLE IF NOT EXISTS domain_autorenew (
+        registration_id     TEXT PRIMARY KEY REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        enabled             BOOLEAN NOT NULL DEFAULT FALSE,
+        authorized_by_user_id TEXT,
+        authorized_at       TEXT,
+        terms_acceptance_id TEXT,
+        pricing_version_ack INTEGER,
+        stripe_customer_ref TEXT,
+        stripe_payment_method_ref TEXT,
+        currency            TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_autorenew_org ON domain_autorenew (organization_id);
+
+      -- Provider-attempt audit gains a renewal-order link (renewals reuse the
+      -- same append-only, PII-free attempt log as registrations).
+      ALTER TABLE domain_provider_attempts
+        ADD COLUMN IF NOT EXISTS renewal_order_id TEXT REFERENCES domain_renewal_orders (id) ON DELETE RESTRICT;
+      CREATE INDEX IF NOT EXISTS idx_domain_attempts_renewal ON domain_provider_attempts (renewal_order_id);
     `);
   }
 

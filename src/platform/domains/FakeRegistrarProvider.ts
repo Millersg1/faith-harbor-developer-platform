@@ -39,6 +39,14 @@ export interface FakeConfig {
   currency?: string;
   /** When true, getRegistrationStatus throws (models a provider timeout). */
   throwOnStatus?: boolean;
+  /** ascii-domain -> forced renew result (to script renewal outcomes). */
+  renewResult?: Record<string, RegisterResult>;
+  /** When true, renew() throws (models a renewal transport timeout). */
+  throwOnRenew?: boolean;
+  /** ascii-domain -> seed current expiration date (ISO). */
+  expiresAtByDomain?: Record<string, string>;
+  /** ascii-domain -> expiration date after a successful renew (ISO). */
+  renewedExpiresAt?: Record<string, string>;
   /** When true, DNS mutations/reads throw (models a DNS provider timeout). */
   throwOnDns?: boolean;
   /** ascii-domain -> forced DNS mutation result (to script ambiguous/failure). */
@@ -91,6 +99,8 @@ export class FakeRegistrarProvider
   /** Mutable in-memory zones + nameservers, so applied changes are observable. */
   private readonly zones = new Map<string, DnsRecord[]>();
   private readonly ns = new Map<string, string[]>();
+  /** Mutable expiration dates, so a successful renew advances them. */
+  private readonly expiry = new Map<string, string>();
 
   constructor(cfg: FakeConfig = {}) {
     this.cfg = cfg;
@@ -101,6 +111,15 @@ export class FakeRegistrarProvider
     for (const [d, n] of Object.entries(cfg.nameserversByDomain ?? {})) {
       this.ns.set(d, [...n]);
     }
+    for (const [d, at] of Object.entries(cfg.expiresAtByDomain ?? {})) {
+      this.expiry.set(d, at);
+    }
+  }
+
+  /** Test helper: simulate the provider having actually advanced the expiry
+   *  (e.g. an ambiguous renew that in fact succeeded at the provider). */
+  setExpiry(domain: string, at: string): void {
+    this.expiry.set(domain, at);
   }
 
   capabilities(): CapabilityMatrix {
@@ -171,13 +190,14 @@ export class FakeRegistrarProvider
     if (this.cfg.throwOnStatus) {
       throw new Error("provider timeout");
     }
-    return (
-      this.cfg.status?.[domain] ?? {
-        domain,
-        registered: true,
-        expiresAt: "2027-01-01T00:00:00Z",
-      }
-    );
+    const scripted = this.cfg.status?.[domain];
+    return {
+      domain,
+      registered: scripted?.registered ?? true,
+      // The mutable expiry map wins so a successful renew is observable.
+      expiresAt: this.expiry.get(domain) ?? scripted?.expiresAt ?? "2027-01-01T00:00:00Z",
+      ...(scripted ? { lifecycleState: scripted.lifecycleState } : {}),
+    };
   }
 
   async renew(
@@ -185,11 +205,26 @@ export class FakeRegistrarProvider
     _years: number,
     idempotencyKey: string,
   ): Promise<RegisterResult> {
-    return {
+    if (this.cfg.throwOnRenew) {
+      throw new Error("renew transport timeout");
+    }
+    const forced = this.cfg.renewResult?.[domain];
+    const result: RegisterResult = forced ?? {
       outcome: "definitive_success",
       registered: true,
       correlation: { orderId: `renew-${idempotencyKey}`, domainId: domain },
+      providerCorrelationId: `fake-renew-${domain}`,
     };
+    // Only a DEFINITIVE success advances the (mutable) expiry the provider will
+    // report. Ambiguous/failed renews leave it unchanged unless a test scripts
+    // the provider having actually acted via setExpiry().
+    if (result.outcome === "definitive_success" && result.registered) {
+      const next =
+        this.cfg.renewedExpiresAt?.[domain] ??
+        advanceOneYear(this.expiry.get(domain) ?? "2027-01-01T00:00:00Z");
+      this.expiry.set(domain, next);
+    }
+    return result;
   }
 
   async getContacts(): Promise<Record<string, RegistrarContact>> {
@@ -275,4 +310,11 @@ export class FakeRegistrarProvider
   async getTransferStatus(domain: string): Promise<TransferStatusResult> {
     return { domain, state: "pending", correlation: {} };
   }
+}
+
+/** Advances an ISO date by one calendar year (deterministic, no Date.now). */
+function advanceOneYear(iso: string): string {
+  const d = new Date(iso);
+  d.setUTCFullYear(d.getUTCFullYear() + 1);
+  return d.toISOString();
 }

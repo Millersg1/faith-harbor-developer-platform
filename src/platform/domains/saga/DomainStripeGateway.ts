@@ -43,6 +43,25 @@ export interface PaymentIntentView {
   chargeId?: string;
 }
 
+/**
+ * Off-session (merchant-initiated) charge for AUTOMATIC renewal. Only permitted
+ * with a durable customer authorization + an eligible saved payment method; the
+ * saga falls back to Checkout otherwise. Test mode only in this stage.
+ */
+export interface OffSessionChargeInput {
+  orderId: string;
+  organizationId: string;
+  amountMinor: number;
+  currency: string;
+  /** The saved payment method the customer durably authorized for renewals. */
+  paymentMethodRef: string;
+  /** The Stripe customer the saved method belongs to. */
+  customerRef: string;
+  productName: string;
+  /** Deterministic idempotency key (per renewal order). */
+  idempotencyKey: string;
+}
+
 export interface RefundInput {
   chargeId: string;
   amountMinor: number;
@@ -61,6 +80,8 @@ export interface DomainStripeGateway {
   createOneTimeCheckout(input: OneTimeCheckoutInput): Promise<CheckoutResult>;
   verifyWebhook(rawBody: string, signatureHeader: string): boolean;
   getPaymentIntent(id: string): Promise<PaymentIntentView>;
+  /** Merchant-initiated charge against a saved, authorized payment method. */
+  chargeOffSession(input: OffSessionChargeInput): Promise<PaymentIntentView>;
   createRefund(input: RefundInput): Promise<RefundView>;
   getRefund(id: string): Promise<RefundView>;
 }
@@ -74,6 +95,7 @@ export class DisconnectedDomainStripeGateway implements DomainStripeGateway {
   createOneTimeCheckout(): Promise<CheckoutResult> { return this.fail(); }
   verifyWebhook(): boolean { return false; }
   getPaymentIntent(): Promise<PaymentIntentView> { return this.fail(); }
+  chargeOffSession(): Promise<PaymentIntentView> { return this.fail(); }
   createRefund(): Promise<RefundView> { return this.fail(); }
   getRefund(): Promise<RefundView> { return this.fail(); }
 }
@@ -153,6 +175,34 @@ export class HttpDomainStripeGateway implements DomainStripeGateway {
     });
     if (!res.ok) throw new Error(`Stripe HTTP ${res.status}.`);
     const j = (await res.json()) as Record<string, unknown>;
+    return {
+      id: String(j.id),
+      amountMinor: Number(j.amount),
+      currency: String(j.currency).toUpperCase(),
+      status: String(j.status),
+      chargeId: j.latest_charge ? String(j.latest_charge) : undefined,
+    };
+  }
+
+  async chargeOffSession(input: OffSessionChargeInput): Promise<PaymentIntentView> {
+    // Merchant-initiated: off_session + confirm against a saved payment method.
+    // Stripe rejects (or returns requires_action) if the method is ineligible;
+    // the caller then falls back to a customer Checkout flow.
+    const j = await this.post(
+      "/v1/payment_intents",
+      {
+        amount: String(input.amountMinor),
+        currency: input.currency.toLowerCase(),
+        customer: input.customerRef,
+        payment_method: input.paymentMethodRef,
+        off_session: "true",
+        confirm: "true",
+        description: input.productName,
+        "metadata[orderId]": input.orderId,
+        "metadata[organizationId]": input.organizationId,
+      },
+      input.idempotencyKey,
+    );
     return {
       id: String(j.id),
       amountMinor: Number(j.amount),

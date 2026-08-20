@@ -140,6 +140,28 @@ export class DomainRegistrationRepository extends TenantScopedRepository {
     }
   }
 
+  /**
+   * Persists the provider-confirmed expiration date after a successful renewal
+   * (also refreshes the sync freshness). Cached expiry is never advanced without
+   * a provider-confirmed value.
+   */
+  async setExpiry(id: string, expiresAt: string, at: string): Promise<void> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      await this.db.query(
+        `UPDATE domain_registrations SET expires_at=$1, sync_state='fresh',
+           last_provider_sync_at=$2, updated_at=$2 WHERE id=$3 AND organization_id=$4`,
+        [expiresAt, at, id, organizationId],
+      );
+      return;
+    }
+    const rec = this.mem.get(id);
+    if (rec && rec.organizationId === organizationId) {
+      rec.expiresAt = expiresAt;
+      rec.updatedAt = at;
+    }
+  }
+
   async setDisposition(id: string, disposition: string): Promise<void> {
     const organizationId = this.tenantId();
     if (this.db) {
