@@ -165,7 +165,16 @@ unchanged at 74. Disposable schema dropped + artifacts removed.
   (drip, privacyRoutes, BookRouter, ai-allowance = 41/41; namecheapContract =
   skipped). None touch registration/renewal/transfer code. This is the same
   Windows-only flake noted for prior stages.
-- **Linux CI on the exact final commit (authoritative): _(filled after push)_.**
+- **Linux CI on the exact final commit (authoritative): GREEN** — "Validate
+  Faith Harbor OS" run `32475205110` at `419d208` ran the complete validate
+  (`typecheck && test && build`): typecheck of `src/**/*.ts` **including all test
+  files**, then **vitest 1685 passed / 0 failed / 9 skipped (220 files)**, then
+  build — all success. This confirms the Windows full-suite failures above were
+  environmental (every one passes on Linux) and that Stage 9/10 is sound.
+  (An earlier push, `0e537f7`, went red on a single test-file TS2352 — a
+  `Record<string,unknown>` cast — fixed in `419d208`; no runtime change. That
+  slipped past the local check because the Stage 10 typecheck predated the test
+  file and vitest transpiles without typechecking.)
 
 ---
 
