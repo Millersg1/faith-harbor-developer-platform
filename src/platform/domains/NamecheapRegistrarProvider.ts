@@ -33,10 +33,12 @@ import {
   RegistrarModeError,
   type AvailabilityResult,
   type CapabilityMatrix,
+  type AuthCodeResult,
   type DnsMutationResult,
   type DnsRecord,
   type DnssecInfo,
   type DomainRegistrarProvider,
+  type RegistrarMutationResult,
   type DomainStatus,
   type Money,
   type PriceResult,
@@ -520,6 +522,20 @@ export class NamecheapRegistrarProvider
   async getDnssec(): Promise<DnssecInfo> {
     this.assertEnabled();
     return this.dnsDeferred();
+  }
+
+  // ---- outgoing-transfer support (Stage 10) — fail closed (deferred) ------
+  async setRegistrarLock(): Promise<RegistrarMutationResult> {
+    this.assertEnabled();
+    throw new RegistrarModeError(
+      "Namecheap live registrar lock/unlock is not enabled in this build (sandbox wiring pending).",
+    );
+  }
+  async requestAuthCode(): Promise<AuthCodeResult> {
+    this.assertEnabled();
+    throw new RegistrarModeError(
+      "Namecheap live auth-code request is not enabled in this build (sandbox wiring pending).",
+    );
   }
 }
 

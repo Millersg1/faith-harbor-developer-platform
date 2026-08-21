@@ -2095,6 +2095,100 @@ export class PostgresDatabase
       ALTER TABLE domain_provider_attempts
         ADD COLUMN IF NOT EXISTS renewal_order_id TEXT REFERENCES domain_renewal_orders (id) ON DELETE RESTRICT;
       CREATE INDEX IF NOT EXISTS idx_domain_attempts_renewal ON domain_provider_attempts (renewal_order_id);
+
+      -- ===== Stage 10: TRANSFERS ===========================================
+      -- Incoming-transfer saga orders. The EPP/auth code is stored ENCRYPTED
+      -- (envelope ciphertext) and destroyed (set NULL) after the single
+      -- submission attempt or terminal state. RESTRICT on org + (once set)
+      -- registration. registration_id is set only on completion.
+      CREATE TABLE IF NOT EXISTS domain_transfer_orders (
+        id                    TEXT PRIMARY KEY,
+        organization_id       TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id       TEXT REFERENCES domain_registrations (id) ON DELETE RESTRICT,
+        user_id               TEXT,
+        ascii_domain          TEXT NOT NULL,
+        tld                   TEXT NOT NULL,
+        provider              TEXT NOT NULL,
+        currency              TEXT NOT NULL,
+        provider_cost_minor   BIGINT NOT NULL,
+        markup_minor          BIGINT NOT NULL,
+        customer_price_minor  BIGINT NOT NULL,
+        pricing_version       INTEGER NOT NULL,
+        terms_acceptance_id   TEXT,
+        epp_ciphertext        TEXT,                        -- encrypted; NULL after use
+        status                TEXT NOT NULL DEFAULT 'quote_ready',
+        payment_state         TEXT NOT NULL DEFAULT 'none',
+        transfer_state        TEXT NOT NULL DEFAULT 'none',
+        refund_state          TEXT NOT NULL DEFAULT 'none',
+        idempotency_key       TEXT NOT NULL,
+        stripe_checkout_id    TEXT,
+        stripe_payment_intent_id TEXT,
+        stripe_charge_id      TEXT,
+        charged_minor         BIGINT,
+        provider_correlation_id TEXT,
+        preserve_nameservers  BOOLEAN NOT NULL DEFAULT TRUE,
+        attempts              INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at       TEXT,
+        lease_owner           TEXT,
+        lease_until           TEXT,
+        reason                TEXT,
+        captured_at           TEXT,
+        submitted_at          TEXT,
+        completed_at          TEXT,
+        created_at            TEXT NOT NULL,
+        updated_at            TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_transfer_orders_idem_uniq ON domain_transfer_orders (idempotency_key);
+      CREATE INDEX IF NOT EXISTS idx_domain_transfer_orders_org ON domain_transfer_orders (organization_id);
+      CREATE INDEX IF NOT EXISTS domain_transfer_orders_claim_idx ON domain_transfer_orders (status, next_attempt_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_transfer_orders_pi_uniq
+        ON domain_transfer_orders (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL;
+      -- One active incoming transfer per (org, domain).
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_transfer_active_uniq
+        ON domain_transfer_orders (organization_id, ascii_domain)
+        WHERE status IN ('quote_ready','checkout_created','awaiting_payment','payment_captured',
+          'transfer_submitting','transfer_pending','transfer_unknown','transfer_completed');
+
+      CREATE TABLE IF NOT EXISTS domain_transfer_refunds (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        transfer_order_id   TEXT NOT NULL REFERENCES domain_transfer_orders (id) ON DELETE RESTRICT,
+        stripe_charge_id    TEXT,
+        stripe_refund_id    TEXT,
+        amount_minor        BIGINT NOT NULL,
+        currency            TEXT NOT NULL,
+        reason              TEXT NOT NULL,
+        state               TEXT NOT NULL DEFAULT 'queued',
+        idempotency_key     TEXT NOT NULL,
+        attempts            INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at     TEXT,
+        lease_owner         TEXT,
+        lease_until         TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_transfer_refunds_order_uniq ON domain_transfer_refunds (transfer_order_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS domain_transfer_refunds_idem_uniq ON domain_transfer_refunds (idempotency_key);
+      CREATE INDEX IF NOT EXISTS domain_transfer_refunds_claim_idx ON domain_transfer_refunds (state, next_attempt_at);
+
+      -- Outgoing-transfer deliberate-action audit. Append-only, PII-free, and
+      -- it NEVER stores the auth code — only the delivery channel + outcome.
+      CREATE TABLE IF NOT EXISTS domain_outgoing_transfer_actions (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE RESTRICT,
+        action              TEXT NOT NULL,               -- unlock | relock | request_auth_code
+        outcome             TEXT NOT NULL,
+        code_delivery       TEXT,                        -- returned | emailed_to_registrant | unsupported
+        actor_user_id       TEXT,
+        created_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_outgoing_reg ON domain_outgoing_transfer_actions (registration_id);
+
+      -- Provider-attempt audit gains a transfer-order link.
+      ALTER TABLE domain_provider_attempts
+        ADD COLUMN IF NOT EXISTS transfer_order_id TEXT REFERENCES domain_transfer_orders (id) ON DELETE RESTRICT;
+      CREATE INDEX IF NOT EXISTS idx_domain_attempts_transfer ON domain_provider_attempts (transfer_order_id);
     `);
   }
 

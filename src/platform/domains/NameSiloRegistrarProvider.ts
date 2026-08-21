@@ -44,10 +44,12 @@ import {
   RegistrarModeError,
   type AvailabilityResult,
   type CapabilityMatrix,
+  type AuthCodeResult,
   type DnsMutationResult,
   type DnsRecord,
   type DnssecInfo,
   type DomainRegistrarProvider,
+  type RegistrarMutationResult,
   type DomainStatus,
   type Money,
   type PriceResult,
@@ -415,6 +417,25 @@ export class NameSiloRegistrarProvider
   async getDnssec(): Promise<DnssecInfo> {
     this.assertEnabled();
     return this.dnsDeferred();
+  }
+
+  // ---- outgoing-transfer support (Stage 10) -------------------------------
+  // NameSilo supports domainLock/domainUnlock + retrieveAuthCode (which EMAILS
+  // the code to the registrant — never in the API body). Live wiring is deferred
+  // until OTE proof; fail closed so no production lock/unlock occurs here.
+  async setRegistrarLock(): Promise<RegistrarMutationResult> {
+    this.assertEnabled();
+    throw new RegistrarModeError(
+      "NameSilo live registrar lock/unlock is not enabled in this build (OTE wiring pending).",
+    );
+  }
+  async requestAuthCode(): Promise<AuthCodeResult> {
+    this.assertEnabled();
+    // Even when wired, NameSilo EMAILS the auth code to the registrant and never
+    // returns it via API — the platform stores/displays nothing.
+    throw new RegistrarModeError(
+      "NameSilo live auth-code request is not enabled in this build (OTE wiring pending).",
+    );
   }
 }
 

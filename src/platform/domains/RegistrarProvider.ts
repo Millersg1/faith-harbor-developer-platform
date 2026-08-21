@@ -203,6 +203,29 @@ export interface DnssecInfo {
   status?: string;
 }
 
+// ---- Transfers (Stage 10) -------------------------------------------------
+
+/** Generic five-way-outcome result for a registrar mutation (lock/unlock etc.). */
+export interface RegistrarMutationResult {
+  outcome: RegistrarOutcome;
+  applied: boolean;
+  providerCorrelationId?: string;
+  errorCategory?: string;
+}
+
+/**
+ * The result of requesting a domain's transfer-away authorization (EPP) code.
+ * SECURITY: some registrars (NameSilo) EMAIL the code to the registrant and never
+ * return it through the API — in that case `code` MUST stay undefined and the
+ * platform never stores/displays/logs it.
+ */
+export interface AuthCodeResult {
+  delivery: "returned" | "emailed_to_registrant" | "unsupported";
+  /** Present ONLY when the provider actually returns the code via API. */
+  code?: string;
+  providerCorrelationId?: string;
+}
+
 export type TransferState =
   | "pending"
   | "approved"
@@ -293,6 +316,20 @@ export interface DomainRegistrarProvider {
     idempotencyKey: string,
   ): Promise<TransferStatusResult>;
   getTransferStatus(domainAscii: string): Promise<TransferStatusResult>;
+
+  // ---- outgoing-transfer support (owner-only, deliberate; Stage 10) -------
+  /** Sets the registrar transfer lock (unlock to allow transfer-away). */
+  setRegistrarLock(
+    domainAscii: string,
+    locked: boolean,
+    idempotencyKey: string,
+  ): Promise<RegistrarMutationResult>;
+  /**
+   * Requests the transfer-away authorization (EPP) code. Returns the code ONLY
+   * if the provider returns it via API; NameSilo emails it to the registrant and
+   * returns `delivery: "emailed_to_registrant"` with no code.
+   */
+  requestAuthCode(domainAscii: string): Promise<AuthCodeResult>;
 }
 
 export type RegistrarMode =

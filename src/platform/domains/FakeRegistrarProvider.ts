@@ -7,6 +7,7 @@
 
 import type { RegistrarContact } from "./RegistrarContact";
 import {
+  type AuthCodeResult,
   type AvailabilityResult,
   type CapabilityMatrix,
   type DnsMutationResult,
@@ -20,6 +21,7 @@ import {
   type RegisterInput,
   type RegisterResult,
   type RegistrarMode,
+  type RegistrarMutationResult,
   type TransferStatusResult,
 } from "./RegistrarProvider";
 
@@ -47,6 +49,14 @@ export interface FakeConfig {
   expiresAtByDomain?: Record<string, string>;
   /** ascii-domain -> expiration date after a successful renew (ISO). */
   renewedExpiresAt?: Record<string, string>;
+  /** ascii-domain -> state returned by initiateInboundTransfer. */
+  transferInitiate?: Record<string, import("./RegistrarProvider").TransferState>;
+  /** ascii-domain -> state returned by getTransferStatus (polling). */
+  transferStatus?: Record<string, import("./RegistrarProvider").TransferState>;
+  /** When true, initiateInboundTransfer throws (models an ambiguous submission). */
+  throwOnTransfer?: boolean;
+  /** Auth-code delivery for requestAuthCode (default: emailed_to_registrant). */
+  authCode?: { delivery: "returned" | "emailed_to_registrant" | "unsupported"; code?: string };
   /** When true, DNS mutations/reads throw (models a DNS provider timeout). */
   throwOnDns?: boolean;
   /** ascii-domain -> forced DNS mutation result (to script ambiguous/failure). */
@@ -287,8 +297,23 @@ export class FakeRegistrarProvider
     if (this.cfg.throwOnDns) throw new Error("dns provider timeout");
     return this.cfg.dnssec?.[domain] ?? { supported: true, enabled: false, status: "unsigned" };
   }
-  async getRegistrarLock(): Promise<boolean> {
-    return true;
+  /** Mutable transfer-lock state, so lock/unlock is observable. */
+  private readonly locked = new Map<string, boolean>();
+  async getRegistrarLock(domain: string): Promise<boolean> {
+    return this.locked.get(domain) ?? true; // domains are locked by default
+  }
+  async setRegistrarLock(
+    domain: string,
+    locked: boolean,
+    _idempotencyKey: string,
+  ): Promise<RegistrarMutationResult> {
+    this.locked.set(domain, locked);
+    return { outcome: "definitive_success", applied: true, providerCorrelationId: `fake-lock-${domain}` };
+  }
+  async requestAuthCode(domain: string): Promise<AuthCodeResult> {
+    // Default models NameSilo: the code is EMAILED to the registrant, never
+    // returned via API — so the platform has nothing to store/display/log.
+    return this.cfg.authCode ?? { delivery: "emailed_to_registrant", providerCorrelationId: `fake-epp-${domain}` };
   }
   async getExpiry(domain: string): Promise<DomainStatus> {
     return this.getRegistrationStatus(domain);
@@ -301,14 +326,16 @@ export class FakeRegistrarProvider
     _epp: string,
     idempotencyKey: string,
   ): Promise<TransferStatusResult> {
+    if (this.cfg.throwOnTransfer) throw new Error("transfer submit timeout");
     return {
       domain,
-      state: "pending",
+      state: this.cfg.transferInitiate?.[domain] ?? "pending",
       correlation: { orderId: `xfer-${idempotencyKey}` },
     };
   }
   async getTransferStatus(domain: string): Promise<TransferStatusResult> {
-    return { domain, state: "pending", correlation: {} };
+    if (this.cfg.throwOnStatus) throw new Error("provider timeout");
+    return { domain, state: this.cfg.transferStatus?.[domain] ?? "pending", correlation: {} };
   }
 }
 
