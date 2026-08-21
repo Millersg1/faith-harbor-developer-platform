@@ -85,8 +85,8 @@ describe("Stage 10 — incoming transfer happy path + EPP handling", () => {
       expect(o0.providerCostMinor).toBe(1080); // transfer price
       expect(o0.status).toBe("payment_captured");
       expect(o0.hasEpp).toBe(true);
-      expect((o0 as Record<string, unknown>).epp).toBeUndefined(); // never exposed
-      expect((o0 as Record<string, unknown>).eppCiphertext).toBeUndefined();
+      expect((o0 as unknown as Record<string, unknown>).epp).toBeUndefined(); // never exposed
+      expect((o0 as unknown as Record<string, unknown>).eppCiphertext).toBeUndefined();
 
       // submit
       await h.saga.runSubmitOnce("w1");
