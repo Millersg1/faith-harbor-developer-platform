@@ -1,3 +1,5 @@
+import type { DomainWorkerHealth } from "../domains/DomainWorkerCoordinator";
+
 /**
  * A point-in-time health snapshot of the platform, for the superadmin console.
  * Every field is a real, checked signal — nothing is assumed "ok".
@@ -31,6 +33,12 @@ export interface SystemHealth {
    * so operators can confirm exactly one path is live. No secrets.
    */
   marketingDeliveryMode: "disabled" | "legacy" | "outbox";
+  /**
+   * Domain-registration workers (Stage 11). Null when no domain runtime is
+   * configured or the mode is disabled. PII-free: modes, counts, timestamps,
+   * derived tick-age, coarse reason enum only.
+   */
+  domainWorkers?: DomainWorkerHealth | null;
   startedAt: string;
   uptimeSeconds: number;
   version: string;
@@ -49,6 +57,8 @@ export interface HealthChecks {
   transactionalLastTickAt: () => string | null;
   /** The active marketing delivery mode (read at snapshot time). */
   marketingDeliveryMode: () => "disabled" | "legacy" | "outbox";
+  /** Domain-worker health (read at snapshot time), or null when not configured. */
+  domainWorkers?: () => DomainWorkerHealth | null;
   startedAt: string;
   version: string;
   now?: () => number;
@@ -124,6 +134,8 @@ export class PlatformHealthService {
       },
       marketingDeliveryMode:
         this.checks.marketingDeliveryMode(),
+      domainWorkers:
+        this.checks.domainWorkers?.() ?? null,
       startedAt:
         this.checks.startedAt,
       uptimeSeconds: Number.isFinite(

@@ -21,6 +21,11 @@ import { BillingService } from "./billing/BillingService";
 import { SubscriptionRepository } from "./billing/SubscriptionRepository";
 import { ProcessedEventsRepository } from "./billing/ProcessedEventsRepository";
 import { buildDomainRuntime } from "./domains/domainIntegration";
+import { DomainWorkerCoordinator } from "./domains/DomainWorkerCoordinator";
+import {
+  describeDomainOperationsMode,
+  resolveDomainOperationsMode,
+} from "./domains/domainOperationsMode";
 import {
   DisconnectedStripeSubscriptionGateway,
   HttpStripeSubscriptionGateway,
@@ -944,6 +949,9 @@ async function start(): Promise<void> {
     process.env.DRIP_TICK_MS ??
       60_000,
   );
+  // Declared here so the health snapshot can read it lazily; assigned below
+  // only when a domain runtime is configured AND the mode is not disabled.
+  let domainCoordinator: DomainWorkerCoordinator | undefined;
   const platformHealth =
     new PlatformHealthService({
       pingDb: () =>
@@ -963,6 +971,8 @@ async function start(): Promise<void> {
         transactionalLastTickAt,
       marketingDeliveryMode: () =>
         deliveryMode.mode,
+      domainWorkers: () =>
+        domainCoordinator?.health() ?? null,
       startedAt,
       version:
         process.env.APP_VERSION ??
@@ -1235,6 +1245,33 @@ async function start(): Promise<void> {
   }, MARKETING_TICK_MS);
   marketingTimer.unref();
 
+  // Stage 11: domain-registration workers, gated by a fail-closed operations
+  // mode. No timer exists unless a domain runtime is configured AND the mode is
+  // explicitly reconcile_only/full — a missing/invalid mode stays disabled and
+  // nothing domain-related runs.
+  const domainOpsMode = resolveDomainOperationsMode(
+    process.env.DOMAIN_OPERATIONS_MODE,
+  );
+  console.log(describeDomainOperationsMode(domainOpsMode));
+  let domainWorkerTimer: NodeJS.Timeout | undefined;
+  if (domainRuntime && domainOpsMode.mode !== "disabled") {
+    domainCoordinator = new DomainWorkerCoordinator(
+      domainRuntime,
+      domainOpsMode.mode,
+    );
+    const DOMAIN_TICK_MS = Number(
+      process.env.DOMAIN_WORKER_TICK_MS ?? 60_000,
+    );
+    domainWorkerTimer = setInterval(() => {
+      void domainCoordinator!
+        .runTick()
+        .catch((error: unknown) =>
+          console.error("Domain worker tick failed.", error),
+        );
+    }, DOMAIN_TICK_MS);
+    domainWorkerTimer.unref();
+  }
+
   let shuttingDown = false;
 
   const shutdown = (
@@ -1256,6 +1293,10 @@ async function start(): Promise<void> {
     marketingWorker.beginShutdown();
     clearInterval(transactionalTimer);
     transactionalWorker.beginShutdown();
+    // Domain workers: stop scheduling, then stop mid-tick claiming. Any in-flight
+    // mutation lease expires and is recovered as *_unknown (never resubmitted).
+    if (domainWorkerTimer) clearInterval(domainWorkerTimer);
+    domainCoordinator?.beginShutdown();
 
     server.close(() => {
       void db
