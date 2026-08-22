@@ -96,6 +96,42 @@ made.
 Your registration is also subject to the registrar's (NameSilo) registration
 agreement and applicable ICANN policies. LEGAL REVIEW REQUIRED — incorporation and
 registrant-data processing language.
+
+## 13. Automatic renewal authorization
+Automatic renewal is **opt-in and off by default**. If you enable it, you provide
+an **explicit, durable authorization** to charge a saved payment method
+off-session for future renewals, and that authorization is recorded as consent
+evidence. **All Elite Cloud never renews your domain using its own funds** — an
+automatic renewal proceeds only after a **successful customer payment**. The
+**renewal price is re-checked before each charge and may change**; a promotional
+price is never treated as the ongoing renewal price. If no eligible authorized
+payment method exists, you are offered a manual checkout instead. You may turn off
+automatic renewal at any time; **turning it off never cancels, deletes,
+surrenders, unlocks, or transfers your domain.** We do **not** enable the
+registrar's own account-balance auto-renew on your behalf. LEGAL REVIEW REQUIRED —
+recurring-authorization, mandate, and consent-evidence language.
+
+## 14. DNS and nameserver management
+DNS record management, registrar nameserver delegation, and registry DNSSEC/glue
+are **separate** capabilities. We manage DNS **records** only when your domain is
+using a DNS service we operate and that authority is **freshly verified**; domains
+delegated to third-party or hosting nameservers are shown as **externally
+managed**. We do **not** change your nameservers automatically as part of
+purchase, hosting attachment, renewal, or transfer. Changes to mail (MX), sender
+authentication (SPF/DKIM/DMARC), and certificate (CAA/ACME) records are protected
+and require explicit confirmation. **DNS propagation is never instant** and no
+propagation time is guaranteed. LEGAL REVIEW REQUIRED — DNS/hosting responsibility
+and limitation language.
+
+## 15. Transfers away
+You may transfer your domain to another registrar. Unlocking and requesting an
+authorization (EPP) code are **deliberate, separately-confirmed** actions. Where
+the registrar delivers the authorization code by emailing the registrant, we
+**cannot display a code we do not receive**. We do **not** obstruct a lawful
+transfer-away, and nothing here implies All Elite Cloud owns your domain.
+Transfer timing is set by the registries/registrars involved and **cannot be
+guaranteed**. LEGAL REVIEW REQUIRED — transfer-away and inter-registrar dispute
+language.
 `;
 
 export const DOMAIN_REGISTRATION_TERMS_SEED: DomainTermsSeed = {
