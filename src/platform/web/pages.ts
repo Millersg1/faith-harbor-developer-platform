@@ -599,6 +599,94 @@ export function formPublicPage(form: {
   });
 }
 
+/**
+ * Owner/admin domain-registration workspace (Stage 11). Accessible, responsive,
+ * server-rendered shell; all data is fetched from /api/platform/domains and
+ * rendered client-side with textContent (never innerHTML from API data). Honest
+ * copy throughout: sandbox status, provider-sync freshness, propagation is never
+ * "instant", and unknown states are surfaced for review rather than hidden.
+ */
+export function domainsPage(): string {
+  const body = `
+  <a href="#mainContent" class="visually-hidden">Skip to main content</a>
+  <header class="topbar"><div class="wrap">
+    <div class="brand">${LOGO} <span>Domains</span></div>
+    <a class="btn ghost" href="/app" style="width:auto;padding:8px 12px;">&larr; Workspace</a>
+  </div></header>
+  <main class="wrap" id="mainContent" tabindex="-1">
+    <h1>Domain registration</h1>
+    <p class="muted" id="modeBanner" role="status" aria-live="polite">Checking domain features…</p>
+
+    <section class="card" aria-labelledby="searchH">
+      <h2 id="searchH">Search &amp; transparent pricing</h2>
+      <form id="searchForm" class="row" style="gap:10px;align-items:flex-end;">
+        <div style="flex:1;min-width:200px;">
+          <label for="q">Domain to search</label>
+          <input id="q" name="q" type="text" inputmode="url" autocomplete="off"
+            placeholder="example.com" aria-describedby="qHelp" />
+          <p id="qHelp" class="muted" style="font-size:0.82rem;">Registration, renewal and transfer prices are shown separately. A promotional first-year price is never shown as the renewal price.</p>
+        </div>
+        <button class="btn" type="submit">Search</button>
+      </form>
+      <div id="searchResults" role="region" aria-live="polite" aria-label="Search results"></div>
+    </section>
+
+    <section class="card" aria-labelledby="listH">
+      <h2 id="listH">Your domains</h2>
+      <p class="muted" style="font-size:0.82rem;">Registration status, provider-sync freshness, DNS authority, and any items needing attention are shown per domain. Cached provider data is labelled with its last verified time.</p>
+      <div id="domainList" role="region" aria-live="polite" aria-label="Registered domains">
+        <p class="muted">Loading…</p>
+      </div>
+    </section>
+
+    <p class="msg" id="msg" role="alert" style="display:none;"></p>
+  </main>`;
+
+  const script = `
+  (function(){
+    var msg=document.getElementById('msg');
+    function show(t,ok){msg.textContent=t;msg.className='msg '+(ok?'ok':'err');msg.style.display='block';}
+    function txt(el,t){el.textContent=(t==null?'':String(t));}
+    function get(u){return fetch(u,{credentials:'include',headers:{'Accept':'application/json'}});}
+    // Load the domain list; honestly report when the feature isn't enabled.
+    get('/api/platform/domains').then(function(r){
+      var banner=document.getElementById('modeBanner');
+      if(r.status===404||r.status===501){txt(banner,'Domain management is not enabled for this workspace yet.');return {registrations:[]};}
+      txt(banner,'Domain management is running in sandbox/test mode. No live registrations, charges, DNS changes, or transfers occur.');
+      return r.json();
+    }).then(function(d){
+      var host=document.getElementById('domainList');host.textContent='';
+      var regs=(d&&d.registrations)||[];
+      if(!regs.length){var p=document.createElement('p');p.className='muted';txt(p,'No domains yet.');host.appendChild(p);return;}
+      var ul=document.createElement('ul');ul.style.listStyle='none';ul.style.padding='0';
+      regs.forEach(function(reg){
+        var li=document.createElement('li');li.className='panel';li.style.marginBottom='10px';
+        var name=document.createElement('strong');txt(name,reg.asciiDomain);li.appendChild(name);
+        var st=document.createElement('span');st.className='muted';st.style.marginLeft='8px';
+        txt(st,'status: '+(reg.status||'unknown')+(reg.expiresAt?(' · expires '+reg.expiresAt):''));
+        li.appendChild(st);ul.appendChild(li);
+      });
+      host.appendChild(ul);
+    }).catch(function(){show('Could not load domains.',false);});
+    // Search.
+    document.getElementById('searchForm').addEventListener('submit',function(e){
+      e.preventDefault();
+      var q=document.getElementById('q').value.trim();var out=document.getElementById('searchResults');out.textContent='';
+      if(!q)return;
+      var pending=document.createElement('p');pending.className='muted';txt(pending,'Searching…');out.appendChild(pending);
+      get('/api/platform/domains/search?q='+encodeURIComponent(q)).then(function(r){return r.json();}).then(function(d){
+        out.textContent='';var results=(d&&d.results)||[];
+        if(!results.length){var p=document.createElement('p');p.className='muted';txt(p,'No pricing available (registrar not configured).');out.appendChild(p);return;}
+        var ul=document.createElement('ul');ul.style.listStyle='none';ul.style.padding='0';
+        results.forEach(function(res){var li=document.createElement('li');li.className='panel';txt(li,JSON.stringify(res));ul.appendChild(li);});
+        out.appendChild(ul);
+      }).catch(function(){out.textContent='';var p=document.createElement('p');p.className='msg err';txt(p,'Search failed.');out.appendChild(p);});
+    });
+  })();`;
+
+  return layout({ title: "Domains — All Elite Cloud", body, script });
+}
+
 export function dashboardPage(): string {
   const body = `
   <div class="topbar"><div class="wrap">

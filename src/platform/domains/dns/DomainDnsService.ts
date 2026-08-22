@@ -164,6 +164,11 @@ export class DomainDnsService {
     });
   }
 
+  /** Read-only DNS state for a registration (tenant-scoped), or null. */
+  async getState(registrationId: string) {
+    return this.d.dns.getState(registrationId);
+  }
+
   // ---- authority: WHO owns the zone (records only when we do, freshly) -----
   /**
    * Reads the LIVE nameservers and classifies which DNS service is authoritative

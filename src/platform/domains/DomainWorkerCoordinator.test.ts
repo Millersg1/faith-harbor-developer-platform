@@ -20,7 +20,6 @@ import { DomainRenewalSaga } from "./renewal/DomainRenewalSaga";
 import { DomainTransferRepository } from "./transfer/DomainTransferRepository";
 import { DomainTransferSaga } from "./transfer/DomainTransferSaga";
 import { DomainWorkerCoordinator } from "./DomainWorkerCoordinator";
-import type { DomainRuntime } from "./domainIntegration";
 
 const keyring = new Keyring({
   encKeys: { 1: Buffer.alloc(32, 4).toString("base64") }, encActiveVersion: 1,
@@ -66,7 +65,7 @@ function build() {
     now, newId, successUrl: "https://x/s", cancelUrl: "https://x/c",
     incomingTransfersEnabled: false, publishedTransferTermsVersion: () => null, beginEvent,
   });
-  const runtime: DomainRuntime = { webhookHandler: undefined as never, purchase, renewal, transfer };
+  const runtime = { purchase, renewal, transfer };
   return { runtime, repo, stripe, quotes, terms, contacts, registrations, now };
 }
 

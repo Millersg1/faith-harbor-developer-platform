@@ -25,6 +25,8 @@ import type { PasswordResetService } from "./auth/PasswordResetService";
 import { createRequireUser } from "./auth/requireUser";
 import { BillingService } from "./billing/BillingService";
 import type { DomainWebhookHandler } from "./domains/saga/DomainWebhookHandler";
+import type { DomainOpsServices } from "./domains/domainIntegration";
+import { createDomainOpsRouter } from "./domains/domainOpsRouter";
 import { OnboardingService } from "./onboarding/OnboardingService";
 import { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
@@ -126,6 +128,7 @@ import { PlatformSignupService } from "./signup/PlatformSignupService";
 import { PlatformUserService } from "./users/PlatformUserService";
 import {
   dashboardPage,
+  domainsPage,
   forgotPasswordPage,
   formPublicPage,
   landingPage,
@@ -221,6 +224,11 @@ export interface PlatformAppDependencies {
    * raw-body signature, rejects live-mode events, and routes to the owning saga.
    */
   domainWebhook?: DomainWebhookHandler;
+  /**
+   * Owner/admin domain-registration management services (Stage 11). Present only
+   * when a domain runtime is configured (test-mode); absent = no domain API.
+   */
+  domainOps?: DomainOpsServices;
   onboarding?: OnboardingService;
   preferences?: WorkspacePreferencesService;
   legal?: PlatformLegalService;
@@ -2159,6 +2167,13 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
       .send(dashboardPage());
   });
 
+  // Owner/admin domain-registration workspace (Stage 11). Static accessible
+  // shell; it talks to /api/platform/domains (which is present only in test-mode)
+  // and honestly reports when domain management is not enabled.
+  app.get("/app/domains", (_req, res) => {
+    res.type("html").send(domainsPage());
+  });
+
   // Client portal UI (self-contained; talks to /portal/api).
   app.get(
     ["/portal", "/portal/login"],
@@ -2294,6 +2309,21 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
         confirmationDispatch: deps.confirmationDispatch,
         pause: deps.marketingPause,
         drip: deps.drip,
+      }),
+    );
+  }
+
+  // Domain-registration owner/admin management API (Stage 11). Mounted before
+  // the general tenant API so its /domains/* paths win. Present only when a
+  // domain runtime is configured (test-mode); absent = no domain API surface.
+  if (deps.domainOps) {
+    app.use(
+      "/api/platform",
+      csrfGuard,
+      createDomainOpsRouter({
+        requireUser,
+        users: deps.users,
+        services: deps.domainOps,
       }),
     );
   }

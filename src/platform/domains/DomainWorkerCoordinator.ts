@@ -18,6 +18,9 @@
 
 import type { DomainOperationsMode } from "./domainOperationsMode";
 import type { DomainRuntime } from "./domainIntegration";
+import type { DomainPurchaseSaga } from "./saga/DomainPurchaseSaga";
+import type { DomainRenewalSaga } from "./renewal/DomainRenewalSaga";
+import type { DomainTransferSaga } from "./transfer/DomainTransferSaga";
 import { DomainRenewalWorker } from "./renewal/DomainRenewalWorker";
 import { DomainSagaWorker } from "./saga/DomainSagaWorker";
 import { DomainTransferWorker } from "./transfer/DomainTransferWorker";
@@ -52,7 +55,7 @@ export class DomainWorkerCoordinator {
   private readonly transferWorker: DomainTransferWorker;
 
   constructor(
-    private readonly runtime: DomainRuntime,
+    private readonly runtime: Pick<DomainRuntime, "purchase" | "renewal" | "transfer">,
     private readonly mode: DomainOperationsMode,
     private readonly owner = "platform",
     private readonly now: () => string = () => new Date().toISOString(),

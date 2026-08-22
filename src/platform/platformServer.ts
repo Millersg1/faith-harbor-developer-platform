@@ -1035,6 +1035,7 @@ async function start(): Promise<void> {
     passwordReset,
     domains,
     domainWebhook: domainRuntime?.webhookHandler,
+    domainOps: domainRuntime?.services,
     hosting,
     tickets,
     leads,

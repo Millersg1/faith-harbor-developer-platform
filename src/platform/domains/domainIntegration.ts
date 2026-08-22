@@ -24,6 +24,8 @@ import { BlindIndex } from "./crypto/BlindIndex";
 import { EnvelopeCipher } from "./crypto/EnvelopeCipher";
 import { Keyring } from "./crypto/Keyring";
 import { DomainContactRepository } from "./DomainContactRepository";
+import { DomainDnsRepository } from "./dns/DomainDnsRepository";
+import { DomainDnsService } from "./dns/DomainDnsService";
 import { DomainQuoteRepository } from "./DomainQuoteRepository";
 import { DomainQuoteService } from "./DomainQuoteService";
 import { DomainRegistrationRepository } from "./DomainRegistrationRepository";
@@ -46,11 +48,24 @@ import { DomainTransferSaga } from "./transfer/DomainTransferSaga";
 const truthy = (v: string | undefined): boolean =>
   ["1", "true", "yes", "on"].includes((v ?? "").trim().toLowerCase());
 
+/** The tenant-scoped services the owner/admin API router wires to. */
+export interface DomainOpsServices {
+  quotes: DomainQuoteService;
+  registrations: DomainRegistrationRepository;
+  contacts: DomainContactRepository;
+  terms: DomainTermsService;
+  dns: DomainDnsService;
+  purchase: DomainPurchaseSaga;
+  renewal: DomainRenewalSaga;
+  transfer: DomainTransferSaga;
+}
+
 export interface DomainRuntime {
   webhookHandler: DomainWebhookHandler;
   purchase: DomainPurchaseSaga;
   renewal: DomainRenewalSaga;
   transfer: DomainTransferSaga;
+  services: DomainOpsServices;
 }
 
 export interface DomainIntegrationEnv extends RegistrarEnv {
@@ -145,5 +160,23 @@ export function buildDomainRuntime(
     { name: "transfer", owns: async (cid) => Boolean(await transferRepo.getIncomingByCheckoutId(cid)), handle: (a) => transfer.handleCheckoutCompleted(a) },
   ];
 
-  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer };
+  // Authoritative-DNS fingerprints (injected config, never fabricated in logic).
+  const nsList = (raw: string | undefined, fallback: string[]) =>
+    (raw?.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).length ? raw!.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean) : fallback);
+  const dns = new DomainDnsService({
+    dns: new DomainDnsRepository(db),
+    registrations,
+    registrar,
+    now,
+    newId,
+    alleliteNameservers: nsList(env.DOMAIN_ALLELITE_NAMESERVERS, ["ns1.allelitehosting.com", "ns2.allelitehosting.com"]),
+    authoritativeDnsProviders: [
+      { provider: "namesilo", nsSuffixes: nsList(env.DOMAIN_NAMESILO_NS_SUFFIXES, ["dnsowl.com"]), recordManagement: "supported" },
+      { provider: "cpanel", nsSuffixes: nsList(env.DOMAIN_CPANEL_NS_SUFFIXES, ["allelitehosting.com"]), recordManagement: "externally_managed" },
+    ],
+    registrarAuthoritativeProvider: "namesilo",
+  });
+
+  const services: DomainOpsServices = { quotes, registrations, contacts, terms, dns, purchase, renewal, transfer };
+  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services };
 }
