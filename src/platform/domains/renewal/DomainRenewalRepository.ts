@@ -77,6 +77,22 @@ export interface RenewalRefund {
   updatedAt: string;
 }
 
+export interface AutoRenewConsent {
+  id: string;
+  organizationId: string;
+  registrationId: string;
+  userId?: string;
+  termsAcceptanceId?: string;
+  pricingVersionAck?: number;
+  stripeCustomerRef?: string;
+  stripePaymentMethodRef?: string;
+  setupIntentId?: string;
+  mandateTextHash?: string;
+  currency?: string;
+  consentedAt: string;
+  createdAt: string;
+}
+
 export interface AutoRenewAuthorization {
   registrationId: string;
   organizationId: string;
@@ -109,6 +125,7 @@ export class DomainRenewalRepository extends TenantScopedRepository {
   private readonly orders = new Map<string, RenewalOrder>();
   private readonly refunds = new Map<string, RenewalRefund>();
   private readonly autoRenew = new Map<string, AutoRenewAuthorization>();
+  private readonly consents: AutoRenewConsent[] = [];
   private readonly attempts: { organizationId: string; operation: string; outcome: string }[] = [];
 
   constructor(db?: PgQueryable) {
@@ -433,6 +450,57 @@ export class DomainRenewalRepository extends TenantScopedRepository {
     this.autoRenew.set(full.registrationId, full);
     return full;
   }
+
+  /** Appends an IMMUTABLE off-session consent-evidence record. */
+  async appendConsent(c: Omit<AutoRenewConsent, "organizationId">): Promise<void> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      await this.db.query(
+        `INSERT INTO domain_autorenew_consents
+           (id, organization_id, registration_id, user_id, terms_acceptance_id,
+            pricing_version_ack, stripe_customer_ref, stripe_payment_method_ref,
+            setup_intent_id, mandate_text_hash, currency, consented_at, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)`,
+        [
+          c.id, organizationId, c.registrationId, c.userId ?? null, c.termsAcceptanceId ?? null,
+          c.pricingVersionAck ?? null, c.stripeCustomerRef ?? null, c.stripePaymentMethodRef ?? null,
+          c.setupIntentId ?? null, c.mandateTextHash ?? null, c.currency ?? null, c.consentedAt,
+        ],
+      );
+      return;
+    }
+    this.consents.push({ ...c, organizationId });
+  }
+
+  async listConsents(registrationId: string): Promise<AutoRenewConsent[]> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      const r = await this.db.query(
+        `SELECT * FROM domain_autorenew_consents WHERE registration_id=$1 AND organization_id=$2 ORDER BY created_at ASC`,
+        [registrationId, organizationId],
+      );
+      return r.rows.map(mapConsent);
+    }
+    return this.consents.filter((c) => c.registrationId === registrationId && c.organizationId === organizationId).map((c) => ({ ...c }));
+  }
+}
+
+function mapConsent(row: Record<string, unknown>): AutoRenewConsent {
+  return {
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    registrationId: String(row.registration_id),
+    userId: row.user_id ? String(row.user_id) : undefined,
+    termsAcceptanceId: row.terms_acceptance_id ? String(row.terms_acceptance_id) : undefined,
+    pricingVersionAck: row.pricing_version_ack == null ? undefined : Number(row.pricing_version_ack),
+    stripeCustomerRef: row.stripe_customer_ref ? String(row.stripe_customer_ref) : undefined,
+    stripePaymentMethodRef: row.stripe_payment_method_ref ? String(row.stripe_payment_method_ref) : undefined,
+    setupIntentId: row.setup_intent_id ? String(row.setup_intent_id) : undefined,
+    mandateTextHash: row.mandate_text_hash ? String(row.mandate_text_hash) : undefined,
+    currency: row.currency ? String(row.currency) : undefined,
+    consentedAt: String(row.consented_at),
+    createdAt: String(row.created_at),
+  };
 }
 
 function mapOrder(row: Record<string, unknown>): RenewalOrder {

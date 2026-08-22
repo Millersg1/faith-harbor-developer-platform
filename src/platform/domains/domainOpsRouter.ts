@@ -159,20 +159,42 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
     } catch (e) { mapError(res, e); }
   });
 
+  // Disable auto-renew (owner-only + reauth). Never cancels/deletes the domain.
   router.post("/domains/auto-renew/:id", ownerOnly, async (req, res) => {
     const auth = await reauth(req);
     if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to change auto-renew.");
+    if (req.body?.enabled !== false) {
+      return fail(res, 400, "USE_SETUP_FLOW", "Enable auto-renew via /auto-renew/:id/setup then /confirm.");
+    }
     try {
-      if (req.body?.enabled === false) {
-        await s.renewal.disableAutoRenew(String(req.params.id), actor(req));
-        return res.json({ enabled: false });
-      }
-      await s.renewal.enableAutoRenew(String(req.params.id), {
-        userId: actor(req), termsAcceptanceId: String(req.body?.termsAcceptanceId ?? ""),
+      await s.renewal.disableAutoRenew(String(req.params.id), actor(req));
+      res.json({ enabled: false });
+    } catch (e) { mapError(res, e); }
+  });
+
+  // Begin off-session authorization (Stripe SetupIntent). The client NEVER
+  // supplies a payment method directly — it completes the SetupIntent, then
+  // confirms below. The renewal price is rechecked before each future charge.
+  router.post("/domains/auto-renew/:id/setup", ownerOnly, async (req, res) => {
+    const auth = await reauth(req);
+    if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to authorize auto-renew.");
+    try {
+      const r = await s.renewal.beginAutoRenewSetup(String(req.params.id), { stripeCustomerRef: req.body?.stripeCustomerRef }, auth);
+      res.json({ ...r, notice: "The renewal price is rechecked before each charge and may change." });
+    } catch (e) { mapError(res, e); }
+  });
+
+  // Confirm the completed SetupIntent -> record immutable consent -> enable.
+  router.post("/domains/auto-renew/:id/confirm", ownerOnly, async (req, res) => {
+    const auth = await reauth(req);
+    if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to authorize auto-renew.");
+    try {
+      await s.renewal.confirmAutoRenewSetup(String(req.params.id), {
+        setupIntentId: String(req.body?.setupIntentId ?? ""),
+        termsAcceptanceId: String(req.body?.termsAcceptanceId ?? ""),
         pricingVersionAck: Number(req.body?.pricingVersionAck ?? 0),
-        stripeCustomerRef: String(req.body?.stripeCustomerRef ?? ""),
-        stripePaymentMethodRef: String(req.body?.stripePaymentMethodRef ?? ""),
-        currency: String(req.body?.currency ?? "USD"),
+        currency: req.body?.currency ? String(req.body.currency) : undefined,
+        mandateText: req.body?.mandateText ? String(req.body.mandateText) : undefined,
       }, auth);
       res.json({ enabled: true });
     } catch (e) { mapError(res, e); }

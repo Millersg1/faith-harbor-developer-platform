@@ -7,12 +7,14 @@
 
 import type {
   CheckoutResult,
+  CreateSetupIntentInput,
   DomainStripeGateway,
   OffSessionChargeInput,
   OneTimeCheckoutInput,
   PaymentIntentView,
   RefundInput,
   RefundView,
+  SetupIntentView,
 } from "./DomainStripeGateway";
 
 export class FakeDomainStripeGateway implements DomainStripeGateway {
@@ -89,6 +91,39 @@ export class FakeDomainStripeGateway implements DomainStripeGateway {
     };
     this.paymentIntents.set(id, view);
     return { ...view };
+  }
+
+  private setupIntents = new Map<string, SetupIntentView>();
+  /** Scriptable outcome of a SetupIntent confirmation (default: succeeds). */
+  private setupStatus: "succeeded" | "requires_payment_method" = "succeeded";
+  setSetupResult(status: "succeeded" | "requires_payment_method"): void {
+    this.setupStatus = status;
+  }
+
+  async createSetupIntent(input: CreateSetupIntentInput): Promise<SetupIntentView> {
+    const id = `seti_test_${++this.seq}`;
+    const view: SetupIntentView = {
+      id,
+      clientSecret: `${id}_secret`,
+      status: "requires_payment_method",
+      customerRef: input.customerRef ?? `cus_test_${this.seq}`,
+    };
+    this.setupIntents.set(id, view);
+    return { ...view };
+  }
+
+  /** Test helper: simulate the customer completing the setup in the browser. */
+  completeSetup(id: string, paymentMethodRef = `pm_test_${id}`): void {
+    const v = this.setupIntents.get(id);
+    if (!v) throw new Error("unknown setup intent");
+    v.status = this.setupStatus;
+    if (this.setupStatus === "succeeded") v.paymentMethodRef = paymentMethodRef;
+  }
+
+  async getSetupIntent(id: string): Promise<SetupIntentView> {
+    const v = this.setupIntents.get(id);
+    if (!v) throw new Error("no such setup intent");
+    return { ...v };
   }
 
   verifyWebhook(): boolean {

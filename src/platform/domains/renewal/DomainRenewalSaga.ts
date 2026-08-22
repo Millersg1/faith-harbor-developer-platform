@@ -21,6 +21,8 @@
  *    surrenders, unlocks, or transfers a domain.
  */
 
+import { createHash } from "node:crypto";
+
 import { runWithTenant } from "../../../tenancy/TenantContext";
 import {
   authorizeDomainAction,
@@ -229,6 +231,74 @@ export class DomainRenewalSaga {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     });
+  }
+
+  // ---- 1b-i. Off-session authorization via Stripe SetupIntent -------------
+  /**
+   * Begins saving + authorizing a payment method for future renewals. Owner-only
+   * + recent reauth. Returns the SetupIntent client secret to complete in the
+   * browser (test mode). We store only Stripe identifiers, never card data.
+   */
+  async beginAutoRenewSetup(
+    registrationId: string,
+    input: { stripeCustomerRef?: string },
+    auth: AuthContext,
+  ): Promise<{ setupIntentId: string; clientSecret?: string; customerRef?: string }> {
+    const decision = authorizeDomainAction("purchase", auth);
+    if (!decision.allowed) throw new RenewalAuthError(decision.reason ?? "role");
+    const reg = await this.requireConfirmed(registrationId);
+    const si = await this.d.stripe.createSetupIntent({
+      organizationId: reg.organizationId,
+      customerRef: input.stripeCustomerRef,
+      idempotencyKey: `autorenew-setup:${registrationId}`,
+    });
+    return { setupIntentId: si.id, clientSecret: si.clientSecret, customerRef: si.customerRef };
+  }
+
+  /**
+   * Completes off-session authorization: confirms the SetupIntent SUCCEEDED and
+   * yielded a saved method, records IMMUTABLE consent evidence (Stripe ids +
+   * terms/pricing versions + mandate hash — never card data), then enables
+   * auto-renew. If the setup did not yield an eligible method, throws
+   * AutoRenewNotAuthorized so the caller falls back to a customer checkout /
+   * manual renewal. An existing subscription payment method is NOT accepted as
+   * renewal authorization — only a method authorized through THIS flow is.
+   */
+  async confirmAutoRenewSetup(
+    registrationId: string,
+    input: { setupIntentId: string; termsAcceptanceId: string; pricingVersionAck: number; currency?: string; mandateText?: string },
+    auth: AuthContext,
+  ): Promise<void> {
+    const decision = authorizeDomainAction("purchase", auth);
+    if (!decision.allowed) throw new RenewalAuthError(decision.reason ?? "role");
+    await this.requireConfirmed(registrationId);
+    const si = await this.d.stripe.getSetupIntent(input.setupIntentId);
+    if (si.status !== "succeeded" || !si.paymentMethodRef || !si.customerRef) {
+      throw new AutoRenewNotAuthorized("setup_incomplete_or_no_saved_method");
+    }
+    const now = this.d.now();
+    await this.d.repo.appendConsent({
+      id: this.d.newId(),
+      registrationId,
+      userId: (auth as unknown as { userId?: string }).userId,
+      termsAcceptanceId: input.termsAcceptanceId,
+      pricingVersionAck: input.pricingVersionAck,
+      stripeCustomerRef: si.customerRef,
+      stripePaymentMethodRef: si.paymentMethodRef,
+      setupIntentId: si.id,
+      mandateTextHash: input.mandateText ? sha256(input.mandateText) : undefined,
+      currency: input.currency ?? "USD",
+      consentedAt: now,
+      createdAt: now,
+    });
+    await this.enableAutoRenew(registrationId, {
+      userId: (auth as unknown as { userId?: string }).userId ?? "owner",
+      termsAcceptanceId: input.termsAcceptanceId,
+      pricingVersionAck: input.pricingVersionAck,
+      stripeCustomerRef: si.customerRef,
+      stripePaymentMethodRef: si.paymentMethodRef,
+      currency: input.currency ?? "USD",
+    }, auth);
   }
 
   // ---- 1c. AUTO renewal run (off-session, customer-funded) ----------------
@@ -532,6 +602,10 @@ export class DomainRenewalSaga {
 
 function safeReason(s: string | undefined): string {
   return (s ?? "unknown").replace(/[^a-z0-9_]/gi, "_").slice(0, 40);
+}
+
+function sha256(s: string): string {
+  return createHash("sha256").update(s).digest("hex");
 }
 
 /** The plan an auto-renew authorization was created under is not stored on the

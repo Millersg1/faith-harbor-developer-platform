@@ -2090,6 +2090,28 @@ export class PostgresDatabase
       );
       CREATE INDEX IF NOT EXISTS idx_domain_autorenew_org ON domain_autorenew (organization_id);
 
+      -- Append-only IMMUTABLE consent evidence for off-session renewal
+      -- authorization (Stage 11). One row per consent event; disabling
+      -- auto-renew never deletes the history. Stores ONLY Stripe identifiers +
+      -- the terms/pricing versions consented to + a mandate-text hash — never
+      -- card data.
+      CREATE TABLE IF NOT EXISTS domain_autorenew_consents (
+        id                        TEXT PRIMARY KEY,
+        organization_id           TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        registration_id           TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE RESTRICT,
+        user_id                   TEXT,
+        terms_acceptance_id       TEXT,
+        pricing_version_ack       INTEGER,
+        stripe_customer_ref       TEXT,
+        stripe_payment_method_ref TEXT,
+        setup_intent_id           TEXT,
+        mandate_text_hash         TEXT,
+        currency                  TEXT,
+        consented_at              TEXT NOT NULL,
+        created_at                TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_domain_autorenew_consents_reg ON domain_autorenew_consents (registration_id);
+
       -- Provider-attempt audit gains a renewal-order link (renewals reuse the
       -- same append-only, PII-free attempt log as registrations).
       ALTER TABLE domain_provider_attempts

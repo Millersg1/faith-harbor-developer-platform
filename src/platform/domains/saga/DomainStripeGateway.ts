@@ -62,6 +62,30 @@ export interface OffSessionChargeInput {
   idempotencyKey: string;
 }
 
+/**
+ * A SetupIntent saves + authorizes a payment method for FUTURE off-session
+ * (merchant-initiated) renewal charges. Test mode only. We store ONLY Stripe
+ * identifiers (customer + payment method) — never card data.
+ */
+export interface SetupIntentView {
+  id: string;
+  /** Client secret to complete the setup in the browser (test mode). */
+  clientSecret?: string;
+  /** "requires_payment_method" | "requires_confirmation" | "succeeded" | ... */
+  status: string;
+  customerRef?: string;
+  /** Present once a method is attached + the setup succeeds. */
+  paymentMethodRef?: string;
+}
+
+export interface CreateSetupIntentInput {
+  organizationId: string;
+  /** Reuse an existing Stripe customer, or omit to create one. */
+  customerRef?: string;
+  /** Deterministic idempotency key. */
+  idempotencyKey: string;
+}
+
 export interface RefundInput {
   chargeId: string;
   amountMinor: number;
@@ -82,6 +106,10 @@ export interface DomainStripeGateway {
   getPaymentIntent(id: string): Promise<PaymentIntentView>;
   /** Merchant-initiated charge against a saved, authorized payment method. */
   chargeOffSession(input: OffSessionChargeInput): Promise<PaymentIntentView>;
+  /** Begins saving + authorizing a payment method for future renewals. */
+  createSetupIntent(input: CreateSetupIntentInput): Promise<SetupIntentView>;
+  /** Reads a SetupIntent to confirm it succeeded + get the saved method + customer. */
+  getSetupIntent(id: string): Promise<SetupIntentView>;
   createRefund(input: RefundInput): Promise<RefundView>;
   getRefund(id: string): Promise<RefundView>;
 }
@@ -96,6 +124,8 @@ export class DisconnectedDomainStripeGateway implements DomainStripeGateway {
   verifyWebhook(): boolean { return false; }
   getPaymentIntent(): Promise<PaymentIntentView> { return this.fail(); }
   chargeOffSession(): Promise<PaymentIntentView> { return this.fail(); }
+  createSetupIntent(): Promise<SetupIntentView> { return this.fail(); }
+  getSetupIntent(): Promise<SetupIntentView> { return this.fail(); }
   createRefund(): Promise<RefundView> { return this.fail(); }
   getRefund(): Promise<RefundView> { return this.fail(); }
 }
@@ -209,6 +239,40 @@ export class HttpDomainStripeGateway implements DomainStripeGateway {
       currency: String(j.currency).toUpperCase(),
       status: String(j.status),
       chargeId: j.latest_charge ? String(j.latest_charge) : undefined,
+    };
+  }
+
+  async createSetupIntent(input: CreateSetupIntentInput): Promise<SetupIntentView> {
+    const j = await this.post(
+      "/v1/setup_intents",
+      {
+        usage: "off_session", // authorize FUTURE merchant-initiated charges
+        ...(input.customerRef ? { customer: input.customerRef } : {}),
+        "metadata[organizationId]": input.organizationId,
+        "metadata[purpose]": "domain_auto_renew",
+      },
+      input.idempotencyKey,
+    );
+    return {
+      id: String(j.id),
+      clientSecret: j.client_secret ? String(j.client_secret) : undefined,
+      status: String(j.status),
+      customerRef: j.customer ? String(j.customer) : input.customerRef,
+      paymentMethodRef: j.payment_method ? String(j.payment_method) : undefined,
+    };
+  }
+
+  async getSetupIntent(id: string): Promise<SetupIntentView> {
+    const res = await this.fetcher(`https://api.stripe.com/v1/setup_intents/${id}`, {
+      headers: { Authorization: `Bearer ${this.config.secretKey}` },
+    });
+    if (!res.ok) throw new Error(`Stripe HTTP ${res.status}.`);
+    const j = (await res.json()) as Record<string, unknown>;
+    return {
+      id: String(j.id),
+      status: String(j.status),
+      customerRef: j.customer ? String(j.customer) : undefined,
+      paymentMethodRef: j.payment_method ? String(j.payment_method) : undefined,
     };
   }
 
