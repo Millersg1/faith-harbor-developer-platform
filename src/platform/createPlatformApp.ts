@@ -24,6 +24,7 @@ import { createAuthRouter } from "./auth/authRouter";
 import type { PasswordResetService } from "./auth/PasswordResetService";
 import { createRequireUser } from "./auth/requireUser";
 import { BillingService } from "./billing/BillingService";
+import type { DomainWebhookHandler } from "./domains/saga/DomainWebhookHandler";
 import { OnboardingService } from "./onboarding/OnboardingService";
 import { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
@@ -214,6 +215,12 @@ export interface PlatformAppDependencies {
   aiSettings?: OrganizationAiSettingsService;
   aiUsage?: AiUsageRepository;
   billing?: BillingService;
+  /**
+   * Domain-registration Stripe webhook boundary (test-mode only). Absent =
+   * the domain webhook endpoint rejects every event (fail closed). Verifies the
+   * raw-body signature, rejects live-mode events, and routes to the owning saga.
+   */
+  domainWebhook?: DomainWebhookHandler;
   onboarding?: OnboardingService;
   preferences?: WorkspacePreferencesService;
   legal?: PlatformLegalService;
@@ -376,6 +383,34 @@ export function createPlatformApp(
       ).finally(() =>
         res.json({ received: true }),
       );
+    },
+  );
+
+  // Domain-registration Stripe webhook — same raw-body-before-json rule as the
+  // billing webhook above. Signature is verified over the exact bytes; live-mode
+  // events are rejected; the owning saga (purchase/renewal/transfer) re-reads the
+  // PaymentIntent and matches the STORED order before capturing. Fail closed:
+  // with no handler configured, every event is rejected.
+  app.post(
+    "/webhooks/stripe/domains",
+    express.raw({ type: "*/*", limit: "1mb" }),
+    (req, res) => {
+      const handler = deps.domainWebhook;
+      const raw = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+      const signature = req.headers["stripe-signature"] as string | undefined;
+      if (!handler) {
+        res.status(400).json({
+          error: { code: "DOMAIN_WEBHOOK_DISABLED", message: "Domain webhook is not configured." },
+        });
+        return;
+      }
+      handler
+        .handle(raw, signature)
+        .then((r) => res.status(r.status).json(r.body))
+        .catch(() =>
+          // Never leak internals; ack so Stripe doesn't storm retries.
+          res.status(200).json({ received: true }),
+        );
     },
   );
 

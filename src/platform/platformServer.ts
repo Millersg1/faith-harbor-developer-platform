@@ -20,6 +20,7 @@ import { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsServic
 import { BillingService } from "./billing/BillingService";
 import { SubscriptionRepository } from "./billing/SubscriptionRepository";
 import { ProcessedEventsRepository } from "./billing/ProcessedEventsRepository";
+import { buildDomainRuntime } from "./domains/domainIntegration";
 import {
   DisconnectedStripeSubscriptionGateway,
   HttpStripeSubscriptionGateway,
@@ -317,6 +318,11 @@ async function start(): Promise<void> {
       stripeGateway,
       new ProcessedEventsRepository(db),
     );
+  // Stage 11: domain-registration runtime (TEST-MODE only). Fails closed to
+  // undefined unless a domain `sk_test_…` key + webhook secret + contact-
+  // encryption keyring are all present; with no runtime the domain webhook
+  // endpoint returns DOMAIN_WEBHOOK_DISABLED and nothing domain-related runs.
+  const domainRuntime = buildDomainRuntime(process.env, db);
   const hosting =
     new PlatformHostingService(
       new PlatformHostingRepository(
@@ -1018,6 +1024,7 @@ async function start(): Promise<void> {
     signup,
     passwordReset,
     domains,
+    domainWebhook: domainRuntime?.webhookHandler,
     hosting,
     tickets,
     leads,
