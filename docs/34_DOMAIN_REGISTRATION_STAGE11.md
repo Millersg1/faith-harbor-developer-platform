@@ -159,7 +159,11 @@ published), other kinds untouched.
   HTTP integration suites (AuthRouter, calendar, forms, invoice-paid,
   TicketRouter, storefront, privacyRoutes) — the Windows fork-exhaustion flake,
   0 domain-related. Linux CI runs them clean.
-- **Linux CI on the exact final commit (authoritative):** _(filled after push)_.
+- **Linux CI on the exact final commit (authoritative): GREEN** — "Validate
+  Faith Harbor OS" run `32590766251` at `01b5b39` ran the complete validate
+  (typecheck of `src/**/*.ts` including all test files, full vitest suite, and
+  production build) to success. This confirms the Windows full-suite failures
+  above were environmental (every one passes on Linux).
 
 **Windows full-suite note:** the Windows parallel fork runner is unreliable under
 load (unrelated HTTP integration suites crash with `STACK_TRACE_ERROR`/
