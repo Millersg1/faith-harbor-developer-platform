@@ -14,6 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "hash-password": "node scripts/hash-password.mjs",
+  "ote:preflight": "node scripts/ote-preflight.mjs",
     "validate": "npm run typecheck && npm test && npm run build"
   },
   "engines": {
