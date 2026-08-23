@@ -148,6 +148,26 @@ export class DomainRegistrationRepository extends TenantScopedRepository {
    * (also refreshes the sync freshness). Cached expiry is never advanced without
    * a provider-confirmed value.
    */
+  /**
+   * Flips ONLY the coarse sync_state summary flag (e.g. to "error" on a failed
+   * refresh) WITHOUT advancing last_provider_sync_at — so a failed sync leaves
+   * the last provider-confirmed timestamp intact and downstream freshness checks
+   * (auto-renew) correctly treat the facts as stale.
+   */
+  async markSyncState(id: string, state: string, at: string): Promise<void> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      await this.db.query(
+        `UPDATE domain_registrations SET sync_state = $1, updated_at = $2
+           WHERE id = $3 AND organization_id = $4`,
+        [state, at, id, organizationId],
+      );
+      return;
+    }
+    const rec = this.mem.get(id);
+    if (rec && rec.organizationId === organizationId) rec.syncState = state;
+  }
+
   async setExpiry(id: string, expiresAt: string, at: string): Promise<void> {
     const organizationId = this.tenantId();
     if (this.db) {

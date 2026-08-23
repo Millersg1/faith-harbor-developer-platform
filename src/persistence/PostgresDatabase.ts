@@ -1904,6 +1904,33 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_domain_lifecycle_state_org ON domain_lifecycle_state (organization_id);
       CREATE INDEX IF NOT EXISTS domain_lifecycle_state_claim_idx ON domain_lifecycle_state (next_scan_at);
 
+      -- Periodic provider-fact SYNC snapshot (read-only refresh). Holds only the
+      -- LAST provider-CONFIRMED facts; a failed refresh never overwrites them, so
+      -- confirmed facts + last_success_at stay put and go visibly stale.
+      CREATE TABLE IF NOT EXISTS domain_sync_state (
+        registration_id     TEXT PRIMARY KEY REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        sync_state          TEXT NOT NULL DEFAULT 'unknown',
+        observed_status     TEXT,
+        observed_expires_at TEXT,
+        observed_locked     BOOLEAN,
+        observed_privacy    BOOLEAN,
+        observed_nameservers TEXT,
+        observed_lifecycle  TEXT,
+        verification_required BOOLEAN NOT NULL DEFAULT false,
+        dnssec              TEXT,
+        last_success_at     TEXT,
+        last_failure_at     TEXT,
+        consecutive_failures INTEGER NOT NULL DEFAULT 0,
+        lease_owner         TEXT,
+        lease_until         TEXT,
+        next_scan_at        TEXT,
+        created_at          TEXT NOT NULL,
+        updated_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS domain_sync_state_claim_idx ON domain_sync_state (next_scan_at);
+      CREATE INDEX IF NOT EXISTS domain_sync_state_org_idx ON domain_sync_state (organization_id);
+
       -- De-duplicated lifecycle notices (durable outbox; one per type per reg).
       CREATE TABLE IF NOT EXISTS domain_notices (
         id                  TEXT PRIMARY KEY,

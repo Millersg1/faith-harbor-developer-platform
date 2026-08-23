@@ -32,6 +32,9 @@ import { DomainLifecycleScanner } from "./lifecycle/DomainLifecycleScanner";
 import { DomainNoticeRepository } from "./notices/DomainNoticeRepository";
 import { DomainNoticeWorker } from "./notices/DomainNoticeWorker";
 import { CapturedNoticeSink } from "./notices/NoticeTransport";
+import { DomainSyncRepository } from "./sync/DomainSyncRepository";
+import { DomainSyncScanner } from "./sync/DomainSyncScanner";
+import { TokenBucketRateLimiter } from "./ratelimit/TokenBucketRateLimiter";
 import { DomainQuoteRepository } from "./DomainQuoteRepository";
 import { DomainQuoteService } from "./DomainQuoteService";
 import { DomainRegistrationRepository } from "./DomainRegistrationRepository";
@@ -78,6 +81,8 @@ export interface DomainRuntime {
   lifecycleScanner?: DomainLifecycleScanner;
   /** Notice delivery worker — CAPTURED transport only, sends no real email. */
   noticeWorker?: DomainNoticeWorker;
+  /** Read-only provider-fact sync scanner (runs in reconcile_only + full). */
+  syncScanner?: DomainSyncScanner;
 }
 
 export interface DomainIntegrationEnv extends RegistrarEnv {
@@ -211,5 +216,15 @@ export function buildDomainRuntime(
     recipient: async () => null, now, newId,
   });
 
-  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services, autoRenewScheduler, lifecycleScanner, noticeWorker };
+  // Read-only periodic provider-fact sync. Rate limiters throttle outbound calls
+  // (per provider / tenant / platform); NO provider mutation is ever performed.
+  const nowMs = () => Date.now();
+  const syncScanner = new DomainSyncScanner({
+    repo: new DomainSyncRepository(db), registrations, registrar, now,
+    providerLimiter: new TokenBucketRateLimiter({ capacity: 20, refillPerSec: 5 }, nowMs),
+    tenantLimiter: new TokenBucketRateLimiter({ capacity: 10, refillPerSec: 2 }, nowMs),
+    platformLimiter: new TokenBucketRateLimiter({ capacity: 50, refillPerSec: 25 }, nowMs),
+  });
+
+  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services, autoRenewScheduler, lifecycleScanner, noticeWorker, syncScanner };
 }
