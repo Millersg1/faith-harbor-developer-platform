@@ -38,6 +38,7 @@ export interface DomainWorkerHealth {
     transfersPolled: number;
     refunded: number;
     reconciled: number;
+    autoRenewScanned: number;
   };
   lastReason: "ok" | "tick_error" | "never_run";
 }
@@ -48,14 +49,14 @@ export class DomainWorkerCoordinator {
   private ticks = 0;
   private lastReason: DomainWorkerHealth["lastReason"] = "never_run";
   private readonly counts: DomainWorkerHealth["counts"] = {
-    fulfilled: 0, renewed: 0, transfersSubmitted: 0, transfersPolled: 0, refunded: 0, reconciled: 0,
+    fulfilled: 0, renewed: 0, transfersSubmitted: 0, transfersPolled: 0, refunded: 0, reconciled: 0, autoRenewScanned: 0,
   };
   private readonly sagaWorker: DomainSagaWorker;
   private readonly renewalWorker: DomainRenewalWorker;
   private readonly transferWorker: DomainTransferWorker;
 
   constructor(
-    private readonly runtime: Pick<DomainRuntime, "purchase" | "renewal" | "transfer">,
+    private readonly runtime: Pick<DomainRuntime, "purchase" | "renewal" | "transfer" | "autoRenewScheduler">,
     private readonly mode: DomainOperationsMode,
     private readonly owner = "platform",
     private readonly now: () => string = () => new Date().toISOString(),
@@ -102,6 +103,11 @@ export class DomainWorkerCoordinator {
         this.counts.transfersPolled += t.lastPolled;
         this.counts.refunded += s.lastRefunded + r.lastRefunded + t.lastRefunded;
         this.counts.reconciled += s.lastReconciled + r.lastReconciled + t.lastReconciled;
+        // Lifecycle scanners that may create charges run in `full` only.
+        if (this.stopping) return;
+        if (this.runtime.autoRenewScheduler) {
+          this.counts.autoRenewScanned += (await this.runtime.autoRenewScheduler.runOnce(this.owner)).processed;
+        }
       }
       this.lastReason = "ok";
     } catch {

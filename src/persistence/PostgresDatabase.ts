@@ -2089,6 +2089,12 @@ export class PostgresDatabase
         updated_at          TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_domain_autorenew_org ON domain_autorenew (organization_id);
+      -- Stage L1: durable auto-renew SCANNER lease + backoff (the scheduler
+      -- claims due rows with FOR UPDATE SKIP LOCKED; the DB duplicate guard
+      -- domain_renewal_active_uniq remains the final protection).
+      ALTER TABLE domain_autorenew ADD COLUMN IF NOT EXISTS lease_owner TEXT;
+      ALTER TABLE domain_autorenew ADD COLUMN IF NOT EXISTS lease_until TEXT;
+      ALTER TABLE domain_autorenew ADD COLUMN IF NOT EXISTS next_scan_at TEXT;
 
       -- Append-only IMMUTABLE consent evidence for off-session renewal
       -- authorization (Stage 11). One row per consent event; disabling

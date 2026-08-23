@@ -104,8 +104,20 @@ export interface AutoRenewAuthorization {
   stripeCustomerRef?: string;
   stripePaymentMethodRef?: string;
   currency?: string;
+  leaseOwner?: string;
+  leaseUntil?: string;
+  nextScanAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A registration claimed by the auto-renew scanner for eligibility processing. */
+export interface DueAutoRenew {
+  registrationId: string;
+  organizationId: string;
+  stripeCustomerRef?: string;
+  stripePaymentMethodRef?: string;
+  currency?: string;
 }
 
 export class DuplicateRenewalError extends Error {
@@ -449,6 +461,107 @@ export class DomainRenewalRepository extends TenantScopedRepository {
     }
     this.autoRenew.set(full.registrationId, full);
     return full;
+  }
+
+  // ---- auto-renew SCANNER claim (SKIP LOCKED) -----------------------------
+  /**
+   * Claims due auto-renew authorizations with `FOR UPDATE SKIP LOCKED` so
+   * concurrent scanners + restarts converge. Eligibility here is coarse (enabled
+   * + a saved method + a due/expiring registration + not leased + backoff-due);
+   * the scanner service re-verifies the full eligibility per item and the DB
+   * `domain_renewal_active_uniq` index is the final duplicate guard.
+   */
+  async claimDueAutoRenew(owner: string, nowIso: string, withinIso: string, limit = 20): Promise<DueAutoRenew[]> {
+    const until = new Date(Date.parse(nowIso) + LEASE_MS).toISOString();
+    if (this.db) {
+      const r = await this.db.query(
+        `UPDATE domain_autorenew SET lease_owner=$1, lease_until=$2, updated_at=$2
+         WHERE registration_id IN (
+           SELECT a.registration_id
+             FROM domain_autorenew a
+             JOIN domain_registrations reg ON reg.id = a.registration_id
+             WHERE a.enabled = TRUE
+               AND a.stripe_payment_method_ref IS NOT NULL
+               AND reg.status = 'active'
+               AND reg.expires_at IS NOT NULL AND reg.expires_at <= $3
+               AND (a.next_scan_at IS NULL OR a.next_scan_at <= $4)
+               AND (a.lease_until IS NULL OR a.lease_until < $4)
+             ORDER BY reg.expires_at ASC LIMIT $5
+             FOR UPDATE OF a SKIP LOCKED)
+         RETURNING registration_id, organization_id, stripe_customer_ref, stripe_payment_method_ref, currency`,
+        [owner, until, withinIso, nowIso, limit],
+      );
+      return r.rows.map((x) => ({
+        registrationId: String(x.registration_id),
+        organizationId: String(x.organization_id),
+        stripeCustomerRef: x.stripe_customer_ref ? String(x.stripe_customer_ref) : undefined,
+        stripePaymentMethodRef: x.stripe_payment_method_ref ? String(x.stripe_payment_method_ref) : undefined,
+        currency: x.currency ? String(x.currency) : undefined,
+      }));
+    }
+    // In-memory: coarse lease of enabled + PM + backoff-due; the scanner filters
+    // registration facts (active / within-window / fresh) itself.
+    const due: DueAutoRenew[] = [];
+    for (const a of this.autoRenew.values()) {
+      if (due.length >= limit) break;
+      if (!a.enabled || !a.stripePaymentMethodRef) continue;
+      if (a.nextScanAt && a.nextScanAt > nowIso) continue;
+      if (a.leaseUntil && a.leaseUntil >= nowIso) continue;
+      a.leaseOwner = owner; a.leaseUntil = until;
+      due.push({ registrationId: a.registrationId, organizationId: a.organizationId, stripeCustomerRef: a.stripeCustomerRef, stripePaymentMethodRef: a.stripePaymentMethodRef, currency: a.currency });
+    }
+    return due;
+  }
+
+  /** True if the registration has an UNRESOLVED renewal (needs_attention or
+   *  renewal_unknown) — a blocking condition for a fresh auto-renewal. */
+  async hasUnresolvedRenewal(registrationId: string): Promise<boolean> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      const r = await this.db.query(
+        `SELECT 1 FROM domain_renewal_orders
+           WHERE registration_id=$1 AND organization_id=$2
+             AND status IN ('needs_attention','renewal_unknown') LIMIT 1`,
+        [registrationId, organizationId],
+      );
+      return r.rows.length > 0;
+    }
+    for (const o of this.orders.values()) {
+      if (o.registrationId === registrationId && o.organizationId === organizationId && (o.status === "needs_attention" || o.status === "renewal_unknown")) return true;
+    }
+    return false;
+  }
+
+  /** Clears the scan lease + sets the next scan time (backoff / next cycle). */
+  async finishAutoRenewScan(registrationId: string, nextScanAtIso: string): Promise<void> {
+    const organizationId = this.tenantId();
+    if (this.db) {
+      await this.db.query(
+        `UPDATE domain_autorenew SET lease_owner=NULL, lease_until=NULL, next_scan_at=$1, updated_at=$1
+           WHERE registration_id=$2 AND organization_id=$3`,
+        [nextScanAtIso, registrationId, organizationId],
+      );
+      return;
+    }
+    const a = this.autoRenew.get(registrationId);
+    if (a && a.organizationId === organizationId) { a.leaseOwner = undefined; a.leaseUntil = undefined; a.nextScanAt = nextScanAtIso; }
+  }
+
+  /** Crash recovery: releases scan leases whose lease has expired. */
+  async recoverExpiredAutoRenewLease(nowIso: string): Promise<number> {
+    if (this.db) {
+      const r = await this.db.query(
+        `UPDATE domain_autorenew SET lease_owner=NULL, lease_until=NULL, updated_at=$1
+           WHERE lease_until IS NOT NULL AND lease_until < $1`,
+        [nowIso],
+      );
+      return r.rowCount ?? 0;
+    }
+    let n = 0;
+    for (const a of this.autoRenew.values()) {
+      if (a.leaseUntil && a.leaseUntil < nowIso) { a.leaseOwner = undefined; a.leaseUntil = undefined; n++; }
+    }
+    return n;
   }
 
   /** Appends an IMMUTABLE off-session consent-evidence record. */

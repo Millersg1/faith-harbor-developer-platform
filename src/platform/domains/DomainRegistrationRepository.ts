@@ -26,6 +26,9 @@ export interface DomainRegistrationRecord {
   status: string;
   disposition: string;
   autorenewEnabled: boolean;
+  /** Provider-sync freshness (Stage 7): fresh|stale|unknown|needs_attention. */
+  syncState?: string;
+  lastProviderSyncAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -135,8 +138,8 @@ export class DomainRegistrationRepository extends TenantScopedRepository {
     }
     const rec = this.mem.get(id);
     if (rec && rec.organizationId === organizationId) {
-      (rec as unknown as { syncState: string; lastProviderSyncAt: string }).syncState = state;
-      (rec as unknown as { lastProviderSyncAt: string }).lastProviderSyncAt = at;
+      rec.syncState = state;
+      rec.lastProviderSyncAt = at;
     }
   }
 
@@ -196,6 +199,8 @@ function mapRow(row: Record<string, unknown>): DomainRegistrationRecord {
     status: String(row.status),
     disposition: String(row.disposition),
     autorenewEnabled: Boolean(row.autorenew_enabled),
+    syncState: row.sync_state ? String(row.sync_state) : undefined,
+    lastProviderSyncAt: row.last_provider_sync_at ? String(row.last_provider_sync_at) : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

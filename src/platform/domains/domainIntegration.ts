@@ -26,6 +26,8 @@ import { Keyring } from "./crypto/Keyring";
 import { DomainContactRepository } from "./DomainContactRepository";
 import { DomainDnsRepository } from "./dns/DomainDnsRepository";
 import { DomainDnsService } from "./dns/DomainDnsService";
+import { DomainAutoRenewScheduler } from "./renewal/DomainAutoRenewScheduler";
+import { DomainNoticeRepository } from "./notices/DomainNoticeRepository";
 import { DomainQuoteRepository } from "./DomainQuoteRepository";
 import { DomainQuoteService } from "./DomainQuoteService";
 import { DomainRegistrationRepository } from "./DomainRegistrationRepository";
@@ -66,6 +68,8 @@ export interface DomainRuntime {
   renewal: DomainRenewalSaga;
   transfer: DomainTransferSaga;
   services: DomainOpsServices;
+  /** Lifecycle scanners (credential-free release). Run by the coordinator. */
+  autoRenewScheduler?: DomainAutoRenewScheduler;
 }
 
 export interface DomainIntegrationEnv extends RegistrarEnv {
@@ -178,5 +182,13 @@ export function buildDomainRuntime(
   });
 
   const services: DomainOpsServices = { quotes, registrations, contacts, terms, dns, purchase, renewal, transfer };
-  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services };
+
+  // Auto-renew scanner (runs only in `full` mode; disabled by default).
+  const notices = new DomainNoticeRepository(db);
+  const autoRenewScheduler = new DomainAutoRenewScheduler({
+    repo: renewalRepo, registrations, saga: renewal, notices, now, newId,
+    blockingCondition: (regId) => renewalRepo.hasUnresolvedRenewal(regId),
+  });
+
+  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services, autoRenewScheduler };
 }
