@@ -1,6 +1,10 @@
 node_modules/
 dist/
 .env
+.env.*
+# Isolated OTE acceptance secrets — real values must never be committed.
+ote-acceptance.env
+*.ote-acceptance.env
 coverage/
 *.log
 v4.0-temp/
