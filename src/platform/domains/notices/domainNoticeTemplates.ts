@@ -78,6 +78,35 @@ export function renderDomainNotice(state: DomainNoticeState, ctx: DomainNoticeCo
   }
 }
 
+/**
+ * Renders the subject/body for a persisted `notice_type` (the value the lifecycle
+ * scanners enqueue), as opposed to a saga lifecycle STATE above. Returns `null`
+ * for a type we have no honest template for — the delivery worker then SKIPS the
+ * notice rather than sending an empty or guessed message. Every string here is a
+ * REMINDER or ACTION-REQUIRED prompt: none asserts completion, timing, or that a
+ * registry deadline exists that the provider did not report.
+ */
+export function renderNoticeByType(noticeType: string, ctx: DomainNoticeContext): RenderedNotice | null {
+  const d = ctx.domain;
+  const tx = { messageClass: "transactional" as const };
+  switch (noticeType) {
+    case "renewal_reminder":
+      return { subject: `Reminder: ${d} is approaching its renewal date`,
+        text: `This is a reminder that ${d} is approaching the renewal date the registrar has on file. No renewal has been performed by this notice. You can review or renew it in your domains dashboard.`, ...tx };
+    case "expiration_grace_redemption_warning":
+      return { subject: `Action may be needed: ${d} is at or past its expiration date`,
+        text: `${d} is at or past the expiration date the registrar reports. Options and timing after expiration are set by the registry and registrar; we do not invent grace, redemption, or deletion deadlines. Please review ${d} in your domains dashboard to decide how to proceed.`, ...tx };
+    case "contact_verification_required":
+      return { subject: `Action required: verify the registrant contact for ${d}`,
+        text: `The registry or registrar reports that registrant verification is required for ${d}. This must be completed through the registrar's own verification process. Please review ${d} in your domains dashboard.`, ...tx };
+    case "auto_renew_action_required":
+      return { subject: `Action needed: automatic renewal for ${d} could not proceed`,
+        text: `Automatic renewal for ${d} could not proceed and no renewal was performed. This usually means a saved payment method needs your attention. Please review ${d} in your domains dashboard to renew it.`, ...tx };
+    default:
+      return null;
+  }
+}
+
 /** Whether copy dangerously promises timing/propagation (used by tests + review). */
 export function promisesForbiddenTiming(text: string): boolean {
   return /\binstant(ly|aneous)?\b/i.test(text)

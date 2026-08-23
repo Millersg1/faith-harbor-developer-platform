@@ -1924,6 +1924,22 @@ export class PostgresDatabase
         ON domain_notices (registration_id, notice_type);
       CREATE INDEX IF NOT EXISTS domain_notices_claim_idx ON domain_notices (status, next_attempt_at);
 
+      -- Append-only delivery-attempt history for notices. Immutable: rows are
+      -- only ever INSERTed, never mutated. Carries NO recipient address, subject,
+      -- body, or provider transcript — only a coarse classification + reason.
+      CREATE TABLE IF NOT EXISTS domain_notice_attempts (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        notice_id           TEXT NOT NULL REFERENCES domain_notices (id) ON DELETE CASCADE,
+        registration_id     TEXT NOT NULL REFERENCES domain_registrations (id) ON DELETE CASCADE,
+        attempt_no          INTEGER NOT NULL,
+        classification      TEXT NOT NULL,
+        reason              TEXT,
+        created_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS domain_notice_attempts_notice_idx
+        ON domain_notice_attempts (notice_id, attempt_no);
+
       -- Transfer requests (outgoing/incoming). Never stores a raw EPP code.
       CREATE TABLE IF NOT EXISTS domain_transfer_requests (
         id                  TEXT PRIMARY KEY,

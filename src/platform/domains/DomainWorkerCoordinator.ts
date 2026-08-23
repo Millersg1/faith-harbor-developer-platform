@@ -40,6 +40,7 @@ export interface DomainWorkerHealth {
     reconciled: number;
     autoRenewScanned: number;
     lifecycleScanned: number;
+    noticesProcessed: number;
   };
   lastReason: "ok" | "tick_error" | "never_run";
 }
@@ -50,14 +51,14 @@ export class DomainWorkerCoordinator {
   private ticks = 0;
   private lastReason: DomainWorkerHealth["lastReason"] = "never_run";
   private readonly counts: DomainWorkerHealth["counts"] = {
-    fulfilled: 0, renewed: 0, transfersSubmitted: 0, transfersPolled: 0, refunded: 0, reconciled: 0, autoRenewScanned: 0, lifecycleScanned: 0,
+    fulfilled: 0, renewed: 0, transfersSubmitted: 0, transfersPolled: 0, refunded: 0, reconciled: 0, autoRenewScanned: 0, lifecycleScanned: 0, noticesProcessed: 0,
   };
   private readonly sagaWorker: DomainSagaWorker;
   private readonly renewalWorker: DomainRenewalWorker;
   private readonly transferWorker: DomainTransferWorker;
 
   constructor(
-    private readonly runtime: Pick<DomainRuntime, "purchase" | "renewal" | "transfer" | "autoRenewScheduler" | "lifecycleScanner">,
+    private readonly runtime: Pick<DomainRuntime, "purchase" | "renewal" | "transfer" | "autoRenewScheduler" | "lifecycleScanner" | "noticeWorker">,
     private readonly mode: DomainOperationsMode,
     private readonly owner = "platform",
     private readonly now: () => string = () => new Date().toISOString(),
@@ -113,6 +114,11 @@ export class DomainWorkerCoordinator {
         if (this.stopping) return;
         if (this.runtime.autoRenewScheduler) {
           this.counts.autoRenewScanned += (await this.runtime.autoRenewScheduler.runOnce(this.owner)).processed;
+        }
+        // Notice delivery (captured transport only — sends no real email).
+        if (this.stopping) return;
+        if (this.runtime.noticeWorker) {
+          this.counts.noticesProcessed += (await this.runtime.noticeWorker.runOnce(this.owner)).processed;
         }
       }
       this.lastReason = "ok";

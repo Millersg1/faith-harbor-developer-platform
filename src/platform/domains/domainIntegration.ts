@@ -30,6 +30,8 @@ import { DomainAutoRenewScheduler } from "./renewal/DomainAutoRenewScheduler";
 import { DomainLifecycleRepository } from "./lifecycle/DomainLifecycleRepository";
 import { DomainLifecycleScanner } from "./lifecycle/DomainLifecycleScanner";
 import { DomainNoticeRepository } from "./notices/DomainNoticeRepository";
+import { DomainNoticeWorker } from "./notices/DomainNoticeWorker";
+import { CapturedNoticeSink } from "./notices/NoticeTransport";
 import { DomainQuoteRepository } from "./DomainQuoteRepository";
 import { DomainQuoteService } from "./DomainQuoteService";
 import { DomainRegistrationRepository } from "./DomainRegistrationRepository";
@@ -74,6 +76,8 @@ export interface DomainRuntime {
   autoRenewScheduler?: DomainAutoRenewScheduler;
   /** Read-only lifecycle + reminder scanner (runs in reconcile_only + full). */
   lifecycleScanner?: DomainLifecycleScanner;
+  /** Notice delivery worker — CAPTURED transport only, sends no real email. */
+  noticeWorker?: DomainNoticeWorker;
 }
 
 export interface DomainIntegrationEnv extends RegistrarEnv {
@@ -197,5 +201,15 @@ export function buildDomainRuntime(
     repo: new DomainLifecycleRepository(db), registrations, registrar, notices, now, newId,
   });
 
-  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services, autoRenewScheduler, lifecycleScanner };
+  // Notice delivery worker. The ONLY wired transport is the captured sink (sends
+  // nothing), and the recipient resolver returns null — real recipient/verified-
+  // contact resolution and a real transport are explicitly deferred items. So in
+  // this release the worker keeps notices queued (re-queued, never sent). A real
+  // transport + resolver are what "enable sending" later; nothing here does.
+  const noticeWorker = new DomainNoticeWorker({
+    repo: notices, registrations, transport: new CapturedNoticeSink(),
+    recipient: async () => null, now, newId,
+  });
+
+  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services, autoRenewScheduler, lifecycleScanner, noticeWorker };
 }
