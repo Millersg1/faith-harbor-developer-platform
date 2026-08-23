@@ -39,6 +39,7 @@ export interface DomainWorkerHealth {
     refunded: number;
     reconciled: number;
     autoRenewScanned: number;
+    lifecycleScanned: number;
   };
   lastReason: "ok" | "tick_error" | "never_run";
 }
@@ -49,14 +50,14 @@ export class DomainWorkerCoordinator {
   private ticks = 0;
   private lastReason: DomainWorkerHealth["lastReason"] = "never_run";
   private readonly counts: DomainWorkerHealth["counts"] = {
-    fulfilled: 0, renewed: 0, transfersSubmitted: 0, transfersPolled: 0, refunded: 0, reconciled: 0, autoRenewScanned: 0,
+    fulfilled: 0, renewed: 0, transfersSubmitted: 0, transfersPolled: 0, refunded: 0, reconciled: 0, autoRenewScanned: 0, lifecycleScanned: 0,
   };
   private readonly sagaWorker: DomainSagaWorker;
   private readonly renewalWorker: DomainRenewalWorker;
   private readonly transferWorker: DomainTransferWorker;
 
   constructor(
-    private readonly runtime: Pick<DomainRuntime, "purchase" | "renewal" | "transfer" | "autoRenewScheduler">,
+    private readonly runtime: Pick<DomainRuntime, "purchase" | "renewal" | "transfer" | "autoRenewScheduler" | "lifecycleScanner">,
     private readonly mode: DomainOperationsMode,
     private readonly owner = "platform",
     private readonly now: () => string = () => new Date().toISOString(),
@@ -87,6 +88,8 @@ export class DomainWorkerCoordinator {
         this.counts.reconciled += (await this.runtime.renewal.runRenewalReconcileOnce(this.owner)).processed;
         if (this.stopping) return;
         this.counts.reconciled += (await this.runtime.transfer.runReconcileOnce(this.owner)).processed;
+        if (this.stopping) return;
+        await this.runReadOnlyScanners();
       } else {
         // full: every pass via the sequencer workers.
         await this.sagaWorker.runOnce();
@@ -103,6 +106,9 @@ export class DomainWorkerCoordinator {
         this.counts.transfersPolled += t.lastPolled;
         this.counts.refunded += s.lastRefunded + r.lastRefunded + t.lastRefunded;
         this.counts.reconciled += s.lastReconciled + r.lastReconciled + t.lastReconciled;
+        // Read-only scanners run in both modes.
+        if (this.stopping) return;
+        await this.runReadOnlyScanners();
         // Lifecycle scanners that may create charges run in `full` only.
         if (this.stopping) return;
         if (this.runtime.autoRenewScheduler) {
@@ -113,6 +119,13 @@ export class DomainWorkerCoordinator {
     } catch {
       // A tick error is recorded coarsely; the next tick retries (lease-guarded).
       this.lastReason = "tick_error";
+    }
+  }
+
+  /** Read-only scanners (lifecycle, sync) — safe in reconcile_only + full. */
+  private async runReadOnlyScanners(): Promise<void> {
+    if (this.runtime.lifecycleScanner) {
+      this.counts.lifecycleScanned += (await this.runtime.lifecycleScanner.runOnce(this.owner)).processed;
     }
   }
 

@@ -27,6 +27,8 @@ import { DomainContactRepository } from "./DomainContactRepository";
 import { DomainDnsRepository } from "./dns/DomainDnsRepository";
 import { DomainDnsService } from "./dns/DomainDnsService";
 import { DomainAutoRenewScheduler } from "./renewal/DomainAutoRenewScheduler";
+import { DomainLifecycleRepository } from "./lifecycle/DomainLifecycleRepository";
+import { DomainLifecycleScanner } from "./lifecycle/DomainLifecycleScanner";
 import { DomainNoticeRepository } from "./notices/DomainNoticeRepository";
 import { DomainQuoteRepository } from "./DomainQuoteRepository";
 import { DomainQuoteService } from "./DomainQuoteService";
@@ -70,6 +72,8 @@ export interface DomainRuntime {
   services: DomainOpsServices;
   /** Lifecycle scanners (credential-free release). Run by the coordinator. */
   autoRenewScheduler?: DomainAutoRenewScheduler;
+  /** Read-only lifecycle + reminder scanner (runs in reconcile_only + full). */
+  lifecycleScanner?: DomainLifecycleScanner;
 }
 
 export interface DomainIntegrationEnv extends RegistrarEnv {
@@ -189,6 +193,9 @@ export function buildDomainRuntime(
     repo: renewalRepo, registrations, saga: renewal, notices, now, newId,
     blockingCondition: (regId) => renewalRepo.hasUnresolvedRenewal(regId),
   });
+  const lifecycleScanner = new DomainLifecycleScanner({
+    repo: new DomainLifecycleRepository(db), registrations, registrar, notices, now, newId,
+  });
 
-  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services, autoRenewScheduler };
+  return { webhookHandler: new DomainWebhookHandler(gateway, channels), purchase, renewal, transfer, services, autoRenewScheduler, lifecycleScanner };
 }
