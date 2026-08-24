@@ -26,11 +26,14 @@ import { requireRole } from "../auth/requireRole";
 import type { PlatformUserService } from "../users/PlatformUserService";
 import type { AuthContext } from "./contact/contactAuthPolicy";
 import type { DomainOpsServices } from "./domainIntegration";
+import { createDomainRateLimiters, type DomainRateLimiters } from "./ratelimit/domainRateLimit";
 
 export interface DomainOpsRouterDeps {
   requireUser: RequestHandler;
   users: PlatformUserService;
   services: DomainOpsServices;
+  /** Abuse-control rate limiters (defaults to per-process token buckets). */
+  rateLimiters?: DomainRateLimiters;
 }
 
 const org = (req: unknown) => (req as AuthedRequest).auth!.user.organizationId;
@@ -63,6 +66,13 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
 
   const rw = requireRole("owner", "admin"); // owner/admin writes
   const ownerOnly = requireRole("owner"); // owner-only writes
+  const rl = deps.rateLimiters ?? createDomainRateLimiters();
+  // Rate-limit middleware runs FIRST on each guarded route, so a 429 is returned
+  // before any existence/authorization check — it is never an existence oracle.
+  const rlSearch = rl.limit("search");
+  const rlDns = rl.limit("dns_preview");
+  const rlSetup = rl.limit("setup_intent");
+  const rlSensitive = rl.limit("sensitive");
 
   /** Verifies a fresh password for a sensitive action; returns an AuthContext. */
   async function reauth(req: unknown): Promise<AuthContext | null> {
@@ -85,7 +95,7 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
     } catch { fail(res, 500, "INTERNAL", "Failed to list domains."); }
   });
 
-  router.get("/domains/search", async (req, res) => {
+  router.get("/domains/search", rlSearch, async (req, res) => {
     const q = String((req.query.q ?? "")).trim();
     if (!q) return fail(res, 400, "BAD_REQUEST", "A search term is required.");
     try {
@@ -114,7 +124,7 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
   router.get("/domains/registrations/:id/dns/authority", rw, async (req, res) => {
     try { res.json(await s.dns.recordCapability(String(req.params.id))); } catch (e) { mapError(res, e); }
   });
-  router.post("/domains/registrations/:id/dns/preview", rw, async (req, res) => {
+  router.post("/domains/registrations/:id/dns/preview", rlDns, rw, async (req, res) => {
     try { res.json(await s.dns.previewRecordChanges(String(req.params.id), (req.body?.changes ?? []))); } catch (e) { mapError(res, e); }
   });
   router.post("/domains/registrations/:id/dns/apply", rw, async (req, res) => {
@@ -175,7 +185,7 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
   // Begin off-session authorization (Stripe SetupIntent). The client NEVER
   // supplies a payment method directly — it completes the SetupIntent, then
   // confirms below. The renewal price is rechecked before each future charge.
-  router.post("/domains/auto-renew/:id/setup", ownerOnly, async (req, res) => {
+  router.post("/domains/auto-renew/:id/setup", rlSetup, ownerOnly, async (req, res) => {
     const auth = await reauth(req);
     if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to authorize auto-renew.");
     try {
@@ -185,7 +195,7 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
   });
 
   // Confirm the completed SetupIntent -> record immutable consent -> enable.
-  router.post("/domains/auto-renew/:id/confirm", ownerOnly, async (req, res) => {
+  router.post("/domains/auto-renew/:id/confirm", rlSetup, ownerOnly, async (req, res) => {
     const auth = await reauth(req);
     if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to authorize auto-renew.");
     try {
@@ -200,7 +210,7 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
     } catch (e) { mapError(res, e); }
   });
 
-  router.post("/domains/transfer/incoming", ownerOnly, async (req, res) => {
+  router.post("/domains/transfer/incoming", rlSensitive, ownerOnly, async (req, res) => {
     const auth = await reauth(req);
     if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to start a transfer.");
     try {
@@ -212,13 +222,13 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
     } catch (e) { mapError(res, e); }
   });
 
-  router.post("/domains/registrations/:id/transfer/unlock", ownerOnly, async (req, res) => {
+  router.post("/domains/registrations/:id/transfer/unlock", rlSensitive, ownerOnly, async (req, res) => {
     const auth = await reauth(req);
     if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to unlock the domain.");
     try { await s.transfer.outgoingUnlock(String(req.params.id), auth); res.json({ unlocked: true }); } catch (e) { mapError(res, e); }
   });
 
-  router.post("/domains/registrations/:id/transfer/auth-code", ownerOnly, async (req, res) => {
+  router.post("/domains/registrations/:id/transfer/auth-code", rlSensitive, ownerOnly, async (req, res) => {
     const auth = await reauth(req);
     if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to request the transfer code.");
     try {
@@ -232,7 +242,7 @@ export function createDomainOpsRouter(deps: DomainOpsRouterDeps): Router {
   });
 
   // ---- unknown-state resolution (owner-only + reauth) --------------------
-  router.post("/domains/orders/:id/resolve", ownerOnly, async (req, res) => {
+  router.post("/domains/orders/:id/resolve", rlSensitive, ownerOnly, async (req, res) => {
     const auth = await reauth(req);
     if (!auth) return fail(res, 401, "REAUTH_REQUIRED", "Re-enter your password to resolve this order.");
     try {

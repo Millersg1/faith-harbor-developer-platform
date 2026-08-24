@@ -29,6 +29,7 @@ import type { DomainOpsServices } from "./domains/domainIntegration";
 import { createDomainOpsRouter } from "./domains/domainOpsRouter";
 import { DomainSupportQueueService } from "./domains/support/DomainSupportQueueService";
 import { domainSupportQueuePage } from "./domains/support/domainSupportQueuePage";
+import { DomainOpsHealthService } from "./domains/health/DomainOpsHealth";
 import { OnboardingService } from "./onboarding/OnboardingService";
 import { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
@@ -236,6 +237,8 @@ export interface PlatformAppDependencies {
    * only when a domain runtime + Postgres are configured; absent = no queue API.
    */
   domainSupport?: DomainSupportQueueService;
+  /** PII-free domain operational health (platform-admin dashboard + alerts). */
+  domainOpsHealth?: DomainOpsHealthService;
   onboarding?: OnboardingService;
   preferences?: WorkspacePreferencesService;
   legal?: PlatformLegalService;
@@ -2251,6 +2254,7 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
       privacy: deps.privacy,
       platformAudit: deps.platformAudit,
       domainSupport: deps.domainSupport,
+      domainOpsHealth: deps.domainOpsHealth,
       secureCookie:
         deps.secureCookie,
       docsDir: deps.docsDir,

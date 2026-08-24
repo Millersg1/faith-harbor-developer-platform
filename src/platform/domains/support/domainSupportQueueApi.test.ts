@@ -22,6 +22,7 @@ import { PlatformUserService } from "../../users/PlatformUserService";
 import { DomainSupportActionRepository } from "./DomainSupportActionRepository";
 import { InMemorySupportQueueReader, type SupportQueueItem } from "./DomainSupportQueue";
 import { DomainSupportQueueService } from "./DomainSupportQueueService";
+import { DomainOpsHealthService, InMemoryDomainHealthReader } from "../health/DomainOpsHealth";
 
 const A = "/platform/admin/api";
 const NOW = "2026-09-01T00:00:00Z";
@@ -40,10 +41,19 @@ async function setup() {
   const sessions = new PlatformSessionService(new PlatformSessionRepository());
   const clients = new PlatformClientService(new PlatformClientRepository());
   let seq = 0;
+  const reader = new InMemorySupportQueueReader(rows);
   const domainSupport = new DomainSupportQueueService({
-    reader: new InMemorySupportQueueReader(rows),
+    reader,
     actions: new DomainSupportActionRepository(),
     now: () => NOW, newId: () => `act${++seq}`,
+  });
+  const domainOpsHealth = new DomainOpsHealthService({
+    support: reader,
+    health: new InMemoryDomainHealthReader({ queued: 3, accepted: 1 }, 60),
+    coordinatorHealth: () => null,
+    mode: () => "disabled",
+    disabledReason: () => "disabled_by_configuration",
+    now: () => NOW,
   });
   const app = createPlatformApp({
     organizations, users, sessions,
@@ -56,6 +66,7 @@ async function setup() {
     admins,
     adminSessions: new PlatformAdminSessionService(),
     domainSupport,
+    domainOpsHealth,
   });
   const login = await request(app).post(`${A}/login`).send({ email: "root@allelitecloud.com", password: "password123" });
   return { app, cookie: login.headers["set-cookie"] as unknown as string[] };
@@ -119,6 +130,17 @@ describe("Stage L5 — support queue admin API", () => {
       .send({ action: "mark_resolved", evidence: "looks fine", reauthEmail: "root@allelitecloud.com", reauthPassword: "password123" });
     expect(r.status).toBe(400);
     expect(r.body.error.code).toBe("RECONCILIATION_REQUIRED");
+  });
+
+  it("exposes PII-free operational health (admin only)", async () => {
+    const unauth = await request(app).get(`${A}/domain-ops/health`);
+    expect(unauth.status).toBe(401);
+    const r = await request(app).get(`${A}/domain-ops/health`).set("Cookie", cookie);
+    expect(r.status).toBe(200);
+    expect(r.body.health.mode).toBe("disabled");
+    expect(r.body.health.unknownsTotal).toBe(2); // registration_unknown + delivery_unknown
+    expect(r.body.health.noticesByState.queued).toBe(3);
+    expect(JSON.stringify(r.body.health)).not.toMatch(/@|sk_|epp/i);
   });
 
   it("serves the accessible ops-queue page", async () => {

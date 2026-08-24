@@ -27,6 +27,7 @@ import type { PrivacyRequestService } from "../privacy/PrivacyRequestService";
 import type { PlatformAuditService } from "../audit/PlatformAuditService";
 import { SUPPORT_CATEGORIES, type SupportCategory } from "../domains/support/DomainSupportQueue";
 import { DomainSupportQueueService, SupportQueueError } from "../domains/support/DomainSupportQueueService";
+import type { DomainOpsHealthService } from "../domains/health/DomainOpsHealth";
 import { toPublicAdmin } from "./PlatformAdmin";
 import {
   AdminPasswordError,
@@ -51,6 +52,8 @@ export interface AdminRouterDependencies {
   platformAudit?: PlatformAuditService;
   /** Redacted cross-tenant domain support queue (platform-admin only). */
   domainSupport?: DomainSupportQueueService;
+  /** PII-free domain operational health + alert thresholds (platform-admin). */
+  domainOpsHealth?: DomainOpsHealthService;
   secureCookie?: boolean;
 
   /**
@@ -945,6 +948,16 @@ export function createAdminRouter(
             res.status(201).json({ action });
           }).catch((e) => sfail(res, e));
         });
+    });
+  }
+
+  // ---- PII-free domain OPERATIONAL HEALTH (platform-admin only) ----
+  if (deps.domainOpsHealth) {
+    const health = deps.domainOpsHealth;
+    router.get("/domain-ops/health", deps.requireAdmin, (_req, res) => {
+      health.snapshot()
+        .then((snapshot) => res.json({ health: snapshot }))
+        .catch(() => res.status(500).json({ error: { code: "INTERNAL", message: "Health snapshot failed." } }));
     });
   }
 

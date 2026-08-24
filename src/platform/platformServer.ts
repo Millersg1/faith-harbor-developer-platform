@@ -25,6 +25,7 @@ import { randomUUID } from "node:crypto";
 import { buildDomainRuntime } from "./domains/domainIntegration";
 import { DomainSupportActionRepository } from "./domains/support/DomainSupportActionRepository";
 import { PgDomainSupportQueueReader } from "./domains/support/DomainSupportQueue";
+import { DomainOpsHealthService, PgDomainHealthReader } from "./domains/health/DomainOpsHealth";
 import { DomainSupportQueueService } from "./domains/support/DomainSupportQueueService";
 import { DomainWorkerCoordinator } from "./domains/DomainWorkerCoordinator";
 import {
@@ -336,11 +337,23 @@ async function start(): Promise<void> {
   // Redacted cross-tenant support queue (platform-admin only). Reads existing
   // domain tables directly, so it is available whenever Postgres is — it does
   // not depend on the (test-mode) purchase runtime.
+  const domainSupportReader = new PgDomainSupportQueueReader(db);
   const domainSupport = new DomainSupportQueueService({
-    reader: new PgDomainSupportQueueReader(db),
+    reader: domainSupportReader,
     actions: new DomainSupportActionRepository(db),
     now: () => new Date().toISOString(),
     newId: () => randomUUID(),
+  });
+  // PII-free operational health (platform-admin dashboard + alert thresholds).
+  // Reuses the support reader for category counts; the coordinator health getter
+  // resolves lazily since the worker coordinator is created later at startup.
+  const domainOpsHealth = new DomainOpsHealthService({
+    support: domainSupportReader,
+    health: new PgDomainHealthReader(db),
+    coordinatorHealth: () => domainCoordinator?.health() ?? null,
+    mode: () => resolveDomainOperationsMode(process.env.DOMAIN_OPERATIONS_MODE).mode,
+    disabledReason: () => (resolveDomainOperationsMode(process.env.DOMAIN_OPERATIONS_MODE).mode === "disabled" ? "disabled_by_configuration" : null),
+    now: () => new Date().toISOString(),
   });
   const hosting =
     new PlatformHostingService(
@@ -1051,6 +1064,7 @@ async function start(): Promise<void> {
     domainWebhook: domainRuntime?.webhookHandler,
     domainOps: domainRuntime?.services,
     domainSupport,
+    domainOpsHealth,
     hosting,
     tickets,
     leads,
