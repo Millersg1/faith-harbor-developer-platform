@@ -1904,6 +1904,29 @@ export class PostgresDatabase
       CREATE INDEX IF NOT EXISTS idx_domain_lifecycle_state_org ON domain_lifecycle_state (organization_id);
       CREATE INDEX IF NOT EXISTS domain_lifecycle_state_claim_idx ON domain_lifecycle_state (next_scan_at);
 
+      -- Append-only PLATFORM-ADMIN support-QUEUE action audit (the redacted
+      -- cross-tenant ops queue). Distinct from the older order-scoped
+      -- domain_support_actions table. Immutable: every action against a queue
+      -- item is INSERTed here, never updated. Carries NO registrant PII, EPP
+      -- code, payment id, contact value, wholesale price, or raw provider
+      -- response — only a coarse queue reference, the acting admin, an action
+      -- verb, and free-text evidence/notes the admin typed.
+      CREATE TABLE IF NOT EXISTS domain_support_queue_actions (
+        id                  TEXT PRIMARY KEY,
+        organization_id     TEXT NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+        admin_id            TEXT NOT NULL,
+        item_category       TEXT NOT NULL,
+        item_ref            TEXT NOT NULL,
+        action              TEXT NOT NULL,
+        evidence            TEXT,
+        note                TEXT,
+        created_at          TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS domain_support_queue_actions_item_idx
+        ON domain_support_queue_actions (item_category, item_ref, created_at);
+      CREATE INDEX IF NOT EXISTS domain_support_queue_actions_org_idx
+        ON domain_support_queue_actions (organization_id, created_at);
+
       -- Periodic provider-fact SYNC snapshot (read-only refresh). Holds only the
       -- LAST provider-CONFIRMED facts; a failed refresh never overwrites them, so
       -- confirmed facts + last_success_at stay put and go visibly stale.

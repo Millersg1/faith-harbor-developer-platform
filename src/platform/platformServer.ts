@@ -20,7 +20,12 @@ import { OrganizationAiSettingsService } from "./ai/OrganizationAiSettingsServic
 import { BillingService } from "./billing/BillingService";
 import { SubscriptionRepository } from "./billing/SubscriptionRepository";
 import { ProcessedEventsRepository } from "./billing/ProcessedEventsRepository";
+import { randomUUID } from "node:crypto";
+
 import { buildDomainRuntime } from "./domains/domainIntegration";
+import { DomainSupportActionRepository } from "./domains/support/DomainSupportActionRepository";
+import { PgDomainSupportQueueReader } from "./domains/support/DomainSupportQueue";
+import { DomainSupportQueueService } from "./domains/support/DomainSupportQueueService";
 import { DomainWorkerCoordinator } from "./domains/DomainWorkerCoordinator";
 import {
   describeDomainOperationsMode,
@@ -328,6 +333,15 @@ async function start(): Promise<void> {
   // encryption keyring are all present; with no runtime the domain webhook
   // endpoint returns DOMAIN_WEBHOOK_DISABLED and nothing domain-related runs.
   const domainRuntime = buildDomainRuntime(process.env, db);
+  // Redacted cross-tenant support queue (platform-admin only). Reads existing
+  // domain tables directly, so it is available whenever Postgres is — it does
+  // not depend on the (test-mode) purchase runtime.
+  const domainSupport = new DomainSupportQueueService({
+    reader: new PgDomainSupportQueueReader(db),
+    actions: new DomainSupportActionRepository(db),
+    now: () => new Date().toISOString(),
+    newId: () => randomUUID(),
+  });
   const hosting =
     new PlatformHostingService(
       new PlatformHostingRepository(
@@ -1036,6 +1050,7 @@ async function start(): Promise<void> {
     domains,
     domainWebhook: domainRuntime?.webhookHandler,
     domainOps: domainRuntime?.services,
+    domainSupport,
     hosting,
     tickets,
     leads,

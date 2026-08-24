@@ -27,6 +27,8 @@ import { BillingService } from "./billing/BillingService";
 import type { DomainWebhookHandler } from "./domains/saga/DomainWebhookHandler";
 import type { DomainOpsServices } from "./domains/domainIntegration";
 import { createDomainOpsRouter } from "./domains/domainOpsRouter";
+import { DomainSupportQueueService } from "./domains/support/DomainSupportQueueService";
+import { domainSupportQueuePage } from "./domains/support/domainSupportQueuePage";
 import { OnboardingService } from "./onboarding/OnboardingService";
 import { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
 import { createBrandingRouter } from "./branding/BrandingRouter";
@@ -229,6 +231,11 @@ export interface PlatformAppDependencies {
    * when a domain runtime is configured (test-mode); absent = no domain API.
    */
   domainOps?: DomainOpsServices;
+  /**
+   * Redacted cross-tenant domain SUPPORT QUEUE (platform-admin only). Present
+   * only when a domain runtime + Postgres are configured; absent = no queue API.
+   */
+  domainSupport?: DomainSupportQueueService;
   onboarding?: OnboardingService;
   preferences?: WorkspacePreferencesService;
   legal?: PlatformLegalService;
@@ -2243,10 +2250,19 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
       legal: deps.legal,
       privacy: deps.privacy,
       platformAudit: deps.platformAudit,
+      domainSupport: deps.domainSupport,
       secureCookie:
         deps.secureCookie,
       docsDir: deps.docsDir,
     }),
+  );
+
+  // Accessible platform-admin support-queue console (redacted, cross-tenant).
+  app.get(
+    "/platform/admin/domain-ops",
+    (_req, res) => {
+      res.type("html").send(domainSupportQueuePage());
+    },
   );
 
   // Auth: public signup/login/logout + authenticated /me.

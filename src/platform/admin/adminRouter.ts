@@ -25,6 +25,8 @@ import {
 } from "../privacy/PrivacyRequestService";
 import type { PrivacyRequestService } from "../privacy/PrivacyRequestService";
 import type { PlatformAuditService } from "../audit/PlatformAuditService";
+import { SUPPORT_CATEGORIES, type SupportCategory } from "../domains/support/DomainSupportQueue";
+import { DomainSupportQueueService, SupportQueueError } from "../domains/support/DomainSupportQueueService";
 import { toPublicAdmin } from "./PlatformAdmin";
 import {
   AdminPasswordError,
@@ -47,6 +49,8 @@ export interface AdminRouterDependencies {
   legal?: PlatformLegalService;
   privacy?: PrivacyRequestService;
   platformAudit?: PlatformAuditService;
+  /** Redacted cross-tenant domain support queue (platform-admin only). */
+  domainSupport?: DomainSupportQueueService;
   secureCookie?: boolean;
 
   /**
@@ -840,6 +844,108 @@ export function createAdminRouter(
           .catch((e) => pfail(res, e));
       },
     );
+  }
+
+  // ---- Redacted cross-tenant DOMAIN SUPPORT QUEUE (platform-admin only) ----
+  if (deps.domainSupport) {
+    const support = deps.domainSupport;
+    const parseCategory = (raw: unknown): SupportCategory | null =>
+      SUPPORT_CATEGORIES.includes(String(raw) as SupportCategory) ? (String(raw) as SupportCategory) : null;
+    const sfail = (res: Response, err: unknown): void => {
+      if (err instanceof SupportQueueError) {
+        const status = err.code === "ITEM_NOT_IN_QUEUE" ? 409 : err.code === "UNAUTHENTICATED" ? 401 : 400;
+        res.status(status).json({ error: { code: err.code, message: err.message } });
+        return;
+      }
+      res.status(500).json({ error: { code: "INTERNAL", message: "Support queue error." } });
+    };
+
+    // Redacted queue list (optionally filtered by ?category=).
+    router.get("/domain-ops/queue", deps.requireAdmin, (req, res) => {
+      const category = req.query.category ? parseCategory(req.query.category) : undefined;
+      if (req.query.category && !category) {
+        res.status(400).json({ error: { code: "INVALID_CATEGORY", message: "Unknown category." } });
+        return;
+      }
+      support.listQueue(category ?? undefined)
+        .then((items) => res.json({ items }))
+        .catch((e) => sfail(res, e));
+    });
+
+    // PII-free per-category counts (operational overview).
+    router.get("/domain-ops/queue/counts", deps.requireAdmin, (_req, res) => {
+      support.counts().then((counts) => res.json({ counts })).catch((e) => sfail(res, e));
+    });
+
+    // Redacted item detail + its append-only action history.
+    router.get("/domain-ops/queue/:category/:itemRef", deps.requireAdmin, (req, res) => {
+      const category = parseCategory(req.params.category);
+      if (!category) {
+        res.status(400).json({ error: { code: "INVALID_CATEGORY", message: "Unknown category." } });
+        return;
+      }
+      support.getItem(category, String(req.params.itemRef))
+        .then((detail) => res.json(detail))
+        .catch((e) => sfail(res, e));
+    });
+
+    // Evidence-gated support action. Requires a PER-CALL reauth (email+password)
+    // whose identity must match the current admin session. NO retry/mutation verb
+    // exists — support records findings and routes work; owners keep their rights.
+    router.post("/domain-ops/queue/:category/:itemRef/actions", deps.requireAdmin, (req, res) => {
+      const category = parseCategory(req.params.category);
+      if (!category) {
+        res.status(400).json({ error: { code: "INVALID_CATEGORY", message: "Unknown category." } });
+        return;
+      }
+      const body = (req.body ?? {}) as { action?: unknown; evidence?: unknown; note?: unknown; reauthEmail?: unknown; reauthPassword?: unknown };
+      const sessionAdminId = (req as AdminedRequest).admin?.id;
+      if (!sessionAdminId) {
+        res.status(401).json({ error: { code: "ADMIN_UNAUTHENTICATED", message: "Sign in required." } });
+        return;
+      }
+      const reauthEmail = typeof body.reauthEmail === "string" ? body.reauthEmail : "";
+      const reauthPassword = typeof body.reauthPassword === "string" ? body.reauthPassword : "";
+      if (!reauthEmail || !reauthPassword) {
+        res.status(401).json({ error: { code: "REAUTH_REQUIRED", message: "Re-enter your admin email and password to act." } });
+        return;
+      }
+      // Per-call reauth: authenticate() throws on bad creds; the identity must
+      // be the same admin as the live session (no acting as another admin). A
+      // reauth failure is handled separately from a support-action validation
+      // error so the two never get conflated into a misleading status.
+      deps.admins.authenticate(reauthEmail, reauthPassword)
+        .catch(() => null)
+        .then((reauthed) => {
+          if (!reauthed) {
+            res.status(401).json({ error: { code: "REAUTH_FAILED", message: "Reauthentication failed." } });
+            return;
+          }
+          if (reauthed.id !== sessionAdminId) {
+            res.status(401).json({ error: { code: "REAUTH_MISMATCH", message: "Reauthentication must match the signed-in admin." } });
+            return;
+          }
+          support.recordAction({
+            adminId: sessionAdminId,
+            category,
+            itemRef: String(req.params.itemRef),
+            action: String(body.action ?? "") as never,
+            evidence: typeof body.evidence === "string" ? body.evidence : undefined,
+            note: typeof body.note === "string" ? body.note : undefined,
+          }).then((action) => {
+            deps.platformAudit?.record({
+              action: `domain_support:${action.action}`,
+              actorType: "platform_admin",
+              actorId: sessionAdminId,
+              targetType: "domain_support_item",
+              targetId: `${action.itemCategory}:${action.itemRef}`,
+              outcome: "success",
+              metadata: { category: action.itemCategory },
+            });
+            res.status(201).json({ action });
+          }).catch((e) => sfail(res, e));
+        });
+    });
   }
 
   return router;
