@@ -93,7 +93,23 @@ describe("NamecheapRegistrarProvider — reads", () => {
       }),
     );
     expect(await p.getRegistrarLock("a.com")).toBe(true);
-    expect(await p.getAccountBalance()).toEqual({ amountMinor: 15000, currency: "USD" });
+    expect(await p.getAccountBalance()).toEqual({ status: "available", amountMinor: 15000, currency: "USD" });
+  });
+
+  it("balance fails closed to currency_unknown when the response carries no Currency", async () => {
+    const p = new NamecheapRegistrarProvider(
+      BASE,
+      router({ "namecheap.users.getBalances": ok('<UserGetBalancesResult AvailableBalance="150.00"/>') }),
+    );
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "currency_unknown" });
+  });
+
+  it("balance fails closed to unavailable when the result element is missing", async () => {
+    const p = new NamecheapRegistrarProvider(
+      BASE,
+      router({ "namecheap.users.getBalances": ok("<Other/>") }),
+    );
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "missing_balance_element" });
   });
 
   it("redacts credentials from the URL it would log (never leaks ApiKey)", () => {

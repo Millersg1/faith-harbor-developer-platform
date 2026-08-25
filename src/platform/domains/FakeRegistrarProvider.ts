@@ -16,6 +16,7 @@ import {
   type DnssecInfo,
   type DomainRegistrarProvider,
   type DomainStatus,
+  type AccountBalanceResult,
   type Money,
   type PriceResult,
   type RegisterInput,
@@ -36,6 +37,8 @@ export interface FakeConfig {
   /** ascii-domain -> status for reconciliation lookups. */
   status?: Record<string, DomainStatus>;
   balanceMinor?: number;
+  /** Overrides the whole balance result (to script unavailable/unsupported). */
+  balanceResult?: AccountBalanceResult;
   capabilities?: Partial<CapabilityMatrix>;
   /** Override the currency returned by pricing (default USD) — for FX tests. */
   currency?: string;
@@ -318,8 +321,9 @@ export class FakeRegistrarProvider
   async getExpiry(domain: string): Promise<DomainStatus> {
     return this.getRegistrationStatus(domain);
   }
-  async getAccountBalance(): Promise<Money> {
-    return { amountMinor: this.cfg.balanceMinor ?? 0, currency: "USD" };
+  async getAccountBalance(): Promise<AccountBalanceResult> {
+    if (this.cfg.balanceResult) return this.cfg.balanceResult;
+    return { status: "available", amountMinor: this.cfg.balanceMinor ?? 0, currency: "USD" };
   }
   async initiateInboundTransfer(
     domain: string,

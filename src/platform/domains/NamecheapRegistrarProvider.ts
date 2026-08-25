@@ -40,6 +40,7 @@ import {
   type DomainRegistrarProvider,
   type RegistrarMutationResult,
   type DomainStatus,
+  type AccountBalanceResult,
   type Money,
   type PriceResult,
   type RegisterInput,
@@ -323,15 +324,29 @@ export class NamecheapRegistrarProvider
     return (r?.attrs.get("RegistrarLockStatus") ?? "").toLowerCase() === "true";
   }
 
-  async getAccountBalance(): Promise<Money> {
+  async getAccountBalance(): Promise<AccountBalanceResult> {
     this.assertEnabled();
+    // Rejection/transport/parse errors are thrown by rawCall; a well-formed
+    // success with no usable balance is a distinct fail-closed `unavailable`
+    // result — never a fabricated zero. Namecheap DOES return a Currency attr;
+    // if it is absent we fail closed to currency_unknown (no USD assumption).
     const root = await this.rawCall("namecheap.users.getBalances", {});
     const r = findFirst(root, "UserGetBalancesResult");
     const bal = r?.attrs.get("AvailableBalance");
-    return {
-      amountMinor: bal ? decimalToMinor(bal) : 0,
-      currency: r?.attrs.get("Currency") ?? CURRENCY,
-    };
+    if (!r || bal === undefined) return { status: "unavailable", reason: "missing_balance_element" };
+    const raw = sanitizeText(bal);
+    if (raw === "") return { status: "unavailable", reason: "empty_balance" };
+    if (/^-/.test(raw)) return { status: "unavailable", reason: "negative_balance" };
+    const currency = (r.attrs.get("Currency") ?? "").trim();
+    if (!currency) return { status: "unavailable", reason: "currency_unknown" };
+    let amountMinor: number;
+    try {
+      amountMinor = decimalToMinor(raw);
+    } catch {
+      return { status: "unavailable", reason: "malformed_balance" };
+    }
+    if (!Number.isFinite(amountMinor)) return { status: "unavailable", reason: "non_finite_balance" };
+    return { status: "available", amountMinor, currency };
   }
 
   // ---- writes -------------------------------------------------------------

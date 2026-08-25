@@ -42,6 +42,7 @@ import { createHardenedFetcher } from "./transport/hardenedFetch";
 import {
   CapabilityUnsupportedError,
   RegistrarModeError,
+  type AccountBalanceResult,
   type AvailabilityResult,
   type CapabilityMatrix,
   type AuthCodeResult,
@@ -71,6 +72,17 @@ export interface NameSiloConfig {
   purchasingEnabled: boolean;
   premiumPurchasingEnabled: boolean;
   incomingTransfersEnabled: boolean;
+  /**
+   * The DOCUMENTED account/pricing currency for this NameSilo reseller account.
+   * NameSilo's API returns NO per-response currency code (verified against the
+   * API reference at https://www.namesilo.com/api-reference and the live OTE
+   * getPrices/getAccountBalance responses — neither carries a currency field),
+   * and NameSilo bills resellers and quotes prices in USD. This is therefore an
+   * EXPLICIT adapter-level contract, set by configuration — NOT inferred from the
+   * OTE sandbox account or any support email. If it is left unset, the balance
+   * read FAILS CLOSED to `currency_unknown` rather than assuming USD.
+   */
+  accountCurrency?: string;
 }
 
 export type Fetcher = (
@@ -283,14 +295,29 @@ export class NameSiloRegistrarProvider
   async getRegistrarLock(domain: string): Promise<boolean> {
     return Boolean((await this.getRegistrationStatus(domain)).locked);
   }
-  async getAccountBalance(): Promise<Money> {
+  async getAccountBalance(): Promise<AccountBalanceResult> {
     this.assertEnabled();
+    // Provider REJECTION (code != 300), TRANSPORT failure, and un-parseable XML
+    // are thrown by call(); a well-formed success with an unusable <balance> is a
+    // distinct fail-closed `unavailable` result — NEVER a fabricated zero.
     const reply = await this.call("getAccountBalance", {});
-    const bal = findFirst(reply, "balance")?.text;
-    return {
-      amountMinor: bal ? decimalToMinor(sanitizeText(bal)) : 0,
-      currency: CURRENCY,
-    };
+    const balances = findAll(reply, "balance");
+    if (balances.length === 0) return { status: "unavailable", reason: "missing_balance_element" };
+    if (balances.length > 1) return { status: "unavailable", reason: "duplicate_balance_elements" };
+    const raw = sanitizeText(balances[0].text);
+    if (raw === "") return { status: "unavailable", reason: "empty_balance" };
+    if (/^-/.test(raw)) return { status: "unavailable", reason: "negative_balance" };
+    // Currency is a documented adapter contract; unset => fail closed.
+    const currency = (this.config.accountCurrency ?? "").trim();
+    if (!currency) return { status: "unavailable", reason: "currency_unknown" };
+    let amountMinor: number;
+    try {
+      amountMinor = decimalToMinor(raw);
+    } catch {
+      return { status: "unavailable", reason: "malformed_balance" };
+    }
+    if (!Number.isFinite(amountMinor)) return { status: "unavailable", reason: "non_finite_balance" };
+    return { status: "available", amountMinor, currency };
   }
 
   // ---- writes -------------------------------------------------------------

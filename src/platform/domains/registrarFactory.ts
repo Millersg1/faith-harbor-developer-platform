@@ -31,6 +31,8 @@ export interface RegistrarEnv {
   // NameSilo (launch provider) — sandbox/OTE first.
   NAMESILO_SANDBOX_API_KEY?: string;
   NAMESILO_LIVE_API_KEY?: string;
+  /** Documented account/pricing currency contract (defaults to USD). */
+  NAMESILO_ACCOUNT_CURRENCY?: string;
   // Namecheap (secondary provider).
   NAMECHEAP_SANDBOX_API_USER?: string;
   NAMECHEAP_SANDBOX_USERNAME?: string;
@@ -131,6 +133,10 @@ export function createRegistrarProvider(
       mode,
       apiKey,
       baseUrl: sandbox ? NS_SANDBOX_URL : NS_LIVE_URL,
+      // Documented NameSilo contract: reseller account + pricing are USD (the API
+      // carries no per-response currency). Explicit — not inferred from the OTE
+      // account or any email. An operator override is honored; empty => fail closed.
+      accountCurrency: env.NAMESILO_ACCOUNT_CURRENCY?.trim() || "USD",
       ...flags,
     };
     return new NameSiloRegistrarProvider(config, fetcher);

@@ -16,6 +16,7 @@ const BASE: NameSiloConfig = {
   purchasingEnabled: true,
   premiumPurchasingEnabled: false,
   incomingTransfersEnabled: false,
+  accountCurrency: "USD", // documented NameSilo contract
 };
 
 const contact: RegistrarContact = {
@@ -94,7 +95,7 @@ describe("NameSiloRegistrarProvider — reads", () => {
     const info = await p.getRegistrationStatus("a.com");
     expect(info).toMatchObject({ registered: true, locked: true, privacyEnabled: true, autoRenew: false });
     expect(info.nameservers).toEqual(["ns1.namesilo.com"]);
-    expect(await p.getAccountBalance()).toEqual({ amountMinor: 15000, currency: "USD" });
+    expect(await p.getAccountBalance()).toEqual({ status: "available", amountMinor: 15000, currency: "USD" });
   });
 
   it("never leaks the API key; redactSecrets strips it", async () => {
@@ -116,46 +117,76 @@ describe("NameSiloRegistrarProvider — reads", () => {
   });
 });
 
-describe("NameSiloRegistrarProvider — getAccountBalance (OTE formats)", () => {
+describe("NameSiloRegistrarProvider — getAccountBalance semantics (Step 1C)", () => {
   const fetcherReturning = (body: string): Fetcher => async () => ({ ok: true, status: 200, text: async () => body });
+  const bal = (inner: string) => router({ getAccountBalance: reply(inner) });
 
-  it("parses a thousands-comma-formatted OTE balance (the real Step-1B defect)", async () => {
-    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("<balance>10,000.00</balance>") }));
-    expect(await p.getAccountBalance()).toEqual({ amountMinor: 1000000, currency: "USD" });
+  // ---- CONFIRMED available balances (incl. exactly 0.00) ----
+  it("confirmed exactly USD 0.00 is a real available balance (NOT unavailable)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>0.00</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "available", amountMinor: 0, currency: "USD" });
+  });
+  it("confirmed positive plain balance", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>150.00</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "available", amountMinor: 15000, currency: "USD" });
+  });
+  it("confirmed positive thousands-grouped balance (the Step-1B format)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>10,000.00</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "available", amountMinor: 1000000, currency: "USD" });
   });
 
-  it("parses a plain (un-grouped) balance", async () => {
-    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("<balance>150.00</balance>") }));
-    expect(await p.getAccountBalance()).toEqual({ amountMinor: 15000, currency: "USD" });
+  // ---- UNUSABLE balances => distinct fail-closed `unavailable` (never zero) ----
+  it("MISSING balance element => unavailable (NOT zero)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal(""));
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "missing_balance_element" });
+  });
+  it("EMPTY balance element => unavailable", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance></balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "empty_balance" });
+  });
+  it("DUPLICATE balance elements => unavailable", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>10.00</balance><balance>20.00</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "duplicate_balance_elements" });
+  });
+  it("MALFORMED grouping => unavailable (not a fabricated value)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>1,00,000</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "malformed_balance" });
+  });
+  it("non-numeric balance => unavailable", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>N/A</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "malformed_balance" });
+  });
+  it("NEGATIVE balance => unavailable (prohibited)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>-5.00</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "negative_balance" });
   });
 
-  it("a MISSING balance element yields zero (not an error)", async () => {
-    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("") }));
-    expect(await p.getAccountBalance()).toEqual({ amountMinor: 0, currency: "USD" });
+  // ---- currency contract ----
+  it("documents + enforces the USD contract when accountCurrency is set", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, bal("<balance>1,234.56</balance>"));
+    const r = await p.getAccountBalance();
+    expect(r).toEqual({ status: "available", amountMinor: 123456, currency: "USD" });
+  });
+  it("FAILS CLOSED to currency_unknown when the currency contract is not established", async () => {
+    const noCurrency: NameSiloConfig = { ...BASE, accountCurrency: "" };
+    const p = new NameSiloRegistrarProvider(noCurrency, bal("<balance>150.00</balance>"));
+    expect(await p.getAccountBalance()).toEqual({ status: "unavailable", reason: "currency_unknown" });
   });
 
-  it("always reports USD (NameSilo balance carries no currency; adapter fixes it)", async () => {
-    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("<balance>1,234.56</balance>") }));
-    expect((await p.getAccountBalance()).currency).toBe("USD");
-  });
-
-  it("a provider rejection (reply code != 300) surfaces as an API error, not a parse error", async () => {
-    const body = `<namesilo><reply><code>110</code><detail>invalid api key</detail></reply></namesilo>`;
-    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(body));
+  // ---- REJECTION / TRANSPORT / PARSE stay distinct (thrown, not results) ----
+  it("provider rejection (reply code != 300) => API error (not a parse error, not a result)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<namesilo><reply><code>110</code><detail>invalid api key</detail></reply></namesilo>`));
     await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapApiError);
   });
-
-  it("a malformed/truncated response fails closed (parse error)", async () => {
+  it("malformed/truncated XML => parse error (fail closed)", async () => {
     const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<namesilo><reply><code>300</code><balance>10,000.00`));
     await expect(p.getAccountBalance()).rejects.toBeInstanceOf(XmlParseError);
   });
-
-  it("a DOCTYPE/entity response fails closed", async () => {
+  it("DOCTYPE/entity => parse error (fail closed)", async () => {
     const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<!DOCTYPE x><namesilo><reply><code>300</code><balance>1.00</balance></reply></namesilo>`));
     await expect(p.getAccountBalance()).rejects.toBeInstanceOf(XmlParseError);
   });
-
-  it("an oversized response fails closed", async () => {
+  it("oversized => parse error (fail closed)", async () => {
     const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<namesilo>` + "x".repeat(1_000_001) + `</namesilo>`));
     await expect(p.getAccountBalance()).rejects.toBeInstanceOf(XmlParseError);
   });

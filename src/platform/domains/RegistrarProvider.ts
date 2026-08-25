@@ -20,6 +20,34 @@ export type Money = {
   currency: string;
 };
 
+/**
+ * Why a successful (HTTP 2xx, provider-accepted) response nonetheless yielded no
+ * usable balance. A missing/empty/duplicated/malformed/negative/unknown-currency
+ * balance is NEVER represented as a numeric zero — it is a distinct, fail-closed
+ * `unavailable` result so callers cannot mistake absent data for "0.00".
+ */
+export type BalanceUnavailableReason =
+  | "missing_balance_element"
+  | "empty_balance"
+  | "duplicate_balance_elements"
+  | "malformed_balance"
+  | "non_finite_balance"
+  | "negative_balance"
+  | "currency_unknown";
+
+/**
+ * The honest outcome of an account-balance read. Provider REJECTION (an accepted
+ * request the provider refused) and TRANSPORT failure are thrown as their
+ * existing error types — they are NOT folded in here — so all six states stay
+ * distinct: confirmed-zero, confirmed-positive (both `available`),
+ * malformed/incomplete success (`unavailable`), unsupported (`unsupported`),
+ * plus the two thrown categories.
+ */
+export type AccountBalanceResult =
+  | { status: "available"; amountMinor: number; currency: string }
+  | { status: "unavailable"; reason: BalanceUnavailableReason }
+  | { status: "unsupported" };
+
 /** The registrar features we introspect. */
 export type CapabilityKey =
   | "availability"
@@ -289,7 +317,12 @@ export interface DomainRegistrarProvider {
   getNameservers(domainAscii: string): Promise<string[]>;
   getRegistrarLock(domainAscii: string): Promise<boolean>;
   getExpiry(domainAscii: string): Promise<DomainStatus>;
-  getAccountBalance(): Promise<Money>;
+  /**
+   * Reads the registrar account balance. Returns a distinct `unavailable` result
+   * (never a fabricated zero) when a successful response carries no usable
+   * balance; throws the provider REJECTION / TRANSPORT / parse errors otherwise.
+   */
+  getAccountBalance(): Promise<AccountBalanceResult>;
 
   // ---- DNS & nameservers (only reachable AFTER confirmed registration) ----
   /** Sets the domain's nameservers. Mutation → five-way outcome. */
