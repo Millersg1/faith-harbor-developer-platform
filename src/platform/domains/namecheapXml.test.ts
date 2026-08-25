@@ -11,6 +11,7 @@ import {
   parseNamecheap,
   redactSecrets,
   sanitizeText,
+  XmlParseError,
 } from "./namecheapXml";
 
 const NS = 'xmlns="http://api.namecheap.com/xml.response"';
@@ -33,17 +34,30 @@ describe("decimalToMinor (no float money)", () => {
     expect(decimalToMinor(s)).toBe(expected);
   });
   it("rejects junk", () => {
-    expect(() => decimalToMinor("nope")).toThrow(NamecheapParseError);
+    expect(() => decimalToMinor("nope")).toThrow(XmlParseError);
     expect(() => decimalToMinor("-1")).toThrow();
     expect(() => decimalToMinor("1e3")).toThrow();
   });
   it("honors commas ONLY as strict 3-digit group separators (fails closed otherwise)", () => {
     for (const bad of ["1,2,3", "1,23.45", "12,34.5", "1,0000.00", ",100", "100,", "$1,000.00", "1 000.00", "1,00,000"]) {
-      expect(() => decimalToMinor(bad), bad).toThrow(NamecheapParseError);
+      expect(() => decimalToMinor(bad), bad).toThrow(XmlParseError);
     }
   });
   it("never echoes the offending value in the error message", () => {
     expect(() => decimalToMinor("SECRET1,2,3VALUE")).toThrow(/^Invalid money value\.$/);
+  });
+});
+
+describe("XmlParseError (provider-neutral) + deprecated alias", () => {
+  it("the error is named XmlParseError, not the old provider name", () => {
+    let caught: unknown;
+    try { parseNamecheap("<a><b"); } catch (e) { caught = e; }
+    expect(caught).toBeInstanceOf(XmlParseError);
+    expect((caught as Error).name).toBe("XmlParseError");
+  });
+  it("the deprecated NamecheapParseError alias still refers to XmlParseError (back-compat)", () => {
+    expect(NamecheapParseError).toBe(XmlParseError);
+    expect(() => decimalToMinor("nope")).toThrow(NamecheapParseError);
   });
 });
 
@@ -133,19 +147,19 @@ describe("parseNamecheap — hostile / malformed input is rejected (never defini
   it("rejects a DOCTYPE declaration", () => {
     expect(() =>
       parseNamecheap(`<!DOCTYPE x><ApiResponse Status="OK"/>`),
-    ).toThrow(NamecheapParseError);
+    ).toThrow(XmlParseError);
   });
   it("rejects an ENTITY declaration (XXE attempt)", () => {
     expect(() =>
       parseNamecheap(
         `<!DOCTYPE t [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]><ApiResponse>&xxe;</ApiResponse>`,
       ),
-    ).toThrow(NamecheapParseError);
+    ).toThrow(XmlParseError);
   });
   it("rejects an unknown/custom entity in content", () => {
     expect(() =>
       parseNamecheap(`<ApiResponse Status="OK"><X V="&custom;"/></ApiResponse>`),
-    ).toThrow(NamecheapParseError);
+    ).toThrow(XmlParseError);
   });
   it("rejects duplicate attributes", () => {
     expect(() =>

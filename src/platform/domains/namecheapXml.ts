@@ -18,7 +18,7 @@
  *    the local name is what callers match on.
  *  - Escaped text and attribute values are decoded correctly.
  *  - Malformed / truncated / oversized / unexpected input throws
- *    {@link NamecheapParseError}; callers turn that into `ambiguous_unknown`
+ *    {@link XmlParseError}; callers turn that into `ambiguous_unknown`
  *    for mutating requests — never a "definitive failure".
  *
  * Raw response bodies are NEVER logged or audited; only bounded, sanitized
@@ -43,12 +43,20 @@ export interface XmlNode {
   text: string;
 }
 
-export class NamecheapParseError extends Error {
+export class XmlParseError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "NamecheapParseError";
+    this.name = "XmlParseError";
   }
 }
+
+/**
+ * @deprecated Historical name. This tokenizer is provider-neutral (reused by the
+ * NameSilo adapter too), so the error is now {@link XmlParseError}. This alias is
+ * retained for backward compatibility and will be removed in a future cleanup.
+ */
+export const NamecheapParseError = XmlParseError;
+export type NamecheapParseError = XmlParseError;
 
 /** A sanitized API-level error (envelope Status="ERROR"). */
 export class NamecheapApiError extends Error {
@@ -81,17 +89,17 @@ export class NamecheapHttpError extends Error {
 
 export function parseNamecheap(body: string): XmlNode {
   if (typeof body !== "string") {
-    throw new NamecheapParseError("Non-string response body.");
+    throw new XmlParseError("Non-string response body.");
   }
   if (body.length > LIMITS.maxBytes) {
-    throw new NamecheapParseError("Response body too large.");
+    throw new XmlParseError("Response body too large.");
   }
   // Reject dangerous markup declarations / CDATA / comments up front.
   if (/<!\s*DOCTYPE/i.test(body) || /<!\s*ENTITY/i.test(body)) {
-    throw new NamecheapParseError("DOCTYPE/ENTITY declarations are forbidden.");
+    throw new XmlParseError("DOCTYPE/ENTITY declarations are forbidden.");
   }
   if (body.includes("<![CDATA[") || body.includes("<!")) {
-    throw new NamecheapParseError("Markup declarations are forbidden.");
+    throw new XmlParseError("Markup declarations are forbidden.");
   }
 
   let i = 0;
@@ -104,7 +112,7 @@ export function parseNamecheap(body: string): XmlNode {
   // Reject any other processing instruction.
   const rest = body.slice(i);
   if (/<\?/.test(rest)) {
-    throw new NamecheapParseError("Processing instructions are forbidden.");
+    throw new XmlParseError("Processing instructions are forbidden.");
   }
 
   const root: XmlNode = { name: "#root", attrs: new Map(), children: [], text: "" };
@@ -126,7 +134,7 @@ export function parseNamecheap(body: string): XmlNode {
     }
     const gt = body.indexOf(">", lt + 1);
     if (gt < 0) {
-      throw new NamecheapParseError("Truncated tag (no '>').");
+      throw new XmlParseError("Truncated tag (no '>').");
     }
     const tag = body.slice(lt + 1, gt).trim();
     i = gt + 1;
@@ -136,7 +144,7 @@ export function parseNamecheap(body: string): XmlNode {
       const name = localName(tag.slice(1).trim());
       const top = stack[stack.length - 1];
       if (stack.length <= 1 || localName(top.name) !== name) {
-        throw new NamecheapParseError("Mismatched closing tag.");
+        throw new XmlParseError("Mismatched closing tag.");
       }
       stack.pop();
       continue;
@@ -146,24 +154,24 @@ export function parseNamecheap(body: string): XmlNode {
     const inner = selfClosing ? tag.slice(0, -1).trim() : tag;
     const node = parseElement(inner);
     if (++elementCount > LIMITS.maxElements) {
-      throw new NamecheapParseError("Too many elements.");
+      throw new XmlParseError("Too many elements.");
     }
     stack[stack.length - 1].children.push(node);
     if (!selfClosing) {
       stack.push(node);
       if (stack.length - 1 > LIMITS.maxDepth) {
-        throw new NamecheapParseError("Nesting too deep.");
+        throw new XmlParseError("Nesting too deep.");
       }
     }
   }
 
   if (stack.length !== 1) {
-    throw new NamecheapParseError("Unclosed element(s).");
+    throw new XmlParseError("Unclosed element(s).");
   }
   // The single top-level child is the response root (e.g. ApiResponse).
   const top = root.children[0];
   if (!top) {
-    throw new NamecheapParseError("No root element.");
+    throw new XmlParseError("No root element.");
   }
   return top;
 }
@@ -172,7 +180,7 @@ function parseElement(inner: string): XmlNode {
   // First token is the element name; the remainder are attributes.
   const m = /^([^\s/>]+)/.exec(inner);
   if (!m) {
-    throw new NamecheapParseError("Malformed element.");
+    throw new XmlParseError("Malformed element.");
   }
   const name = localName(m[1]);
   const attrs = new Map<string, string>();
@@ -183,12 +191,12 @@ function parseElement(inner: string): XmlNode {
   let lastIndex = 0;
   while ((a = attrRe.exec(rest)) !== null) {
     if (++count > LIMITS.maxAttrsPerEl) {
-      throw new NamecheapParseError("Too many attributes.");
+      throw new XmlParseError("Too many attributes.");
     }
     const key = localName(a[1]);
     const rawVal = a[3] ?? a[4] ?? "";
     if (rawVal.length > LIMITS.maxAttrLen) {
-      throw new NamecheapParseError("Attribute too long.");
+      throw new XmlParseError("Attribute too long.");
     }
     // Namespace declarations are tolerated but not exposed as data.
     if (a[1] === "xmlns" || a[1].startsWith("xmlns:")) {
@@ -196,14 +204,14 @@ function parseElement(inner: string): XmlNode {
       continue;
     }
     if (attrs.has(key)) {
-      throw new NamecheapParseError(`Duplicate attribute "${key}".`);
+      throw new XmlParseError(`Duplicate attribute "${key}".`);
     }
     attrs.set(key, decodeEntities(rawVal));
     lastIndex = attrRe.lastIndex;
   }
   // Anything left over that isn't whitespace means malformed attributes.
   if (rest.slice(lastIndex).trim().length > 0) {
-    throw new NamecheapParseError("Malformed attributes.");
+    throw new XmlParseError("Malformed attributes.");
   }
   return { name, attrs, children: [], text: "" };
 }
@@ -239,7 +247,7 @@ function decodeEntities(s: string): string {
             return String.fromCodePoint(code);
           }
         }
-        throw new NamecheapParseError(`Unknown/forbidden entity "&${body};".`);
+        throw new XmlParseError(`Unknown/forbidden entity "&${body};".`);
     }
   });
 }
@@ -299,7 +307,7 @@ export function decimalToMinor(s: string): number {
   } else if (/^\d{1,3}(,\d{3})+(\.\d{1,4})?$/.test(raw)) {
     str = raw.replace(/,/g, "");
   } else {
-    throw new NamecheapParseError("Invalid money value.");
+    throw new XmlParseError("Invalid money value.");
   }
   const [whole, frac = ""] = str.split(".");
   const cents = (frac + "00").slice(0, 2);

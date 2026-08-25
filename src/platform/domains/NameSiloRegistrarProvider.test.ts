@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NamecheapApiError, NamecheapParseError, redactSecrets } from "./namecheapXml";
+import { NamecheapApiError, XmlParseError, redactSecrets } from "./namecheapXml";
 import {
   NameSiloRegistrarProvider,
   type Fetcher,
@@ -147,17 +147,17 @@ describe("NameSiloRegistrarProvider — getAccountBalance (OTE formats)", () => 
 
   it("a malformed/truncated response fails closed (parse error)", async () => {
     const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<namesilo><reply><code>300</code><balance>10,000.00`));
-    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapParseError);
+    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(XmlParseError);
   });
 
   it("a DOCTYPE/entity response fails closed", async () => {
     const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<!DOCTYPE x><namesilo><reply><code>300</code><balance>1.00</balance></reply></namesilo>`));
-    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapParseError);
+    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(XmlParseError);
   });
 
   it("an oversized response fails closed", async () => {
     const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<namesilo>` + "x".repeat(1_000_001) + `</namesilo>`));
-    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapParseError);
+    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(XmlParseError);
   });
 });
 
