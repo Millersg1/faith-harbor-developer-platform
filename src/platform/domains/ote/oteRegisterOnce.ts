@@ -41,8 +41,8 @@ export class OneShotAuthorization {
 
   consume(providedAck: string): void {
     if (this.consumed) throw new OneShotGuardError("already_consumed");
-    if (this.armedAck !== REGISTER_ONE_OTE_ACK) throw new OneShotGuardError("authorization_not_armed");
-    if (providedAck !== REGISTER_ONE_OTE_ACK) throw new OneShotGuardError("bad_acknowledgment");
+    if (!this.armedAck) throw new OneShotGuardError("authorization_not_armed");
+    if (providedAck !== this.armedAck) throw new OneShotGuardError("bad_acknowledgment");
     this.consumed = true;
   }
 

@@ -48,6 +48,8 @@ import {
   type AuthCodeResult,
   type DnsMutationResult,
   type DnsRecord,
+  type DnsRecordChange,
+  type DnsRecordType,
   type DnssecInfo,
   type DomainRegistrarProvider,
   type RegistrarMutationResult,
@@ -63,6 +65,20 @@ import {
 
 const NAMESILO_SUCCESS = "300";
 const CURRENCY = "USD";
+const DNS_RECORD_TYPES = new Set(["A", "AAAA", "CNAME", "MX", "TXT", "NS", "SRV", "CAA", "ALIAS"]);
+
+/** Classifies a DNS-mutation error into the honest five-way outcome. Uses only
+ *  the provider reply CODE — never the raw error detail (which may carry provider
+ *  internals). Never auto-retried. */
+function classifyDnsError(err: unknown): DnsMutationResult {
+  if (err instanceof NamecheapTransportError) {
+    return { outcome: classifyTransportError(err), applied: false, errorCategory: sanitizeText(err.code ?? "transport") };
+  }
+  if (err instanceof NamecheapApiError) {
+    return { outcome: "provider_rejection", applied: false, errorCategory: err.number ?? "api_error" };
+  }
+  return { outcome: "ambiguous_unknown", applied: false, errorCategory: "unclassified" };
+}
 
 export interface NameSiloConfig {
   mode: Extract<RegistrarMode, "namesilo_sandbox" | "namesilo_live">;
@@ -433,13 +449,71 @@ export class NameSiloRegistrarProvider
     this.assertEnabled();
     return this.dnsDeferred();
   }
-  async getDnsRecords(): Promise<DnsRecord[]> {
+  /**
+   * Reads the live zone via NameSilo `dnsListRecords`. Read-only. NameSilo lists
+   * hosts as FQDNs; we normalize to zone-relative (`@` = apex). A non-300 reply
+   * (e.g. the OTE sandbox's own backend errors) throws NamecheapApiError — never a
+   * fabricated empty zone.
+   */
+  async getDnsRecords(domainAscii: string): Promise<DnsRecord[]> {
     this.assertEnabled();
-    return this.dnsDeferred();
+    const reply = await this.call("dnsListRecords", { domain: domainAscii });
+    const out: DnsRecord[] = [];
+    for (const rr of findAll(reply, "resource_record")) {
+      const type = sanitizeText(findFirst(rr, "type")?.text ?? "").toUpperCase();
+      if (!DNS_RECORD_TYPES.has(type)) continue; // ignore unknown types (fail-safe)
+      const fqdn = sanitizeText(findFirst(rr, "host")?.text ?? "").toLowerCase().replace(/\.$/, "");
+      const dom = domainAscii.toLowerCase();
+      const host = fqdn === dom ? "@" : fqdn.endsWith(`.${dom}`) ? fqdn.slice(0, -(dom.length + 1)) : (fqdn || "@");
+      const distance = sanitizeText(findFirst(rr, "distance")?.text ?? "");
+      out.push({
+        providerRecordId: sanitizeText(findFirst(rr, "record_id")?.text ?? "") || undefined,
+        type: type as DnsRecordType,
+        host,
+        value: findFirst(rr, "value")?.text ?? "",
+        ttl: Number(sanitizeText(findFirst(rr, "ttl")?.text ?? "")) || 3600,
+        priority: distance ? Number(distance) : undefined,
+      });
+    }
+    return out;
   }
-  async applyDnsRecords(): Promise<DnsMutationResult> {
+
+  /**
+   * Applies a BOUNDED set of zone changes via NameSilo `dnsAddRecord` /
+   * `dnsUpdateRecord` / `dnsDeleteRecord`. A delete MUST carry the provider record
+   * id (`rrid`) — deleting by host/type alone is refused. Five-way outcome; an
+   * ambiguous mutation is never auto-retried (the caller reconciles read-only).
+   */
+  async applyDnsRecords(domainAscii: string, changes: DnsRecordChange[], _idempotencyKey: string): Promise<DnsMutationResult> {
     this.assertEnabled();
-    return this.dnsDeferred();
+    let lastRef: string | undefined;
+    try {
+      for (const ch of changes) {
+        if (ch.op === "upsert") {
+          const r = ch.record;
+          const params: Record<string, string> = {
+            domain: domainAscii,
+            rrtype: r.type,
+            rrhost: r.host === "@" ? "" : r.host,
+            rrvalue: r.value,
+            rrttl: String(r.ttl),
+          };
+          if (r.priority !== undefined) params.rrdistance = String(r.priority);
+          if (r.providerRecordId) params.rrid = r.providerRecordId;
+          const reply = await this.call(r.providerRecordId ? "dnsUpdateRecord" : "dnsAddRecord", params);
+          lastRef = sanitizeText(findFirst(reply, "record_id")?.text ?? "") || undefined;
+        } else {
+          if (!ch.record.providerRecordId) {
+            return { outcome: "definitive_failure", applied: false, errorCategory: "delete_requires_record_id" };
+          }
+          await this.call("dnsDeleteRecord", { domain: domainAscii, rrid: ch.record.providerRecordId });
+          lastRef = ch.record.providerRecordId;
+        }
+      }
+    } catch (err) {
+      return classifyDnsError(err);
+    }
+    return { outcome: "definitive_success", applied: true, providerCorrelationId: lastRef };
   }
   async getDnssec(): Promise<DnssecInfo> {
     this.assertEnabled();

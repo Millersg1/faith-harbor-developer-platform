@@ -192,6 +192,71 @@ describe("NameSiloRegistrarProvider — getAccountBalance semantics (Step 1C)", 
   });
 });
 
+describe("NameSiloRegistrarProvider — DNS zone (Stage 12A Step 3 wiring)", () => {
+  const fetcherReturning = (body: string, seen?: string[]): Fetcher => async (url: string) => { if (seen) seen.push(url); return { ok: true, status: 200, text: async () => body }; };
+
+  it("getDnsRecords parses resource_records, normalizing FQDN host to zone-relative", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, router({
+      dnsListRecords: reply(
+        "<resource_record><record_id>111</record_id><type>TXT</type><host>foo.a.com</host><value>hello</value><ttl>3600</ttl></resource_record>" +
+        "<resource_record><record_id>222</record_id><type>A</type><host>a.com</host><value>1.2.3.4</value><ttl>7207</ttl></resource_record>" +
+        "<resource_record><record_id>333</record_id><type>MX</type><host>a.com</host><value>mail.a.com</value><ttl>3600</ttl><distance>10</distance></resource_record>",
+      ),
+    }));
+    const recs = await p.getDnsRecords("a.com");
+    expect(recs).toEqual([
+      { providerRecordId: "111", type: "TXT", host: "foo", value: "hello", ttl: 3600, priority: undefined },
+      { providerRecordId: "222", type: "A", host: "@", value: "1.2.3.4", ttl: 7207, priority: undefined },
+      { providerRecordId: "333", type: "MX", host: "@", value: "mail.a.com", ttl: 3600, priority: 10 },
+    ]);
+  });
+
+  it("getDnsRecords surfaces a non-300 reply (e.g. OTE backend error 201) as an API error, never an empty zone", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning("<namesilo><reply><code>201</code><detail>Unable to load DNS records</detail></reply></namesilo>"));
+    await expect(p.getDnsRecords("a.com")).rejects.toMatchObject({ name: "NamecheapApiError", number: "201" });
+  });
+
+  it("applyDnsRecords add (upsert, no id) calls dnsAddRecord and returns the new record_id", async () => {
+    const seen: string[] = [];
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(reply("<record_id>NEW1</record_id>"), seen));
+    const r = await p.applyDnsRecords("a.com", [{ op: "upsert", record: { type: "TXT", host: "aec-step3-x", value: "marker", ttl: 3600 } }], "idem");
+    expect(r).toMatchObject({ outcome: "definitive_success", applied: true, providerCorrelationId: "NEW1" });
+    expect(seen[0]).toContain("/api/dnsAddRecord?");
+    expect(seen[0]).toContain("rrtype=TXT");
+    expect(seen[0]).toContain("rrhost=aec-step3-x");
+    expect(seen[0]).toContain("rrttl=3600");
+  });
+
+  it("applyDnsRecords add SUCCESS without a record_id => providerCorrelationId undefined (reference_absent upstream)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(reply("")));
+    const r = await p.applyDnsRecords("a.com", [{ op: "upsert", record: { type: "TXT", host: "aec-step3-x", value: "m", ttl: 3600 } }], "idem");
+    expect(r.outcome).toBe("definitive_success");
+    expect(r.providerCorrelationId).toBeUndefined();
+  });
+
+  it("applyDnsRecords delete binds to the record id (rrid); missing id fails closed with NO api call", async () => {
+    const seen: string[] = [];
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(reply(""), seen));
+    const ok = await p.applyDnsRecords("a.com", [{ op: "delete", record: { type: "TXT", host: "aec-step3-x", value: "m", providerRecordId: "111" } }], "idem");
+    expect(ok.outcome).toBe("definitive_success");
+    expect(seen[0]).toContain("/api/dnsDeleteRecord?");
+    expect(seen[0]).toContain("rrid=111");
+
+    const seen2: string[] = [];
+    const p2 = new NameSiloRegistrarProvider(BASE, fetcherReturning(reply(""), seen2));
+    const bad = await p2.applyDnsRecords("a.com", [{ op: "delete", record: { type: "TXT", host: "aec-step3-x", value: "m" } }], "idem");
+    expect(bad).toMatchObject({ outcome: "definitive_failure", applied: false, errorCategory: "delete_requires_record_id" });
+    expect(seen2.length).toBe(0); // no provider call
+  });
+
+  it("applyDnsRecords maps a provider error (201) to provider_rejection using the CODE only (no raw detail)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning("<namesilo><reply><code>201</code><detail>SQL access denied secret-internal</detail></reply></namesilo>"));
+    const r = await p.applyDnsRecords("a.com", [{ op: "upsert", record: { type: "TXT", host: "aec-step3-x", value: "m", ttl: 3600 } }], "idem");
+    expect(r).toMatchObject({ outcome: "provider_rejection", applied: false, errorCategory: "201" });
+    expect(JSON.stringify(r)).not.toContain("SQL"); // raw detail never surfaced
+  });
+});
+
 describe("NameSiloRegistrarProvider — register outcomes", () => {
   const reg = (body: string, fetcher?: Fetcher) =>
     new NameSiloRegistrarProvider(
