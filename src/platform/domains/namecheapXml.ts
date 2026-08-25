@@ -280,11 +280,26 @@ export function extractApiError(root: XmlNode): NamecheapApiError {
 
 // ---- money (no floating point) -------------------------------------------
 
-/** "10.98" -> 1098 minor units; string arithmetic, half-up on sub-cent. */
+/**
+ * "10.98" -> 1098 minor units; string arithmetic, half-up on sub-cent.
+ *
+ * Accepts EITHER a plain decimal (`\d+(.\d{1,4})?`) OR a thousands-grouped
+ * decimal (`\d{1,3}(,\d{3})+(.\d{1,4})?`, e.g. "10,000.00" as some providers —
+ * NameSilo's OTE getAccountBalance among them — format larger amounts). Commas
+ * are honored ONLY as strict 3-digit group separators; every other use
+ * (e.g. "1,2,3", "1,23.4", "$100", letters, multiple dots) still fails closed.
+ * The offending value is NEVER echoed into the error (no raw provider data in
+ * messages/logs).
+ */
 export function decimalToMinor(s: string): number {
-  const str = String(s).trim();
-  if (!/^\d+(\.\d{1,4})?$/.test(str)) {
-    throw new NamecheapParseError(`Invalid money value "${s}".`);
+  const raw = String(s).trim();
+  let str: string;
+  if (/^\d+(\.\d{1,4})?$/.test(raw)) {
+    str = raw;
+  } else if (/^\d{1,3}(,\d{3})+(\.\d{1,4})?$/.test(raw)) {
+    str = raw.replace(/,/g, "");
+  } else {
+    throw new NamecheapParseError("Invalid money value.");
   }
   const [whole, frac = ""] = str.split(".");
   const cents = (frac + "00").slice(0, 2);

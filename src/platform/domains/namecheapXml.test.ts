@@ -23,6 +23,12 @@ describe("decimalToMinor (no float money)", () => {
     ["0.09", 9],
     ["9.999", 1000],
     ["9.994", 999],
+    // Thousands-grouped amounts (NameSilo OTE getAccountBalance format).
+    ["10,000.00", 1000000],
+    ["1,234.56", 123456],
+    ["9,999,999.99", 999999999],
+    ["1,000", 100000],
+    ["1,234.5", 123450],
   ])("%s -> %d", (s, expected) => {
     expect(decimalToMinor(s)).toBe(expected);
   });
@@ -30,6 +36,14 @@ describe("decimalToMinor (no float money)", () => {
     expect(() => decimalToMinor("nope")).toThrow(NamecheapParseError);
     expect(() => decimalToMinor("-1")).toThrow();
     expect(() => decimalToMinor("1e3")).toThrow();
+  });
+  it("honors commas ONLY as strict 3-digit group separators (fails closed otherwise)", () => {
+    for (const bad of ["1,2,3", "1,23.45", "12,34.5", "1,0000.00", ",100", "100,", "$1,000.00", "1 000.00", "1,00,000"]) {
+      expect(() => decimalToMinor(bad), bad).toThrow(NamecheapParseError);
+    }
+  });
+  it("never echoes the offending value in the error message", () => {
+    expect(() => decimalToMinor("SECRET1,2,3VALUE")).toThrow(/^Invalid money value\.$/);
   });
 });
 

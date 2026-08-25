@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { redactSecrets } from "./namecheapXml";
+import { NamecheapApiError, NamecheapParseError, redactSecrets } from "./namecheapXml";
 import {
   NameSiloRegistrarProvider,
   type Fetcher,
@@ -113,6 +113,51 @@ describe("NameSiloRegistrarProvider — reads", () => {
     for (const url of seen) {
       expect(url.toLowerCase()).not.toMatch(/security|answer|defender|question/);
     }
+  });
+});
+
+describe("NameSiloRegistrarProvider — getAccountBalance (OTE formats)", () => {
+  const fetcherReturning = (body: string): Fetcher => async () => ({ ok: true, status: 200, text: async () => body });
+
+  it("parses a thousands-comma-formatted OTE balance (the real Step-1B defect)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("<balance>10,000.00</balance>") }));
+    expect(await p.getAccountBalance()).toEqual({ amountMinor: 1000000, currency: "USD" });
+  });
+
+  it("parses a plain (un-grouped) balance", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("<balance>150.00</balance>") }));
+    expect(await p.getAccountBalance()).toEqual({ amountMinor: 15000, currency: "USD" });
+  });
+
+  it("a MISSING balance element yields zero (not an error)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("") }));
+    expect(await p.getAccountBalance()).toEqual({ amountMinor: 0, currency: "USD" });
+  });
+
+  it("always reports USD (NameSilo balance carries no currency; adapter fixes it)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, router({ getAccountBalance: reply("<balance>1,234.56</balance>") }));
+    expect((await p.getAccountBalance()).currency).toBe("USD");
+  });
+
+  it("a provider rejection (reply code != 300) surfaces as an API error, not a parse error", async () => {
+    const body = `<namesilo><reply><code>110</code><detail>invalid api key</detail></reply></namesilo>`;
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(body));
+    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapApiError);
+  });
+
+  it("a malformed/truncated response fails closed (parse error)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<namesilo><reply><code>300</code><balance>10,000.00`));
+    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapParseError);
+  });
+
+  it("a DOCTYPE/entity response fails closed", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<!DOCTYPE x><namesilo><reply><code>300</code><balance>1.00</balance></reply></namesilo>`));
+    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapParseError);
+  });
+
+  it("an oversized response fails closed", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning(`<namesilo>` + "x".repeat(1_000_001) + `</namesilo>`));
+    await expect(p.getAccountBalance()).rejects.toBeInstanceOf(NamecheapParseError);
   });
 });
 
