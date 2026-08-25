@@ -524,11 +524,21 @@ export class NameSiloRegistrarProvider
   // NameSilo supports domainLock/domainUnlock + retrieveAuthCode (which EMAILS
   // the code to the registrant — never in the API body). Live wiring is deferred
   // until OTE proof; fail closed so no production lock/unlock occurs here.
-  async setRegistrarLock(): Promise<RegistrarMutationResult> {
+  /**
+   * Sets the registrar transfer lock via NameSilo `domainLock` (locked=true) /
+   * `domainUnlock` (locked=false). Five-way outcome; an ambiguous mutation is
+   * never auto-retried (the caller reconciles read-only via getRegistrarLock).
+   * A non-300 reply surfaces via the reply CODE only, never the raw detail. This
+   * NEVER touches DNS, nameservers, contacts, privacy, auto-renew, or auth codes.
+   */
+  async setRegistrarLock(domainAscii: string, locked: boolean, _idempotencyKey: string): Promise<RegistrarMutationResult> {
     this.assertEnabled();
-    throw new RegistrarModeError(
-      "NameSilo live registrar lock/unlock is not enabled in this build (OTE wiring pending).",
-    );
+    try {
+      await this.call(locked ? "domainLock" : "domainUnlock", { domain: domainAscii });
+      return { outcome: "definitive_success", applied: true };
+    } catch (err) {
+      return classifyDnsError(err); // identical five-way shape as a DNS mutation
+    }
   }
   async requestAuthCode(): Promise<AuthCodeResult> {
     this.assertEnabled();

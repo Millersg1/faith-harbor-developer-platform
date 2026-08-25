@@ -257,6 +257,36 @@ describe("NameSiloRegistrarProvider — DNS zone (Stage 12A Step 3 wiring)", () 
   });
 });
 
+describe("NameSiloRegistrarProvider — registrar lock (Stage 12A Step 4 wiring)", () => {
+  const fetcherReturning = (body: string, seen?: string[]): Fetcher => async (url: string) => { if (seen) seen.push(url); return { ok: true, status: 200, text: async () => body }; };
+
+  it("lock=true calls domainLock; lock=false calls domainUnlock; success => applied", async () => {
+    const seenL: string[] = [];
+    const pL = new NameSiloRegistrarProvider(BASE, fetcherReturning(reply(""), seenL));
+    expect(await pL.setRegistrarLock("a.com", true, "k")).toMatchObject({ outcome: "definitive_success", applied: true });
+    expect(seenL[0]).toContain("/api/domainLock?");
+
+    const seenU: string[] = [];
+    const pU = new NameSiloRegistrarProvider(BASE, fetcherReturning(reply(""), seenU));
+    expect(await pU.setRegistrarLock("a.com", false, "k")).toMatchObject({ outcome: "definitive_success", applied: true });
+    expect(seenU[0]).toContain("/api/domainUnlock?");
+  });
+
+  it("a non-300 lock reply => provider_rejection via CODE only (raw detail never surfaced)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, fetcherReturning("<namesilo><reply><code>280</code><detail>internal-secret detail</detail></reply></namesilo>"));
+    const r = await p.setRegistrarLock("a.com", false, "k");
+    expect(r).toMatchObject({ outcome: "provider_rejection", applied: false, errorCategory: "280" });
+    expect(JSON.stringify(r)).not.toContain("secret");
+  });
+
+  it("getRegistrarLock reads the live lock boolean (read-only reconciliation source)", async () => {
+    const p = new NameSiloRegistrarProvider(BASE, router({ getDomainInfo: reply("<locked>Yes</locked>") }));
+    expect(await p.getRegistrarLock("a.com")).toBe(true);
+    const p2 = new NameSiloRegistrarProvider(BASE, router({ getDomainInfo: reply("<locked>No</locked>") }));
+    expect(await p2.getRegistrarLock("a.com")).toBe(false);
+  });
+});
+
 describe("NameSiloRegistrarProvider — register outcomes", () => {
   const reg = (body: string, fetcher?: Fetcher) =>
     new NameSiloRegistrarProvider(
