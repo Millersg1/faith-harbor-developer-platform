@@ -29,6 +29,7 @@ import type { DomainOpsServices } from "./domains/domainIntegration";
 import { createDomainOpsRouter } from "./domains/domainOpsRouter";
 import { DomainSupportQueueService } from "./domains/support/DomainSupportQueueService";
 import { domainSupportQueuePage } from "./domains/support/domainSupportQueuePage";
+import { formsPage } from "./forms/formsPage";
 import { DomainOpsHealthService } from "./domains/health/DomainOpsHealth";
 import { OnboardingService } from "./onboarding/OnboardingService";
 import { WorkspacePreferencesService } from "./preferences/WorkspacePreferencesService";
@@ -2175,6 +2176,12 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
     res
       .type("html")
       .send(dashboardPage());
+  });
+
+  // Owner/admin forms configuration workspace (fields, origins, consent, drip
+  // sequence, lead magnet). Static accessible shell; talks to /api/platform.
+  app.get("/app/forms", (_req, res) => {
+    res.type("html").send(formsPage());
   });
 
   // Owner/admin domain-registration workspace (Stage 11). Static accessible
