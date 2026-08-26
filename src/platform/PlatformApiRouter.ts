@@ -38,7 +38,7 @@ import {
   FormValidationError,
   type PlatformFormService,
 } from "./forms/PlatformFormService";
-import type { FormField } from "./forms/PlatformForm";
+import type { FormField, FormSettings } from "./forms/PlatformForm";
 import {
   CalendarValidationError,
   type CalendarService,
@@ -943,6 +943,33 @@ export function createPlatformApiRouter(
   if (deps.forms) {
     const forms = deps.forms;
 
+    // Accept ONLY the approved FormSettings object (the service's private
+    // sanitizeSettings whitelists every field — no mass assignment; a client's
+    // organizationId/tenant/owner/provider/delivery/path/internal ids are not
+    // FormSettings fields and are dropped). Additionally, a consent sequence and
+    // a lead-magnet file must be owned by the ACTING tenant (fail closed): the
+    // referenced id must resolve within this tenant's own drip/files, else the
+    // save is rejected — this blocks cross-tenant reference binding.
+    const onlyFormSettings = (raw: unknown): FormSettings | undefined =>
+      raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as FormSettings) : undefined;
+    const assertSettingsReferencesOwned = async (raw: unknown): Promise<void> => {
+      const s = onlyFormSettings(raw);
+      if (!s) return;
+      const seqId = s.consent?.sequenceId;
+      if (typeof seqId === "string" && seqId.trim()) {
+        const owned = deps.drip ? (await deps.drip.listSequences()).some((q) => q.id === seqId) : false;
+        if (!owned) throw new FormValidationError("The selected drip sequence is not one of your sequences.");
+      }
+      const fileId = s.leadMagnet?.fileId;
+      if (typeof fileId === "string" && fileId.trim()) {
+        let owned = false;
+        if (deps.files) {
+          try { owned = Boolean(await deps.files.get(fileId)); } catch { owned = false; }
+        }
+        if (!owned) throw new FormValidationError("The selected lead-magnet file is not one of your files.");
+      }
+    };
+
     router.get(
       "/forms",
       (_req, res, next) => {
@@ -975,30 +1002,33 @@ export function createPlatformApiRouter(
           return;
         }
 
-        forms
-          .create({
-            name: String(body.name),
-            fields: Array.isArray(
-              body.fields,
-            )
-              ? (body.fields as FormField[])
-              : undefined,
-            confirmationMessage:
-              optionalString(
-                body.confirmationMessage,
-              ),
-            notifyEmail:
-              optionalString(
-                body.notifyEmail,
-              ),
-            createLead:
-              body.createLead ==
-              null
-                ? undefined
-                : Boolean(
-                    body.createLead,
-                  ),
-          })
+        assertSettingsReferencesOwned(body.settings)
+          .then(() =>
+            forms.create({
+              name: String(body.name),
+              fields: Array.isArray(
+                body.fields,
+              )
+                ? (body.fields as FormField[])
+                : undefined,
+              confirmationMessage:
+                optionalString(
+                  body.confirmationMessage,
+                ),
+              notifyEmail:
+                optionalString(
+                  body.notifyEmail,
+                ),
+              createLead:
+                body.createLead ==
+                null
+                  ? undefined
+                  : Boolean(
+                      body.createLead,
+                    ),
+              settings: onlyFormSettings(body.settings),
+            }),
+          )
           .then((form) =>
             res
               .status(201)
@@ -1052,54 +1082,64 @@ export function createPlatformApiRouter(
           req.body,
         );
 
-        forms
-          .update(
-            String(req.params.id),
-            {
-              name: optionalString(
-                body.name,
-              ),
-              fields: Array.isArray(
-                body.fields,
-              )
-                ? (body.fields as FormField[])
-                : undefined,
-              confirmationMessage:
-                optionalString(
-                  body.confirmationMessage,
+        assertSettingsReferencesOwned(body.settings)
+          .then(() =>
+            forms.update(
+              String(req.params.id),
+              {
+                name: optionalString(
+                  body.name,
                 ),
-              notifyEmail:
-                optionalString(
-                  body.notifyEmail,
-                ),
-              createLead:
-                body.createLead ==
-                null
-                  ? undefined
-                  : Boolean(
-                      body.createLead,
-                    ),
-              status:
-                body.status ===
-                "paused"
-                  ? "paused"
-                  : body.status ===
-                      "active"
-                    ? "active"
-                    : undefined,
-            },
+                fields: Array.isArray(
+                  body.fields,
+                )
+                  ? (body.fields as FormField[])
+                  : undefined,
+                confirmationMessage:
+                  optionalString(
+                    body.confirmationMessage,
+                  ),
+                notifyEmail:
+                  optionalString(
+                    body.notifyEmail,
+                  ),
+                createLead:
+                  body.createLead ==
+                  null
+                    ? undefined
+                    : Boolean(
+                        body.createLead,
+                      ),
+                status:
+                  body.status ===
+                  "paused"
+                    ? "paused"
+                    : body.status ===
+                        "active"
+                      ? "active"
+                      : undefined,
+                settings:
+                  body.settings === undefined
+                    ? undefined
+                    : onlyFormSettings(body.settings),
+              },
+            ),
           )
           .then((form) =>
             res.json({ form }),
           )
-          .catch((error: unknown) =>
+          .catch((error: unknown) => {
+            if (error instanceof FormValidationError) {
+              badRequest(res, "INVALID_FORM", error.message);
+              return;
+            }
             notFoundOrNext(
               res,
               next,
               error,
               "FORM_NOT_FOUND",
-            ),
-          );
+            );
+          });
       },
     );
 

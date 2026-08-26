@@ -43,6 +43,7 @@ import {
   type PlatformFormService,
 } from "./forms/PlatformFormService";
 import type { FormRecord } from "./forms/PlatformForm";
+import { formsPage } from "./forms/formsPage";
 import { RateLimiter, rateLimit } from "./security/RateLimiter";
 import { requireRole } from "./auth/requireRole";
 import type { AuthedRequest } from "./auth/requireUser";
@@ -2122,6 +2123,12 @@ fetch('/verify-email',{method:'POST',credentials:'same-origin',headers:{'Content
     res
       .type("html")
       .send(dashboardPage());
+  });
+
+  // Owner/admin forms configuration workspace (fields, origins, consent, drip
+  // sequence, lead magnet). Static accessible shell; talks to /api/platform.
+  app.get("/app/forms", (_req, res) => {
+    res.type("html").send(formsPage());
   });
 
   // Client portal UI (self-contained; talks to /portal/api).
