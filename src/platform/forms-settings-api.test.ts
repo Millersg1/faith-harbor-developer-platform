@@ -10,6 +10,7 @@ import { BrandingService } from "./branding/BrandingService";
 import { PlatformClientRepository } from "./clients/PlatformClientRepository";
 import { PlatformClientService } from "./clients/PlatformClientService";
 import { createPlatformApp } from "./createPlatformApp";
+import { resolveMarketingDeliveryMode } from "./marketing/marketingDeliveryMode";
 import { PlatformLeadRepository } from "./crm/PlatformLeadRepository";
 import { PlatformLeadService } from "./crm/PlatformLeadService";
 import { DripService } from "./drip/DripService";
@@ -128,6 +129,11 @@ describe("Forms settings API (Stage — customer-operational config)", () => {
   it("denies a member (non owner/admin) from writing form settings", async () => {
     const r = await createForm(h.app, h.memberCookie, { allowedOrigins: ["https://x.example"] });
     expect(r.status).toBe(403);
+  });
+
+  it("marketing sending stays disabled when the mode is unset — configuring consent never enables sending", () => {
+    expect(resolveMarketingDeliveryMode(undefined).mode).toBe("disabled");
+    expect(resolveMarketingDeliveryMode("").mode).toBe("disabled");
   });
 
   it("serves the accessible forms configuration UI at /app/forms", async () => {

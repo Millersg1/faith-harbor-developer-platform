@@ -56,7 +56,7 @@ export function formsPage(): string {
         <label for="name">Form name</label>
         <input id="name" required/>
 
-        <h3>Basic fields (one per line: key,label,type,required)</h3>
+        <label for="fields" style="margin-top:1rem;">Basic fields (one per line: key,label,type,required)</label>
         <textarea id="fields" placeholder="email,Email,email,true&#10;name,Name,text,false"></textarea>
 
         <fieldset><legend>Allowed external origins</legend>
